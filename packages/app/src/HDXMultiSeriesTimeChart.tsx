@@ -217,19 +217,14 @@ export const LegendRenderer = memo<{
   selectedSeries?: Set<string>;
   onToggleSeries?: (seriesName: string, isShiftKey?: boolean) => void;
 }>(props => {
-  const {
-    payload = [],
-    lineDataMap,
-    allLineData = [],
-    selectedSeries = new Set(),
-    onToggleSeries,
-  } = props;
+  const { payload, lineDataMap, allLineData, selectedSeries, onToggleSeries } =
+    props;
 
-  const hasSelection = selectedSeries.size > 0;
+  const hasSelection = !!selectedSeries?.size;
 
   // Use allLineData to ensure all series are always shown in legend
   const allSeriesPayload = useMemo(() => {
-    if (allLineData.length > 0) {
+    if (allLineData?.length) {
       return allLineData.map(ld => ({
         dataKey: ld.dataKey,
         value: ld.displayName || ld.dataKey,
@@ -237,7 +232,7 @@ export const LegendRenderer = memo<{
         payload: { strokeDasharray: ld.isDashed ? '4 3' : '0' },
       }));
     }
-    return payload;
+    return payload ?? [];
   }, [allLineData, payload]);
 
   const sortedLegendItems = useMemo(() => {
@@ -268,7 +263,7 @@ export const LegendRenderer = memo<{
   return (
     <div className={styles.legend}>
       {shownItems.map((entry, index) => {
-        const isSelected = selectedSeries.has(entry.value);
+        const isSelected = !!selectedSeries?.has(entry.value);
         const isDisabled = hasSelection && !isSelected;
         return (
           <ExpandableLegendItem
@@ -290,7 +285,7 @@ export const LegendRenderer = memo<{
           <Popover.Dropdown p="xs">
             <div className={styles.legendTooltipContent}>
               {restItems.map((entry, index) => {
-                const isSelected = selectedSeries.has(entry.value);
+                const isSelected = !!selectedSeries?.has(entry.value);
                 const isDisabled = hasSelection && !isSelected;
                 return (
                   <ExpandableLegendItem

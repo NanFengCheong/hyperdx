@@ -155,7 +155,7 @@ const Line = React.memo(
     value,
     disableMenu,
     isInParsedJson = false,
-    parsedJsonRootPath = [],
+    parsedJsonRootPath,
   }: {
     keyName: string;
     keyPath: string[];
@@ -230,7 +230,7 @@ const Line = React.memo(
         // This is the start of a new parsed JSON context
         return keyPath;
       }
-      return parsedJsonRootPath;
+      return parsedJsonRootPath ?? [];
     }, [isStringValueValidJson, keyPath, parsedJsonRootPath]);
 
     // Hide LineMenu when selecting text in the value
@@ -320,10 +320,10 @@ const Line = React.memo(
 const MAX_TREE_NODE_ITEMS = 50;
 function TreeNode({
   data,
-  keyPath = [],
+  keyPath,
   disableMenu = false,
   isInParsedJson = false,
-  parsedJsonRootPath = [],
+  parsedJsonRootPath,
 }: {
   data: object;
   keyPath?: string[];
@@ -348,7 +348,7 @@ function TreeNode({
           key={key}
           keyName={key}
           value={value}
-          keyPath={keyPath}
+          keyPath={keyPath ?? []}
           disableMenu={disableMenu}
           isInParsedJson={isInParsedJson}
           parsedJsonRootPath={parsedJsonRootPath}

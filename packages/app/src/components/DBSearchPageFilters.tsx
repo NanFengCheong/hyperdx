@@ -361,7 +361,7 @@ export const FilterGroup = ({
   name,
   options,
   optionsLoading,
-  selectedValues = { included: new Set(), excluded: new Set() },
+  selectedValues: _selectedValues,
   onChange,
   onClearClick,
   onOnlyClick,
@@ -396,6 +396,15 @@ export const FilterGroup = ({
   // For live searches, don't refresh percentages when date range changes
   const [dateRange, setDateRange] = useState<[Date, Date]>(
     chartConfig.dateRange,
+  );
+
+  const selectedValues: {
+    included: Set<string | boolean>;
+    excluded: Set<string | boolean>;
+    range?: { min: number; max: number };
+  } = useMemo(
+    () => _selectedValues ?? { included: new Set(), excluded: new Set() },
+    [_selectedValues],
   );
 
   // If this filter has a range, display it differently

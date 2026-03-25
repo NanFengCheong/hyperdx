@@ -44,7 +44,7 @@ export type NestedFilterGroupProps = {
 export const NestedFilterGroup = ({
   name,
   childFilters,
-  selectedValues = {},
+  selectedValues,
   onChange,
   onClearClick,
   onOnlyClick,
@@ -65,7 +65,7 @@ export const NestedFilterGroup = ({
 }: NestedFilterGroupProps) => {
   const totalFiltersSize = useMemo(
     () =>
-      Object.values(selectedValues).reduce(
+      Object.values(selectedValues ?? {}).reduce(
         (total, filter) => total + filter.included.size + filter.excluded.size,
         0,
       ),
@@ -128,7 +128,7 @@ export const NestedFilterGroup = ({
             <div className={classes.filterGroupPanel}>
               <Stack gap="xs">
                 {childFilters.map(child => {
-                  const childSelectedValues = selectedValues[child.key] || {
+                  const childSelectedValues = selectedValues?.[child.key] || {
                     included: new Set(),
                     excluded: new Set(),
                   };

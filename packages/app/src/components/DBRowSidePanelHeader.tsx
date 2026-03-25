@@ -126,12 +126,12 @@ function BreadcrumbNavigation({
 }
 
 export default function DBRowSidePanelHeader({
-  attributes = [],
+  attributes,
   mainContent = '',
   mainContentHeader,
   date,
   severityText,
-  breadcrumbPath = [],
+  breadcrumbPath,
   onBreadcrumbClick,
 }: {
   date: Date;
@@ -198,7 +198,7 @@ export default function DBRowSidePanelHeader({
     <>
       {/* Breadcrumb navigation */}
       <BreadcrumbNavigation
-        breadcrumbPath={breadcrumbPath}
+        breadcrumbPath={breadcrumbPath ?? []}
         onNavigateToLevel={onBreadcrumbClick}
       />
 
@@ -273,7 +273,7 @@ export default function DBRowSidePanelHeader({
         </Paper>
       )}
       <Box mt="xs">
-        <DBHighlightedAttributesList attributes={attributes} />
+        <DBHighlightedAttributesList attributes={attributes ?? []} />
       </Box>
     </>
   );

@@ -17,7 +17,7 @@ export default function SlowestEventsTile({
   title,
   queryKeyPrefix,
   enabled = true,
-  extraFilters = [],
+  extraFilters,
 }: {
   source: TTraceSource;
   dateRange: [Date, Date];
@@ -49,7 +49,7 @@ export default function SlowestEventsTile({
         },
       ],
       dateRange,
-      filters: [...extraFilters],
+      filters: extraFilters,
     },
     {
       placeholderData: (prev: any) => prev,
@@ -146,7 +146,7 @@ export default function SlowestEventsTile({
                 limit: { limit: 200 },
                 dateRange,
                 filters: [
-                  ...extraFilters,
+                  ...(extraFilters ?? []),
                   {
                     type: 'sql',
                     condition: `${expressions.durationInMillis} > ${roundedP95}`,
