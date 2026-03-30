@@ -66,6 +66,46 @@ router.get('/installation', async (_, res: InstallationEspRes, next) => {
   }
 });
 
+router.get('/auth/config', async (_, res, next) => {
+  try {
+    const _isTeamExisting = await isTeamExisting();
+    return res.json({
+      isTeamExisting: _isTeamExisting,
+      oidcEnabled: config.OIDC_ENABLED,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/auth/oidc', (req, res, next) => {
+  if (!config.OIDC_ENABLED) {
+    return res.status(404).json({ error: 'OIDC not configured' });
+  }
+  passport.authenticate('oidc')(req, res, next);
+});
+
+router.get('/auth/oidc/callback', (req, res, next) => {
+  passport.authenticate('oidc', (err: Error, user: any) => {
+    if (err) {
+      logger.error({ err }, 'OIDC callback error');
+      return res.redirect(
+        `${config.FRONTEND_URL}/login?err=${encodeURIComponent('authFail')}`,
+      );
+    }
+    if (!user) {
+      return res.redirect(`${config.FRONTEND_URL}/login?err=authFail`);
+    }
+    req.logIn(user, (loginErr) => {
+      if (loginErr) {
+        logger.error({ err: loginErr }, 'OIDC session login error');
+        return res.redirect(`${config.FRONTEND_URL}/login?err=authFail`);
+      }
+      return res.redirect(`${config.FRONTEND_URL}/search`);
+    });
+  })(req, res, next);
+});
+
 router.post(
   '/login/password',
   passport.authenticate('local', {
@@ -102,6 +142,7 @@ router.post(
           const team = await createTeam({
             name: `${email}'s Team`,
             collectorAuthenticationEnforced: true,
+            allowedAuthMethods: config.OIDC_ENABLED ? ['password', 'oidc'] : ['password'],
           });
           user.team = team._id;
           user.name = email;
