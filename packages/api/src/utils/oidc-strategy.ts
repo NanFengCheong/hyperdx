@@ -27,7 +27,6 @@ export function configureOIDCStrategy(passport: any) {
         clientSecret: config.OIDC_CLIENT_SECRET,
         callbackURL: config.OIDC_CALLBACK_URL,
         scope: config.OIDC_SCOPE.split(' '),
-        // @ts-expect-error state is valid at runtime but missing from @types/passport-openidconnect
         state: true,
       } as any,
       async (
