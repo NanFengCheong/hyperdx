@@ -30,7 +30,6 @@ export function configureOIDCStrategy(passport: any) {
         callbackURL: config.OIDC_CALLBACK_URL,
         scope: config.OIDC_SCOPE.split(' '),
         state: true,
-        pkce: true,
       } as any,
       async (
         issuer: string,
