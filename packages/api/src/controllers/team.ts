@@ -34,15 +34,17 @@ export async function isTeamExisting() {
 export async function createTeam({
   name,
   collectorAuthenticationEnforced = true,
+  allowedAuthMethods,
 }: {
   name: string;
   collectorAuthenticationEnforced?: boolean;
+  allowedAuthMethods?: string[];
 }) {
   if (await isTeamExisting()) {
     throw new Error('Team already exists');
   }
 
-  const team = new Team({ name, collectorAuthenticationEnforced });
+  const team = new Team({ name, collectorAuthenticationEnforced, allowedAuthMethods });
 
   await team.save();
 
