@@ -12,6 +12,8 @@ export interface IUser {
   email: string;
   name: string;
   team: ObjectId;
+  oidcSubject?: string;
+  oidcProvider?: string;
 }
 
 export type UserDocument = mongoose.HydratedDocument<IUser>;
@@ -29,6 +31,14 @@ const UserSchema = new Schema(
       default: function genUUID() {
         return uuidv4();
       },
+    },
+    oidcSubject: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+    oidcProvider: {
+      type: String,
     },
   },
   {
