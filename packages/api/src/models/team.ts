@@ -17,7 +17,14 @@ export default mongoose.model<ITeam>(
   new Schema<ITeam>(
     {
       name: String,
-      allowedAuthMethods: [String],
+      allowedAuthMethods: {
+        type: [String],
+        validate: {
+          validator: (v: string[]) =>
+            v.every((m) => ['password', 'oidc'].includes(m)),
+          message: 'allowedAuthMethods must be "password" or "oidc"',
+        },
+      },
       hookId: {
         type: String,
         default: function genUUID() {
