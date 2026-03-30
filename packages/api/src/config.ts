@@ -57,3 +57,11 @@ export const AI_REQUEST_HEADERS = env.AI_REQUEST_HEADERS as string;
 
 // Legacy Anthropic-specific configuration (backward compatibility)
 export const ANTHROPIC_API_KEY = env.ANTHROPIC_API_KEY as string;
+
+// OIDC / Entra ID configuration
+export const OIDC_ISSUER = env.OIDC_ISSUER as string;
+export const OIDC_CLIENT_ID = env.OIDC_CLIENT_ID as string;
+export const OIDC_CLIENT_SECRET = env.OIDC_CLIENT_SECRET as string;
+export const OIDC_CALLBACK_URL = env.OIDC_CALLBACK_URL as string;
+export const OIDC_SCOPE = (env.OIDC_SCOPE || 'openid profile email') as string;
+export const OIDC_ENABLED = !!(env.OIDC_ISSUER && env.OIDC_CLIENT_ID);
