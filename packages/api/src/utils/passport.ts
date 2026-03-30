@@ -6,6 +6,7 @@ import type { UserDocument } from '@/models/user';
 import User from '@/models/user';
 
 import logger from './logger';
+import { configureOIDCStrategy } from './oidc-strategy';
 
 passport.serializeUser(function (user, done) {
   done(null, (user as any)._id);
@@ -51,5 +52,8 @@ passport.use(
     },
   ),
 );
+
+// Register OIDC strategy (only if OIDC env vars are configured)
+configureOIDCStrategy(passport);
 
 export default passport;
