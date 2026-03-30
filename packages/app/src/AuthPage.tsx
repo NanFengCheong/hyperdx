@@ -53,6 +53,8 @@ export default function AuthPage({ action }: { action: 'register' | 'login' }) {
   const { err, msg } = router.query;
 
   const { data: installation } = api.useInstallation();
+  const { data: authConfig } = api.useAuthConfig();
+  const showOidc = authConfig?.oidcEnabled && authConfig?.isTeamExisting;
   const registerPassword = api.useRegisterPassword();
 
   const verificationSent = msg === 'verify';
@@ -214,6 +216,32 @@ export default function AuthPage({ action }: { action: 'register' | 'login' }) {
                         ? 'Register'
                         : 'Login'}
                   </Button>
+                  {!isRegister && showOidc && (
+                    <>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          margin: '4px 0',
+                        }}
+                      >
+                        <div style={{ flex: 1, height: 1, background: '#dee2e6' }} />
+                        <span style={{ color: '#868e96', fontSize: 14 }}>or</span>
+                        <div style={{ flex: 1, height: 1, background: '#dee2e6' }} />
+                      </div>
+                      <Button
+                        component="a"
+                        href="/api/auth/oidc"
+                        size="md"
+                        variant="outline"
+                        fullWidth
+                        data-test-id="oidc-login"
+                      >
+                        Sign in with Microsoft
+                      </Button>
+                    </>
+                  )}
                 </Stack>
               </Paper>
 

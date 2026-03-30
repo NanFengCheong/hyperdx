@@ -49,6 +49,7 @@ function loginHook(request: Request, options: any, response: Response) {
     '/login',
     '/register',
     '/reset-password',
+    '/auth/oidc/callback',
   ];
   if (!WHITELIST_PATHS.includes(Router.pathname) && response.status === 401) {
     try {
@@ -298,6 +299,17 @@ const api = {
         hdxServer(`team/invitation/${id}`, {
           method: 'DELETE',
         }).json<{ message: string }>(),
+    });
+  },
+  useAuthConfig() {
+    return useQuery<{ isTeamExisting: boolean; oidcEnabled: boolean } | undefined, Error>({
+      queryKey: ['auth/config'],
+      queryFn: () => {
+        if (IS_LOCAL_MODE) {
+          return undefined;
+        }
+        return hdxServer('auth/config').json<{ isTeamExisting: boolean; oidcEnabled: boolean }>();
+      },
     });
   },
   useInstallation() {
