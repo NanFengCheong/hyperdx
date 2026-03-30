@@ -1,4 +1,7 @@
-import { Strategy as OIDCStrategy } from 'passport-openidconnect';
+import {
+  Strategy as OIDCStrategy,
+  SessionStore,
+} from 'passport-openidconnect';
 import { v4 as uuidv4 } from 'uuid';
 
 import * as config from '@/config';
@@ -27,7 +30,7 @@ export function configureOIDCStrategy(passport: any) {
         clientSecret: config.OIDC_CLIENT_SECRET,
         callbackURL: config.OIDC_CALLBACK_URL,
         scope: config.OIDC_SCOPE.split(' '),
-        state: true,
+        store: new SessionStore({ key: 'oidc:state' }),
       },
       async (
         issuer: string,
