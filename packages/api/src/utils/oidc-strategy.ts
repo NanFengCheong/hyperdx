@@ -21,12 +21,13 @@ export function configureOIDCStrategy(passport: any) {
       {
         issuer: issuerUrl,
         authorizationURL: `${issuerUrl}/authorize`,
-        tokenURL: `${issuerUrl.replace('/v2.0', '')}/oauth2/v2.0/token`,
-        userInfoURL: `${issuerUrl.replace('/v2.0', '')}/oidc/userinfo`,
+        tokenURL: `${issuerUrl}/token`,
+        userInfoURL: 'https://graph.microsoft.com/oidc/userinfo',
         clientID: config.OIDC_CLIENT_ID,
         clientSecret: config.OIDC_CLIENT_SECRET,
         callbackURL: config.OIDC_CALLBACK_URL,
         scope: config.OIDC_SCOPE.split(' '),
+        state: true,
       },
       async (
         issuer: string,
@@ -69,8 +70,8 @@ export function configureOIDCStrategy(passport: any) {
           }
 
           if (!user) {
-            // 3. Auto-provision new user into the default team
-            const team = await Team.findOne({});
+            // 3. Auto-provision new user into the first team (single-tenant)
+            const team = await Team.findOne({}).sort({ createdAt: 1 });
             if (!team) {
               logger.error('No team exists. First user must register locally.');
               return done(new Error('No team exists. Please register the first user locally.'));
