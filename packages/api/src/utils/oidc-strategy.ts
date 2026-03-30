@@ -14,14 +14,16 @@ export function configureOIDCStrategy(passport: any) {
   }
 
   const issuerUrl = config.OIDC_ISSUER.replace(/\/$/, '');
+  // Entra ID endpoints: issuer is {tenant}/v2.0, but endpoints are {tenant}/oauth2/v2.0/*
+  const tenantBase = issuerUrl.replace('/v2.0', '');
 
   passport.use(
     'oidc',
     new OIDCStrategy(
       {
         issuer: issuerUrl,
-        authorizationURL: `${issuerUrl}/authorize`,
-        tokenURL: `${issuerUrl}/token`,
+        authorizationURL: `${tenantBase}/oauth2/v2.0/authorize`,
+        tokenURL: `${tenantBase}/oauth2/v2.0/token`,
         userInfoURL: 'https://graph.microsoft.com/oidc/userinfo',
         clientID: config.OIDC_CLIENT_ID,
         clientSecret: config.OIDC_CLIENT_SECRET,
