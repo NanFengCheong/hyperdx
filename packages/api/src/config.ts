@@ -64,4 +64,5 @@ export const OIDC_CLIENT_ID = env.OIDC_CLIENT_ID as string;
 export const OIDC_CLIENT_SECRET = env.OIDC_CLIENT_SECRET as string;
 export const OIDC_CALLBACK_URL = env.OIDC_CALLBACK_URL as string;
 export const OIDC_SCOPE = (env.OIDC_SCOPE || 'openid profile email') as string;
+export const OIDC_ALLOWED_DOMAINS = (env.OIDC_ALLOWED_DOMAINS || '') as string;
 export const OIDC_ENABLED = !!(env.OIDC_ISSUER && env.OIDC_CLIENT_ID);
