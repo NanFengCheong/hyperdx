@@ -1,7 +1,4 @@
-import {
-  Strategy as OIDCStrategy,
-  SessionStore,
-} from 'passport-openidconnect';
+import { Strategy as OIDCStrategy } from 'passport-openidconnect';
 import { v4 as uuidv4 } from 'uuid';
 
 import * as config from '@/config';
@@ -30,8 +27,9 @@ export function configureOIDCStrategy(passport: any) {
         clientSecret: config.OIDC_CLIENT_SECRET,
         callbackURL: config.OIDC_CALLBACK_URL,
         scope: config.OIDC_SCOPE.split(' '),
-        store: new SessionStore({ key: 'oidc:state' }),
-      },
+        // @ts-expect-error state is valid at runtime but missing from @types/passport-openidconnect
+        state: true,
+      } as any,
       async (
         issuer: string,
         profile: any,
@@ -51,6 +49,21 @@ export function configureOIDCStrategy(passport: any) {
           if (!email) {
             logger.error({ profile: profile._json }, 'OIDC profile missing email');
             return done(new Error('Email not found in OIDC profile'));
+          }
+
+          // Check allowed email domains
+          if (config.OIDC_ALLOWED_DOMAINS) {
+            const allowedDomains = config.OIDC_ALLOWED_DOMAINS
+              .split(',')
+              .map((d) => d.trim().toLowerCase());
+            const emailDomain = email.toLowerCase().split('@')[1];
+            if (!allowedDomains.includes(emailDomain)) {
+              logger.warn(
+                { email, emailDomain, allowedDomains },
+                'OIDC login rejected: email domain not allowed',
+              );
+              return done(new Error('Email domain not allowed'));
+            }
           }
 
           // 1. Try to find by oidcSubject (already linked)
