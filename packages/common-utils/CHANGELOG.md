@@ -1,5 +1,11 @@
 # @hyperdx/common-utils
 
+## 0.16.3
+
+### Patch Changes
+
+- a55b151e: fix: render clickhouse keywords properly in codemirror
+
 ## 0.16.2
 
 ### Patch Changes
