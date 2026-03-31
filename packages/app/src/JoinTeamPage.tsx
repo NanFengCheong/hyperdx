@@ -1,8 +1,18 @@
+import { useState } from 'react';
 import { useRouter } from 'next/router';
 import { NextSeo } from 'next-seo';
-import { Button, Paper, Stack, Text, TextInput } from '@mantine/core';
+import {
+  Button,
+  Notification,
+  Paper,
+  PasswordInput,
+  Stack,
+  Text,
+} from '@mantine/core';
+import { IconLock } from '@tabler/icons-react';
 
 import { useBrandDisplayName } from './theme/ThemeProvider';
+import { PasswordCheck } from './PasswordCheck';
 import api from './api';
 
 export default function JoinTeam() {
@@ -11,6 +21,7 @@ export default function JoinTeam() {
   const { err, token } = router.query;
   const { data: authConfig } = api.useAuthConfig();
   const showOidc = authConfig?.oidcEnabled;
+  const [password, setPassword] = useState('');
 
   return (
     <div className="AuthPage">
@@ -49,47 +60,46 @@ export default function JoinTeam() {
                   <div style={{ flex: 1, height: 1, background: '#dee2e6' }} />
                 </div>
               )}
-              <div className="text-center">
-                <form
-                  className="text-start"
-                  action={`/api/team/setup/${token}`}
-                  method="POST"
-                >
-                  <TextInput
+              <form
+                className="text-start"
+                action={`/api/team/setup/${token}`}
+                method="POST"
+              >
+                <Stack gap="lg">
+                  <PasswordInput
                     id="password"
                     name="password"
-                    type="password"
+                    size="md"
                     label="Password"
-                    styles={{
-                      label: {
-                        fontSize: '0.875rem',
-                        color: 'var(--color-text-muted)',
-                        marginBottom: 4,
-                      },
-                    }}
+                    placeholder="Password"
+                    leftSection={<IconLock size={16} />}
+                    value={password}
+                    onChange={(e) => setPassword(e.currentTarget.value)}
+                    required
                   />
+                  <Notification withCloseButton={false}>
+                    <PasswordCheck password={password} />
+                  </Notification>
                   {err != null && (
-                    <Text c="red" mt="sm" data-test-id="auth-error-msg">
+                    <Text c="red" data-test-id="auth-error-msg">
                       {err === 'invalid'
-                        ? 'Password is invalid'
+                        ? 'Password does not meet complexity requirements'
                         : err === 'authFail'
                           ? 'Failed to sign in, please try again.'
                           : 'Unknown error occurred, please try again later.'}
                     </Text>
                   )}
-                  <div className="text-center mt-4">
-                    <Button
-                      variant={showOidc ? 'outline' : 'primary'}
-                      className="px-6"
-                      type="submit"
-                      fullWidth
-                      data-test-id="submit"
-                    >
-                      Setup a password
-                    </Button>
-                  </div>
-                </form>
-              </div>
+                  <Button
+                    variant={showOidc ? 'outline' : 'primary'}
+                    type="submit"
+                    size="md"
+                    fullWidth
+                    data-test-id="submit"
+                  >
+                    Setup a password
+                  </Button>
+                </Stack>
+              </form>
             </Stack>
           </Paper>
         </div>
