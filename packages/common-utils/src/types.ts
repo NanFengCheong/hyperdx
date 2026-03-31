@@ -1235,6 +1235,7 @@ export const TeamMemberSchema = z.object({
   email: z.string(),
   name: z.string().optional(),
   hasPasswordAuth: z.boolean(),
+  authMethod: z.string().optional(),
   isCurrentUser: z.boolean(),
   groupName: z.string().optional(),
   groupId: z.string().optional(),
