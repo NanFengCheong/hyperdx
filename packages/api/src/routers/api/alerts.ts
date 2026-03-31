@@ -14,13 +14,14 @@ import {
   updateAlert,
   validateAlertInput,
 } from '@/controllers/alerts';
+import { requirePermission } from '@/middleware/auth';
 import { sendJson } from '@/utils/serialization';
 import { alertSchema, objectIdSchema } from '@/utils/zod';
 
 const router = express.Router();
 
 type AlertsExpRes = express.Response<AlertsApiResponse>;
-router.get('/', async (req, res: AlertsExpRes, next) => {
+router.get('/', requirePermission('alerts:view'), async (req, res: AlertsExpRes, next) => {
   try {
     const teamId = req.user?.team;
     if (teamId == null) {
@@ -98,6 +99,7 @@ router.get('/', async (req, res: AlertsExpRes, next) => {
 
 router.post(
   '/',
+  requirePermission('alerts:create'),
   processRequest({ body: alertSchema }),
   async (req, res, next) => {
     const teamId = req.user?.team;
@@ -119,6 +121,7 @@ router.post(
 
 router.put(
   '/:id',
+  requirePermission('alerts:edit'),
   processRequest({
     body: alertSchema,
     params: z.object({
@@ -145,6 +148,7 @@ router.put(
 
 router.post(
   '/:id/silenced',
+  requirePermission('alerts:edit'),
   validateRequest({
     body: z.object({
       mutedUntil: z
@@ -185,6 +189,7 @@ router.post(
 
 router.delete(
   '/:id/silenced',
+  requirePermission('alerts:edit'),
   validateRequest({
     params: z.object({
       id: objectIdSchema,
@@ -213,6 +218,7 @@ router.delete(
 
 router.delete(
   '/:id',
+  requirePermission('alerts:delete'),
   validateRequest({
     params: z.object({
       id: objectIdSchema,

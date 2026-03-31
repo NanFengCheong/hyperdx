@@ -22,14 +22,14 @@ import {
   getPresetDashboardFilters,
   updatePresetDashboardFilter,
 } from '@/controllers/presetDashboardFilters';
-import { getNonNullUserWithTeam } from '@/middleware/auth';
+import { getNonNullUserWithTeam, requirePermission } from '@/middleware/auth';
 import logger from '@/utils/logger';
 import { objectIdSchema } from '@/utils/zod';
 
 // create routes that will get and update dashboards
 const router = express.Router();
 
-router.get('/', async (req, res, next) => {
+router.get('/', requirePermission('dashboards:view'), async (req, res, next) => {
   try {
     const { teamId } = getNonNullUserWithTeam(req);
 
@@ -43,6 +43,7 @@ router.get('/', async (req, res, next) => {
 
 router.post(
   '/',
+  requirePermission('dashboards:create'),
   validateRequest({
     body: DashboardWithoutIdSchema,
   }),
@@ -63,6 +64,7 @@ router.post(
 
 router.patch(
   '/:id',
+  requirePermission('dashboards:edit'),
   validateRequest({
     params: z.object({
       id: objectIdSchema,
@@ -99,6 +101,7 @@ router.patch(
 
 router.delete(
   '/:id',
+  requirePermission('dashboards:delete'),
   validateRequest({
     params: z.object({ id: objectIdSchema }),
   }),
@@ -118,6 +121,7 @@ router.delete(
 
 router.get(
   '/preset/:presetDashboard/filters',
+  requirePermission('dashboards:view'),
   validateRequest({
     params: z.object({
       presetDashboard: z.nativeEnum(PresetDashboard),
@@ -147,6 +151,7 @@ router.get(
 
 router.put(
   '/preset/:presetDashboard/filter',
+  requirePermission('dashboards:edit'),
   validateRequest({
     body: z.object({
       filter: PresetDashboardFilterSchema,
@@ -184,6 +189,7 @@ router.put(
 
 router.post(
   '/preset/:presetDashboard/filter',
+  requirePermission('dashboards:create'),
   validateRequest({
     body: z.object({
       filter: PresetDashboardFilterSchema,
@@ -217,6 +223,7 @@ router.post(
 
 router.delete(
   '/preset/:presetDashboard/filter/:id',
+  requirePermission('dashboards:delete'),
   validateRequest({
     params: z.object({
       presetDashboard: z.nativeEnum(PresetDashboard),

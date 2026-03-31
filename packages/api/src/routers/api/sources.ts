@@ -12,12 +12,12 @@ import {
   getSources,
   updateSource,
 } from '@/controllers/sources';
-import { getNonNullUserWithTeam } from '@/middleware/auth';
+import { getNonNullUserWithTeam, requirePermission } from '@/middleware/auth';
 import { objectIdSchema } from '@/utils/zod';
 
 const router = express.Router();
 
-router.get('/', async (req, res, next) => {
+router.get('/', requirePermission('sources:view'), async (req, res, next) => {
   try {
     const { teamId } = getNonNullUserWithTeam(req);
 
@@ -36,6 +36,7 @@ router.get('/', async (req, res, next) => {
 
 router.post(
   '/',
+  requirePermission('sources:create'),
   validateRequest({
     body: SourceSchemaNoId,
   }),
@@ -57,6 +58,7 @@ router.post(
 
 router.put(
   '/:id',
+  requirePermission('sources:edit'),
   validateRequest({
     body: SourceSchema,
     params: z.object({
@@ -86,6 +88,7 @@ router.put(
 
 router.delete(
   '/:id',
+  requirePermission('sources:delete'),
   validateRequest({
     params: z.object({
       id: objectIdSchema,

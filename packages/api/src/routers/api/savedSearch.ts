@@ -11,12 +11,12 @@ import {
   getSavedSearches,
   updateSavedSearch,
 } from '@/controllers/savedSearch';
-import { getNonNullUserWithTeam } from '@/middleware/auth';
+import { getNonNullUserWithTeam, requirePermission } from '@/middleware/auth';
 import { objectIdSchema } from '@/utils/zod';
 
 const router = express.Router();
 
-router.get('/', async (req, res, next) => {
+router.get('/', requirePermission('searches:view'), async (req, res, next) => {
   try {
     const { teamId } = getNonNullUserWithTeam(req);
 
@@ -30,6 +30,7 @@ router.get('/', async (req, res, next) => {
 
 router.post(
   '/',
+  requirePermission('searches:create'),
   validateRequest({
     body: SavedSearchSchema.omit({ id: true }).extend({
       name: z.string().trim().min(1),
@@ -50,6 +51,7 @@ router.post(
 
 router.patch(
   '/:id',
+  requirePermission('searches:edit'),
   validateRequest({
     body: SavedSearchSchema.partial().extend({
       name: z.string().trim().min(1).optional(),
@@ -98,6 +100,7 @@ router.patch(
 
 router.delete(
   '/:id',
+  requirePermission('searches:delete'),
   validateRequest({ params: z.object({ id: objectIdSchema }) }),
   async (req, res, next) => {
     try {

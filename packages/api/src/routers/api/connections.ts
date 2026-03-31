@@ -9,11 +9,11 @@ import {
   getConnections,
   updateConnection,
 } from '@/controllers/connection';
-import { getNonNullUserWithTeam } from '@/middleware/auth';
+import { getNonNullUserWithTeam, requirePermission } from '@/middleware/auth';
 
 const router = express.Router();
 
-router.get('/', async (req, res, next) => {
+router.get('/', requirePermission('connections:view'), async (req, res, next) => {
   try {
     const connections = await getConnections();
 
@@ -25,6 +25,7 @@ router.get('/', async (req, res, next) => {
 
 router.post(
   '/',
+  requirePermission('connections:create'),
   validateRequest({
     body: ConnectionSchema.omit({ id: true }),
   }),
@@ -48,6 +49,7 @@ router.post(
 
 router.put(
   '/:id',
+  requirePermission('connections:edit'),
   validateRequest({
     body: ConnectionSchema,
   }),
@@ -105,7 +107,7 @@ router.put(
   },
 );
 
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', requirePermission('connections:delete'), async (req, res, next) => {
   try {
     const { teamId } = getNonNullUserWithTeam(req);
 

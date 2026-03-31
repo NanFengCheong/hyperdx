@@ -10,6 +10,7 @@ import mongoose from 'mongoose';
 import { z } from 'zod';
 import { validateRequest } from 'zod-express-middleware';
 
+import { requirePermission } from '@/middleware/auth';
 import { AlertState } from '@/models/alert';
 import Webhook, { WebhookService } from '@/models/webhook';
 import {
@@ -21,6 +22,7 @@ const router = express.Router();
 
 router.get(
   '/',
+  requirePermission('webhooks:view'),
   validateRequest({
     query: z.object({
       service: z.union([
@@ -68,6 +70,7 @@ const httpHeaderValueValidator = z
 
 router.post(
   '/',
+  requirePermission('webhooks:create'),
   validateRequest({
     body: z.object({
       body: z.string().optional(),
@@ -120,6 +123,7 @@ router.post(
 
 router.put(
   '/:id',
+  requirePermission('webhooks:edit'),
   validateRequest({
     params: z.object({
       id: z.string().refine(val => {
@@ -208,6 +212,7 @@ router.put(
 
 router.delete(
   '/:id',
+  requirePermission('webhooks:delete'),
   validateRequest({
     params: z.object({
       id: z.string().refine(val => {
@@ -231,6 +236,7 @@ router.delete(
 
 router.post(
   '/test',
+  requirePermission('webhooks:create'),
   validateRequest({
     body: z.object({
       body: z.string().optional(),
