@@ -7,6 +7,7 @@ import * as config from '@/config';
 import { LOCAL_APP_TEAM } from '@/controllers/team';
 import { connectDB, mongooseConnection } from '@/models';
 import opampApp from '@/opamp/app';
+import { seedSystemRoles, ensureDefaultSuperAdmin } from '@/scripts/migrateGroupsToRoles';
 import { setupTeamDefaults } from '@/setupDefaults';
 import logger from '@/utils/logger';
 
@@ -86,6 +87,10 @@ export default class Server {
     }
 
     await connectDB();
+
+    // Seed system roles and ensure default super admin
+    await seedSystemRoles();
+    await ensureDefaultSuperAdmin();
 
     // Initialize default connections and sources for local app mode
     if (config.IS_LOCAL_APP_MODE) {

@@ -98,4 +98,31 @@ async function migrateGroupsToRoles() {
   console.log('Migration complete');
 }
 
-export { migrateGroupsToRoles, seedSystemRoles };
+/**
+ * Ensure the default super admin exists based on DEFAULT_SUPER_ADMIN_EMAIL env var.
+ * Idempotent — only promotes if user exists and isn't already super admin.
+ */
+async function ensureDefaultSuperAdmin() {
+  const email = process.env.DEFAULT_SUPER_ADMIN_EMAIL;
+  if (!email) return;
+
+  const User = mongoose.model('User');
+  const user = await User.findOne({ email: email.toLowerCase() });
+  if (!user) {
+    console.log(`DEFAULT_SUPER_ADMIN_EMAIL: user "${email}" not found, skipping`);
+    return;
+  }
+
+  if ((user as any).isSuperAdmin) {
+    console.log(`DEFAULT_SUPER_ADMIN_EMAIL: "${email}" is already super admin`);
+    return;
+  }
+
+  await User.updateOne(
+    { _id: (user as any)._id },
+    { $set: { isSuperAdmin: true } },
+  );
+  console.log(`DEFAULT_SUPER_ADMIN_EMAIL: promoted "${email}" to super admin`);
+}
+
+export { migrateGroupsToRoles, seedSystemRoles, ensureDefaultSuperAdmin };
