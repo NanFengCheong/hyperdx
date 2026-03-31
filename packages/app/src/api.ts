@@ -395,7 +395,7 @@ const api = {
   useTeamGroups() {
     return useQuery({
       queryKey: [`team/groups`],
-      queryFn: () => hdxServer(`team/groups`).json(),
+      queryFn: () => hdxServer(`team/groups`).json<{ data: any[] }>(),
     });
   },
   useCreateGroup() {
