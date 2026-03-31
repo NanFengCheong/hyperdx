@@ -7,8 +7,13 @@ import type {
   UpdateClickHouseSettingsApiResponse,
 } from '@hyperdx/common-utils/dist/types';
 import { TeamClickHouseSettingsSchema } from '@hyperdx/common-utils/dist/types';
+import {
+  ALL_PERMISSIONS,
+  resolvePermissions,
+} from '@hyperdx/common-utils/dist/permissions';
 import crypto from 'crypto';
 import express from 'express';
+import mongoose from 'mongoose';
 import pick from 'lodash/pick';
 import { z } from 'zod';
 import { processRequest, validateRequest } from 'zod-express-middleware';
@@ -26,13 +31,27 @@ import {
   findUserByEmail,
   findUsersByTeam,
 } from '@/controllers/user';
+import { requirePermission } from '@/middleware/auth';
+import AuditLog from '@/models/auditLog';
 import Group from '@/models/group';
+import Role from '@/models/role';
 import TeamInvite from '@/models/teamInvite';
 import User from '@/models/user';
 import { sendJson } from '@/utils/serialization';
 import { objectIdSchema } from '@/utils/zod';
 
 const router = express.Router();
+
+function getNonNullUserWithTeam(req: express.Request) {
+  const user = req.user as any;
+  const teamId = user?.team;
+  const userId = user?._id;
+  const email = user?.email;
+  if (!teamId || !userId) {
+    throw new Error('User must be authenticated with a team');
+  }
+  return { teamId, userId, email, user };
+}
 
 type TeamApiExpRes = express.Response<TeamApiResponse>;
 router.get('/', async (req, res: TeamApiExpRes, next) => {
@@ -499,5 +518,351 @@ router.patch(
     }
   },
 );
+
+// ─── Role Routes (RBAC) ─────────────────────────────────────────
+
+router.get('/roles', async (req, res, next) => {
+  try {
+    const { teamId } = getNonNullUserWithTeam(req);
+    const roles = await Role.find({
+      $or: [{ teamId }, { teamId: null, isSystem: true }],
+    }).sort({ isSystem: -1, name: 1 });
+    res.json({ data: roles });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post(
+  '/role',
+  requirePermission('roles:create'),
+  async (req, res, next) => {
+    try {
+      const { teamId, userId, email } = getNonNullUserWithTeam(req);
+      const { name, permissions, dataScopes } = req.body;
+
+      if (!name || typeof name !== 'string' || !name.trim()) {
+        return res.status(400).json({ message: 'Name is required' });
+      }
+      if (!Array.isArray(permissions)) {
+        return res
+          .status(400)
+          .json({ message: 'Permissions must be an array' });
+      }
+      for (const p of permissions) {
+        if (
+          typeof p !== 'string' ||
+          (!ALL_PERMISSIONS.includes(p as any) &&
+            !p.endsWith(':*') &&
+            p !== '*:*')
+        ) {
+          return res
+            .status(400)
+            .json({ message: `Invalid permission: ${p}` });
+        }
+      }
+      if (dataScopes && !Array.isArray(dataScopes)) {
+        return res
+          .status(400)
+          .json({ message: 'dataScopes must be an array' });
+      }
+      const scopeRegex = /^[a-zA-Z0-9._-]+:[a-zA-Z0-9._-]+$/;
+      for (const s of dataScopes ?? []) {
+        if (!scopeRegex.test(s)) {
+          return res.status(400).json({
+            message: `Invalid data scope format: ${s}. Expected field:value`,
+          });
+        }
+      }
+
+      const role = await Role.create({
+        name: name.trim(),
+        teamId,
+        permissions,
+        dataScopes: dataScopes ?? [],
+        isSystem: false,
+      });
+
+      await AuditLog.create({
+        teamId,
+        actorId: userId,
+        actorEmail: email,
+        action: 'role:created',
+        targetType: 'role',
+        targetId: role._id,
+        details: { name: role.name, permissions, dataScopes },
+      });
+
+      res.json({ data: role });
+    } catch (e: any) {
+      if (e.code === 11000) {
+        return res
+          .status(400)
+          .json({ message: 'A role with that name already exists' });
+      }
+      next(e);
+    }
+  },
+);
+
+router.patch(
+  '/role/:id',
+  requirePermission('roles:edit'),
+  async (req, res, next) => {
+    try {
+      const { teamId, userId, email } = getNonNullUserWithTeam(req);
+      const role = await Role.findOne({ _id: req.params.id, teamId });
+
+      if (!role) {
+        return res.status(404).json({ message: 'Role not found' });
+      }
+      if (role.isSystem) {
+        return res
+          .status(400)
+          .json({ message: 'System roles cannot be modified' });
+      }
+
+      const { name, permissions, dataScopes } = req.body;
+      const changes: Record<string, unknown> = {};
+
+      if (name !== undefined) {
+        role.name = name.trim();
+        changes.name = name.trim();
+      }
+      if (permissions !== undefined) {
+        role.permissions = permissions;
+        changes.permissions = permissions;
+      }
+      if (dataScopes !== undefined) {
+        const scopeRegex = /^[a-zA-Z0-9._-]+:[a-zA-Z0-9._-]+$/;
+        for (const s of dataScopes) {
+          if (!scopeRegex.test(s)) {
+            return res
+              .status(400)
+              .json({ message: `Invalid data scope: ${s}` });
+          }
+        }
+        role.dataScopes = dataScopes;
+        changes.dataScopes = dataScopes;
+      }
+
+      await role.save();
+
+      await AuditLog.create({
+        teamId,
+        actorId: userId,
+        actorEmail: email,
+        action: 'role:updated',
+        targetType: 'role',
+        targetId: role._id,
+        details: changes,
+      });
+
+      res.json({ data: role });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+router.delete(
+  '/role/:id',
+  requirePermission('roles:delete'),
+  async (req, res, next) => {
+    try {
+      const { teamId, userId, email } = getNonNullUserWithTeam(req);
+      const role = await Role.findOne({ _id: req.params.id, teamId });
+
+      if (!role) {
+        return res.status(404).json({ message: 'Role not found' });
+      }
+      if (role.isSystem) {
+        return res
+          .status(400)
+          .json({ message: 'System roles cannot be deleted' });
+      }
+
+      const UserModel = mongoose.model('User');
+      await UserModel.updateMany(
+        { roleId: role._id },
+        { $unset: { roleId: 1 } },
+      );
+
+      await role.deleteOne();
+
+      await AuditLog.create({
+        teamId,
+        actorId: userId,
+        actorEmail: email,
+        action: 'role:deleted',
+        targetType: 'role',
+        targetId: role._id,
+        details: { name: role.name },
+      });
+
+      res.json({ data: { ok: true } });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// ─── Member Role & Permission Routes ────────────────────────────
+
+router.patch(
+  '/member/:id/role',
+  requirePermission('members:assign-group'),
+  async (req, res, next) => {
+    try {
+      const { teamId, userId, email } = getNonNullUserWithTeam(req);
+      const { roleId } = req.body;
+      const UserModel = mongoose.model('User');
+      const targetUser = await UserModel.findOne({
+        _id: req.params.id,
+        team: teamId,
+      });
+
+      if (!targetUser) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const previousRoleId = (targetUser as any).roleId;
+
+      if (roleId) {
+        const role = await Role.findOne({
+          _id: roleId,
+          $or: [{ teamId }, { teamId: null, isSystem: true }],
+        });
+        if (!role) {
+          return res.status(400).json({ message: 'Role not found' });
+        }
+        (targetUser as any).roleId = role._id;
+      } else {
+        (targetUser as any).roleId = undefined;
+      }
+
+      await targetUser.save();
+
+      await AuditLog.create({
+        teamId,
+        actorId: userId,
+        actorEmail: email,
+        action: 'role:assigned',
+        targetType: 'user',
+        targetId: targetUser._id,
+        details: { from: previousRoleId, to: roleId },
+      });
+
+      res.json({ data: { ok: true } });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+router.patch(
+  '/member/:id/permissions',
+  requirePermission('roles:edit'),
+  async (req, res, next) => {
+    try {
+      const { teamId, userId, email } = getNonNullUserWithTeam(req);
+      const { grants, revokes } = req.body;
+      const UserModel = mongoose.model('User');
+      const targetUser = await UserModel.findOne({
+        _id: req.params.id,
+        team: teamId,
+      });
+
+      if (!targetUser) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      (targetUser as any).permissionOverrides = {
+        grants: grants ?? [],
+        revokes: revokes ?? [],
+      };
+      await targetUser.save();
+
+      await AuditLog.create({
+        teamId,
+        actorId: userId,
+        actorEmail: email,
+        action: 'permission:overrides-updated',
+        targetType: 'user',
+        targetId: targetUser._id,
+        details: { grants, revokes },
+      });
+
+      res.json({ data: { ok: true } });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// ─── Audit Log Routes ───────────────────────────────────────────
+
+router.get(
+  '/audit-log',
+  requirePermission('roles:view'),
+  async (req, res, next) => {
+    try {
+      const { teamId } = getNonNullUserWithTeam(req);
+      const page = parseInt(req.query.page as string) || 0;
+      const limit = Math.min(
+        parseInt(req.query.limit as string) || 50,
+        100,
+      );
+
+      const [data, totalCount] = await Promise.all([
+        AuditLog.find({ teamId })
+          .sort({ createdAt: -1 })
+          .skip(page * limit)
+          .limit(limit),
+        AuditLog.countDocuments({ teamId }),
+      ]);
+
+      res.json({ data, totalCount });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// ─── Current User Permissions ───────────────────────────────────
+
+router.get('/me/permissions', async (req, res, next) => {
+  try {
+    const user = req.user as any;
+    if (!user) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    if (user.roleId && typeof user.roleId !== 'object') {
+      await user.populate('roleId');
+    }
+
+    const role =
+      user.roleId && typeof user.roleId === 'object' ? user.roleId : null;
+    const permissions = user.isSuperAdmin
+      ? ['*:*']
+      : resolvePermissions(
+          role?.permissions ?? [],
+          user.permissionOverrides?.grants ?? [],
+          user.permissionOverrides?.revokes ?? [],
+        );
+
+    res.json({
+      permissions,
+      dataScopes: role?.dataScopes ?? [],
+      isSuperAdmin: user.isSuperAdmin ?? false,
+      role: role
+        ? { _id: role._id, name: role.name, isSystem: role.isSystem }
+        : null,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
 
 export default router;
