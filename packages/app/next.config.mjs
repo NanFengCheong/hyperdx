@@ -54,6 +54,20 @@ const nextConfig = {
     }
     return config;
   },
+  async rewrites() {
+    // Proxy browser OTLP requests to the OTel collector so the frontend
+    // can send self-telemetry without a separate ingress for the collector.
+    const collectorUrl =
+      process.env.OTEL_EXPORTER_OTLP_ENDPOINT ||
+      process.env.NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT ||
+      'http://localhost:4318';
+    return [
+      {
+        source: '/v1/:path*',
+        destination: `${collectorUrl}/v1/:path*`,
+      },
+    ];
+  },
   async headers() {
     return [
       {
