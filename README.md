@@ -104,6 +104,40 @@ include:
 Once HyperDX is running, you can point your OpenTelemetry SDK to the
 OpenTelemetry collector spun up at `http://localhost:4318`.
 
+## Custom Groups (RBAC)
+
+HyperDX supports role-based access control through **Custom Groups**. Team
+admins can create groups with specific permissions and data visibility
+restrictions.
+
+### Features
+
+- **Account Access**: Groups can be `Read-only` (view only) or `Read and Write`
+  (full access to dashboards, alerts, saved searches, etc.)
+- **Data Scope**: Restrict group members to only see events matching a filter
+  (e.g., `service:staging` limits visibility to staging service data)
+- **Group Assignment**: Assign team members to groups via the Team Settings page
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/team/groups` | List all groups |
+| `POST` | `/team/group` | Create a group |
+| `PATCH` | `/team/group/:id` | Update a group |
+| `DELETE` | `/team/group/:id` | Delete a group (unassigns members) |
+| `PATCH` | `/team/member/:id/group` | Assign/unassign a user to a group |
+
+### Data Scope Format
+
+Data scope uses `field:value` syntax (e.g., `service:staging`,
+`level:error service:api`). Multiple terms are space-separated and combined
+with AND logic.
+
+Supported fields: `service`, `service.name`, `level`, `severity`, `trace_id`,
+`span_id`, `span.name`, `span_name`. Unknown fields map to
+`ResourceAttributes['field']`.
+
 ## Contributing
 
 We welcome all contributions! There's many ways to contribute to the project,

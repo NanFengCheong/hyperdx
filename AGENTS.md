@@ -119,6 +119,59 @@ make dev-e2e FILE=navigation REPORT=1           # Open HTML report after run
 make dev-e2e-clean                               # Remove test artifacts
 ```
 
+## Custom Groups (RBAC)
+
+HyperDX supports group-based access control (RBAC) via Custom Groups. Each
+group has an **account access** level and an optional **data scope**.
+
+### Architecture
+
+- **Model**: `packages/api/src/models/group.ts` — Mongoose model with `name`,
+  `teamId`, `accountAccess` (`read-only` | `read-write`), `dataScope`
+- **User assignment**: `groupId` field on User model references a Group
+- **API routes**: CRUD on `/team/groups` and `/team/group/:id`, member
+  assignment via `PATCH /team/member/:id/group`
+- **Frontend**: `GroupsSection` component in TeamSettings, group assignment
+  dropdown in `TeamMembersSection`
+
+### Server-Side Enforcement
+
+1. **Write-access middleware** (`requireWriteAccess` in
+   `packages/api/src/middleware/auth.ts`):
+   - Applied to all resource routers (dashboards, alerts, saved-search, sources,
+     connections, webhooks, team) and external API v2 routes
+   - Allows GET/HEAD/OPTIONS for all users
+   - Blocks POST/PUT/PATCH/DELETE for users in `read-only` groups (403)
+
+2. **Data scope filtering**:
+   - Chart queries: injected into `chartConfig.where` before ClickHouse query
+     execution (`packages/api/src/routers/external-api/v2/charts.ts`)
+   - ClickHouse proxy: SQL WHERE injection via `node-sql-parser` at
+     `packages/api/src/routers/api/clickhouseProxy.ts`
+   - Unparseable queries are blocked (not silently passed through)
+
+3. **Group population**: `groupId` is populated on `req.user` via Mongoose
+   `.populate('groupId')` in both `deserializeUser` (session auth) and
+   `validateUserAccessKey` (API key auth)
+
+### Security
+
+- `dataScope` is whitelist-validated: only `field:value` alphanumeric patterns
+  accepted (prevents SQL injection)
+- Known OTEL fields (`service`, `level`, `span.name`, etc.) map to ClickHouse
+  columns; unknown fields map to `ResourceAttributes['field']`
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `packages/api/src/models/group.ts` | Group Mongoose model |
+| `packages/api/src/middleware/auth.ts` | `requireWriteAccess`, `getUserDataScope` |
+| `packages/api/src/routers/api/team.ts` | Group CRUD routes |
+| `packages/api/src/routers/api/clickhouseProxy.ts` | SQL WHERE injection |
+| `packages/app/src/components/TeamSettings/GroupsSection.tsx` | Groups UI |
+| `packages/common-utils/src/types.ts` | Group Zod schemas |
+
 ## Important Context
 
 - **Authentication**: Passport.js with team-based access control
