@@ -302,13 +302,19 @@ const api = {
     });
   },
   useAuthConfig() {
-    return useQuery<{ isTeamExisting: boolean; oidcEnabled: boolean } | undefined, Error>({
+    return useQuery<
+      { isTeamExisting: boolean; oidcEnabled: boolean } | undefined,
+      Error
+    >({
       queryKey: ['auth/config'],
       queryFn: () => {
         if (IS_LOCAL_MODE) {
           return undefined;
         }
-        return hdxServer('auth/config').json<{ isTeamExisting: boolean; oidcEnabled: boolean }>();
+        return hdxServer('auth/config').json<{
+          isTeamExisting: boolean;
+          oidcEnabled: boolean;
+        }>();
       },
     });
   },
@@ -384,6 +390,68 @@ const api = {
       queryFn: IS_LOCAL_MODE
         ? async () => ({ data: getLocalDashboardTags() })
         : () => hdxServer(`team/tags`).json<TeamTagsApiResponse>(),
+    });
+  },
+  useTeamGroups() {
+    return useQuery({
+      queryKey: [`team/groups`],
+      queryFn: () => hdxServer(`team/groups`).json(),
+    });
+  },
+  useCreateGroup() {
+    return useMutation<
+      any,
+      Error | HTTPError,
+      {
+        name: string;
+        accountAccess: 'read-only' | 'read-write';
+        dataScope?: string;
+      }
+    >({
+      mutationFn: async body =>
+        hdxServer(`team/group`, {
+          method: 'POST',
+          json: body,
+        }).json(),
+    });
+  },
+  useUpdateGroup() {
+    return useMutation<
+      any,
+      Error | HTTPError,
+      {
+        id: string;
+        name?: string;
+        accountAccess?: 'read-only' | 'read-write';
+        dataScope?: string;
+      }
+    >({
+      mutationFn: async ({ id, ...body }) =>
+        hdxServer(`team/group/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          json: body,
+        }).json(),
+    });
+  },
+  useDeleteGroup() {
+    return useMutation<any, Error | HTTPError, { id: string }>({
+      mutationFn: async ({ id }) =>
+        hdxServer(`team/group/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+        }).json(),
+    });
+  },
+  useAssignMemberGroup() {
+    return useMutation<
+      any,
+      Error | HTTPError,
+      { userId: string; groupId: string | null }
+    >({
+      mutationFn: async ({ userId, groupId }) =>
+        hdxServer(`team/member/${encodeURIComponent(userId)}/group`, {
+          method: 'PATCH',
+          json: { groupId },
+        }).json(),
     });
   },
   useSaveWebhook() {

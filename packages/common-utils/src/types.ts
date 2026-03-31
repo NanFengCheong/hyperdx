@@ -1237,6 +1237,7 @@ export const TeamMemberSchema = z.object({
   hasPasswordAuth: z.boolean(),
   isCurrentUser: z.boolean(),
   groupName: z.string().optional(),
+  groupId: z.string().optional(),
 });
 
 export type TeamMember = z.infer<typeof TeamMemberSchema>;
@@ -1248,6 +1249,24 @@ export const TeamMembersApiResponseSchema = z.object({
 export type TeamMembersApiResponse = z.infer<
   typeof TeamMembersApiResponseSchema
 >;
+
+export const GroupSchema = z.object({
+  _id: z.string(),
+  name: z.string(),
+  teamId: z.string(),
+  accountAccess: z.enum(['read-only', 'read-write']),
+  dataScope: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type Group = z.infer<typeof GroupSchema>;
+
+export const GroupsApiResponseSchema = z.object({
+  data: z.array(GroupSchema),
+});
+
+export type GroupsApiResponse = z.infer<typeof GroupsApiResponseSchema>;
 
 export const TeamInvitationSchema = z.object({
   _id: z.string(),

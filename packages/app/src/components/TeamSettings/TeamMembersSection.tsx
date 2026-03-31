@@ -9,6 +9,7 @@ import {
   Divider,
   Group,
   Modal,
+  Select,
   Stack,
   Table,
   Text,
@@ -55,6 +56,17 @@ export default function TeamMembersSection() {
     email: null,
   });
   const [teamInviteModalShow, setTeamInviteModalShow] = useState(false);
+
+  const { data: groups } = api.useTeamGroups();
+  const assignGroup = api.useAssignMemberGroup();
+
+  const groupOptions = [
+    { value: '', label: 'No group' },
+    ...(groups?.data ?? []).map((g: { _id: string; name: string }) => ({
+      value: g._id,
+      label: g.name,
+    })),
+  ];
 
   const saveTeamInvitation = api.useSaveTeamInvitation();
   const deleteTeamMember = api.useDeleteTeamMember();
@@ -253,16 +265,53 @@ export default function TeamMembersSection() {
                       </Group>
                     </Table.Td>
                     <Table.Td>
-                      {member.groupName && (
-                        <Badge
-                          variant="light"
-                          color="green"
-                          fw="normal"
-                          tt="none"
-                        >
-                          {member.groupName}
-                        </Badge>
-                      )}
+                      <Select
+                        size="xs"
+                        data={groupOptions}
+                        value={member.groupId || ''}
+                        onChange={value => {
+                          assignGroup.mutate(
+                            { userId: member._id, groupId: value || null },
+                            {
+                              onSuccess: () => {
+                                refetchMembers();
+                                notifications.show({
+                                  color: 'green',
+                                  message: 'Group updated',
+                                });
+                              },
+                              onError: e => {
+                                if (e instanceof HTTPError) {
+                                  e.response
+                                    .json()
+                                    .then(res => {
+                                      notifications.show({
+                                        color: 'red',
+                                        message: res.message,
+                                        autoClose: 5000,
+                                      });
+                                    })
+                                    .catch(() => {
+                                      notifications.show({
+                                        color: 'red',
+                                        message: `Something went wrong. Please contact ${brandName} team.`,
+                                        autoClose: 5000,
+                                      });
+                                    });
+                                } else {
+                                  notifications.show({
+                                    color: 'red',
+                                    message: `Something went wrong. Please contact ${brandName} team.`,
+                                    autoClose: 5000,
+                                  });
+                                }
+                              },
+                            },
+                          );
+                        }}
+                        placeholder="Assign group"
+                        style={{ width: 160 }}
+                      />
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
                       {!member.isCurrentUser && hasAdminAccess && (

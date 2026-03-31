@@ -12,6 +12,7 @@ export interface IUser {
   email: string;
   name: string;
   team: ObjectId;
+  groupId?: ObjectId;
   oidcSubject?: string;
   oidcProvider?: string;
 }
@@ -26,6 +27,10 @@ const UserSchema = new Schema(
       required: true,
     },
     team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
+    groupId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Group',
+    },
     accessKey: {
       type: String,
       default: function genUUID() {

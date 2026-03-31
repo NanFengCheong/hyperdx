@@ -19,6 +19,7 @@ import { IconPencil } from '@tabler/icons-react';
 import { PageHeader } from './components/PageHeader';
 import ApiKeysSection from './components/TeamSettings/ApiKeysSection';
 import ConnectionsSection from './components/TeamSettings/ConnectionsSection';
+import GroupsSection from './components/TeamSettings/GroupsSection';
 import IntegrationsSection from './components/TeamSettings/IntegrationsSection';
 import SecurityPoliciesSection from './components/TeamSettings/SecurityPoliciesSection';
 import SourcesSection from './components/TeamSettings/SourcesSection';
@@ -110,6 +111,10 @@ export default function TeamPage() {
         {
           id: 'team-members',
           content: <TeamMembersSection />,
+        },
+        {
+          id: 'groups',
+          content: <GroupsSection />,
         },
       ],
     },

@@ -26,7 +26,9 @@ import {
   findUserByEmail,
   findUsersByTeam,
 } from '@/controllers/user';
+import Group from '@/models/group';
 import TeamInvite from '@/models/teamInvite';
+import User from '@/models/user';
 import { sendJson } from '@/utils/serialization';
 import { objectIdSchema } from '@/utils/zod';
 
@@ -249,18 +251,30 @@ router.get('/members', async (req, res: TeamMembersExpRes, next) => {
     if (userId == null) {
       throw new Error(`User has no id`);
     }
-    const teamUsers = await findUsersByTeam(teamId);
+    const [teamUsers, groups] = await Promise.all([
+      findUsersByTeam(teamId),
+      Group.find({ teamId }),
+    ]);
+    const groupMap = new Map(groups.map(g => [g._id.toString(), g.name]));
     res.json({
-      data: teamUsers.map(user => ({
-        ...pick(user.toJSON({ virtuals: true }), [
-          '_id',
-          'email',
-          'name',
-          'hasPasswordAuth',
-          'authMethod',
-        ]),
-        isCurrentUser: user._id.equals(userId),
-      })),
+      data: teamUsers.map(user => {
+        const userJson = user.toJSON({ virtuals: true });
+        const groupId = (userJson as any).groupId?.toString();
+        return {
+          ...pick(userJson, [
+            '_id',
+            'email',
+            'name',
+            'hasPasswordAuth',
+            'authMethod',
+          ]),
+          isCurrentUser: user._id.equals(userId),
+          ...(groupId && {
+            groupId,
+            groupName: groupMap.get(groupId),
+          }),
+        };
+      }),
     });
   } catch (e) {
     next(e);
@@ -309,5 +323,167 @@ router.get('/tags', async (req, res: TeamTagsExpRes, next) => {
     next(e);
   }
 });
+
+// ─── Group Routes ────────────────────────────────────────────────
+
+router.get('/groups', async (req, res, next) => {
+  try {
+    const teamId = req.user?.team;
+    if (teamId == null) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    const groups = await Group.find({ teamId }).sort({ createdAt: -1 });
+    res.json({
+      data: groups.map(g => g.toJSON()),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post(
+  '/group',
+  validateRequest({
+    body: z.object({
+      name: z.string().min(1).max(100),
+      accountAccess: z.enum(['read-only', 'read-write']).default('read-only'),
+      dataScope: z.string().max(500).default(''),
+    }),
+  }),
+  async (req, res, next) => {
+    try {
+      const teamId = req.user?.team;
+      if (teamId == null) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      const { name, accountAccess, dataScope } = req.body;
+      const group = await new Group({
+        name,
+        teamId,
+        accountAccess,
+        dataScope,
+      }).save();
+      res.status(201).json({ data: group.toJSON() });
+    } catch (e: any) {
+      if (e?.code === 11000) {
+        return res
+          .status(409)
+          .json({ message: 'A group with this name already exists' });
+      }
+      next(e);
+    }
+  },
+);
+
+router.patch(
+  '/group/:id',
+  validateRequest({
+    params: z.object({
+      id: objectIdSchema,
+    }),
+    body: z.object({
+      name: z.string().min(1).max(100).optional(),
+      accountAccess: z.enum(['read-only', 'read-write']).optional(),
+      dataScope: z.string().max(500).optional(),
+    }),
+  }),
+  async (req, res, next) => {
+    try {
+      const teamId = req.user?.team;
+      if (teamId == null) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      const group = await Group.findOneAndUpdate(
+        { _id: req.params.id, teamId },
+        { $set: req.body },
+        { new: true },
+      );
+      if (!group) {
+        return res.status(404).json({ message: 'Group not found' });
+      }
+      res.json({ data: group.toJSON() });
+    } catch (e: any) {
+      if (e?.code === 11000) {
+        return res
+          .status(409)
+          .json({ message: 'A group with this name already exists' });
+      }
+      next(e);
+    }
+  },
+);
+
+router.delete(
+  '/group/:id',
+  validateRequest({
+    params: z.object({
+      id: objectIdSchema,
+    }),
+  }),
+  async (req, res, next) => {
+    try {
+      const teamId = req.user?.team;
+      if (teamId == null) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      const group = await Group.findOneAndDelete({
+        _id: req.params.id,
+        teamId,
+      });
+      if (!group) {
+        return res.status(404).json({ message: 'Group not found' });
+      }
+      // Unassign users from the deleted group
+      await User.updateMany(
+        { team: teamId, groupId: req.params.id },
+        { $unset: { groupId: 1 } },
+      );
+      res.json({ message: 'Group deleted' });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+router.patch(
+  '/member/:id/group',
+  validateRequest({
+    params: z.object({
+      id: objectIdSchema,
+    }),
+    body: z.object({
+      groupId: z.string().nullable(),
+    }),
+  }),
+  async (req, res, next) => {
+    try {
+      const teamId = req.user?.team;
+      if (teamId == null) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      const { groupId } = req.body;
+      // Verify the group belongs to this team (if assigning)
+      if (groupId != null) {
+        const group = await Group.findOne({ _id: groupId, teamId });
+        if (!group) {
+          return res.status(404).json({ message: 'Group not found' });
+        }
+      }
+      const update =
+        groupId != null ? { $set: { groupId } } : { $unset: { groupId: 1 } };
+      const user = await User.findOneAndUpdate(
+        { _id: req.params.id, team: teamId },
+        update,
+        { new: true },
+      );
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      res.json({ data: { _id: user._id, groupId: user.groupId ?? null } });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
 
 export default router;
