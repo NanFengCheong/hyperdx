@@ -190,8 +190,8 @@ const injectDataScope: RequestHandler = (req, res, next) => {
       database: 'TransactSQL',
     });
     const conditionWhere = Array.isArray(condAst)
-      ? condAst[0]?.where
-      : condAst?.where;
+      ? (condAst[0] as any)?.where
+      : (condAst as any)?.where;
 
     if (conditionWhere) {
       if (Array.isArray(ast)) {

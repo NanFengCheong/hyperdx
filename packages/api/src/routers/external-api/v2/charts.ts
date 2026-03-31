@@ -604,9 +604,9 @@ router.post(
 
             // Inject RBAC data scope filter if the user's group has one
             const dataScope = getUserDataScope(req);
-            if (dataScope) {
-              chartConfig.where = chartConfig.where
-                ? `(${chartConfig.where}) (${dataScope})`
+            if (dataScope && 'where' in chartConfig) {
+              (chartConfig as any).where = (chartConfig as any).where
+                ? `(${(chartConfig as any).where}) (${dataScope})`
                 : dataScope;
             }
 
