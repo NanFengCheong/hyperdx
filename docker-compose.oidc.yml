@@ -1,0 +1,10 @@
+services:
+  app:
+    image: msm-clickstack:local-test
+    environment:
+      OIDC_ISSUER: ${OIDC_ISSUER}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      OIDC_CALLBACK_URL: ${OIDC_CALLBACK_URL}
+      OIDC_SCOPE: ${OIDC_SCOPE}
+      OIDC_ALLOWED_DOMAINS: ${OIDC_ALLOWED_DOMAINS}
