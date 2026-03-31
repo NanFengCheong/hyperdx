@@ -268,7 +268,7 @@ export default function TeamMembersSection() {
                       <Select
                         size="xs"
                         data={roleOptions}
-                        value={member.role?._id || ''}
+                        value={member.roleId || ''}
                         onChange={value => {
                           assignRole.mutate(
                             { userId: member._id, roleId: value || null },
