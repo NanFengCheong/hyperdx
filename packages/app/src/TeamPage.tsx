@@ -19,7 +19,8 @@ import { IconPencil } from '@tabler/icons-react';
 import { PageHeader } from './components/PageHeader';
 import ApiKeysSection from './components/TeamSettings/ApiKeysSection';
 import ConnectionsSection from './components/TeamSettings/ConnectionsSection';
-import GroupsSection from './components/TeamSettings/GroupsSection';
+import AuditLogSection from './components/TeamSettings/AuditLogSection';
+import RolesSection from './components/TeamSettings/RolesSection';
 import IntegrationsSection from './components/TeamSettings/IntegrationsSection';
 import SecurityPoliciesSection from './components/TeamSettings/SecurityPoliciesSection';
 import SourcesSection from './components/TeamSettings/SourcesSection';
@@ -113,8 +114,8 @@ export default function TeamPage() {
           content: <TeamMembersSection />,
         },
         {
-          id: 'groups',
-          content: <GroupsSection />,
+          id: 'roles',
+          content: <RolesSection />,
         },
       ],
     },
@@ -147,6 +148,16 @@ export default function TeamPage() {
         {
           id: 'team-integrations-api-keys',
           content: <ApiKeysSection />,
+        },
+      ],
+    },
+    {
+      value: 'audit-log',
+      label: 'Audit Log',
+      sections: [
+        {
+          id: 'team-audit-log',
+          content: <AuditLogSection />,
         },
       ],
     },

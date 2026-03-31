@@ -57,14 +57,14 @@ export default function TeamMembersSection() {
   });
   const [teamInviteModalShow, setTeamInviteModalShow] = useState(false);
 
-  const { data: groups } = api.useTeamGroups();
-  const assignGroup = api.useAssignMemberGroup();
+  const { data: roles } = api.useTeamRoles();
+  const assignRole = api.useAssignMemberRole();
 
-  const groupOptions = [
-    { value: '', label: 'No group' },
-    ...(groups?.data ?? []).map((g: { _id: string; name: string }) => ({
-      value: g._id,
-      label: g.name,
+  const roleOptions = [
+    { value: '', label: 'No role' },
+    ...(roles?.data ?? []).map((r: { _id: string; name: string }) => ({
+      value: r._id,
+      label: r.name,
     })),
   ];
 
@@ -267,17 +267,17 @@ export default function TeamMembersSection() {
                     <Table.Td>
                       <Select
                         size="xs"
-                        data={groupOptions}
-                        value={member.groupId || ''}
+                        data={roleOptions}
+                        value={member.role?._id || ''}
                         onChange={value => {
-                          assignGroup.mutate(
-                            { userId: member._id, groupId: value || null },
+                          assignRole.mutate(
+                            { userId: member._id, roleId: value || null },
                             {
                               onSuccess: () => {
                                 refetchMembers();
                                 notifications.show({
                                   color: 'green',
-                                  message: 'Group updated',
+                                  message: 'Role updated',
                                 });
                               },
                               onError: e => {
@@ -309,7 +309,7 @@ export default function TeamMembersSection() {
                             },
                           );
                         }}
-                        placeholder="Assign group"
+                        placeholder="Assign role"
                         style={{ width: 160 }}
                       />
                     </Table.Td>
