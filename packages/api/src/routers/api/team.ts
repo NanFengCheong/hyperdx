@@ -347,7 +347,14 @@ router.post(
     body: z.object({
       name: z.string().min(1).max(100),
       accountAccess: z.enum(['read-only', 'read-write']).default('read-only'),
-      dataScope: z.string().max(500).default(''),
+      dataScope: z
+        .string()
+        .max(500)
+        .regex(
+          /^([a-zA-Z0-9_.]+:[a-zA-Z0-9_.*-]+(\s+[a-zA-Z0-9_.]+:[a-zA-Z0-9_.*-]+)*)?$/,
+          'Data scope must be in format "field:value" (e.g., "service:staging")',
+        )
+        .default(''),
     }),
   }),
   async (req, res, next) => {
@@ -384,7 +391,14 @@ router.patch(
     body: z.object({
       name: z.string().min(1).max(100).optional(),
       accountAccess: z.enum(['read-only', 'read-write']).optional(),
-      dataScope: z.string().max(500).optional(),
+      dataScope: z
+        .string()
+        .max(500)
+        .regex(
+          /^([a-zA-Z0-9_.]+:[a-zA-Z0-9_.*-]+(\s+[a-zA-Z0-9_.]+:[a-zA-Z0-9_.*-]+)*)?$/,
+          'Data scope must be in format "field:value" (e.g., "service:staging")',
+        )
+        .optional(),
     }),
   }),
   async (req, res, next) => {

@@ -1,11 +1,12 @@
 import express, { RequestHandler, Response } from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
+import * as SQLParser from 'node-sql-parser';
 import { z } from 'zod';
 import { validateRequest } from 'zod-express-middleware';
 
 import { CODE_VERSION } from '@/config';
 import { getConnectionById } from '@/controllers/connection';
-import { getNonNullUserWithTeam } from '@/middleware/auth';
+import { getNonNullUserWithTeam, getUserDataScope } from '@/middleware/auth';
 import { validateRequestHeaders } from '@/middleware/validation';
 import logger from '@/utils/logger';
 import { objectIdSchema } from '@/utils/zod';
@@ -107,6 +108,124 @@ const getConnection: RequestHandler =
     }
   };
 
+// --- Data scope injection ---
+
+const sqlParser = new SQLParser.Parser();
+
+const DATA_SCOPE_COLUMN_MAP: Record<string, string> = {
+  service: 'ServiceName',
+  'service.name': 'ServiceName',
+  severity: 'SeverityText',
+  level: 'SeverityText',
+  trace_id: 'TraceId',
+  span_id: 'SpanId',
+  'span.name': 'SpanName',
+  span_name: 'SpanName',
+};
+
+function dataScopeToSqlCondition(dataScope: string): string {
+  const terms = dataScope.trim().split(/\s+/);
+  const conditions: string[] = [];
+
+  for (const term of terms) {
+    const colonIdx = term.indexOf(':');
+    if (colonIdx === -1) continue;
+    const field = term.substring(0, colonIdx);
+    const value = term.substring(colonIdx + 1);
+    const column =
+      DATA_SCOPE_COLUMN_MAP[field] || `ResourceAttributes['${field}']`;
+    const escapedValue = value.replace(/'/g, "\\'");
+    conditions.push(`${column} = '${escapedValue}'`);
+  }
+
+  return conditions.join(' AND ');
+}
+
+function injectWhereIntoSqlAst(stmt: any, conditionAst: any): void {
+  if (!stmt || stmt.type !== 'select') return;
+
+  if (stmt.where) {
+    stmt.where = {
+      type: 'binary_expr',
+      operator: 'AND',
+      left: stmt.where,
+      right: conditionAst,
+    };
+  } else {
+    stmt.where = conditionAst;
+  }
+
+  // Recurse into subqueries in FROM
+  if (stmt.from) {
+    for (const from of stmt.from) {
+      if (from.expr?.ast) {
+        injectWhereIntoSqlAst(from.expr.ast, conditionAst);
+      }
+    }
+  }
+}
+
+const injectDataScope: RequestHandler = (req, res, next) => {
+  const dataScope = getUserDataScope(req);
+  if (!dataScope) return next();
+
+  const sqlCondition = dataScopeToSqlCondition(dataScope);
+  if (!sqlCondition) return next();
+
+  // Query can come from URL query param or POST body
+  const query =
+    typeof req.query?.query === 'string'
+      ? req.query.query
+      : typeof req.body === 'string'
+        ? req.body
+        : undefined;
+
+  if (!query) return next();
+
+  try {
+    const ast = sqlParser.astify(query, { database: 'TransactSQL' });
+
+    // Parse the condition AST from a dummy SELECT
+    const condAst = sqlParser.astify(`SELECT 1 WHERE ${sqlCondition}`, {
+      database: 'TransactSQL',
+    });
+    const conditionWhere = Array.isArray(condAst)
+      ? condAst[0]?.where
+      : condAst?.where;
+
+    if (conditionWhere) {
+      if (Array.isArray(ast)) {
+        ast.forEach(stmt => injectWhereIntoSqlAst(stmt, conditionWhere));
+      } else {
+        injectWhereIntoSqlAst(ast, conditionWhere);
+      }
+
+      const modifiedSql = sqlParser.sqlify(ast, { database: 'TransactSQL' });
+
+      if (typeof req.query?.query === 'string') {
+        req.query.query = modifiedSql;
+      } else {
+        req.body = modifiedSql;
+      }
+    }
+  } catch (e) {
+    // If SQL cannot be parsed, block the query rather than using a fragile fallback.
+    // This prevents data scope bypass via ClickHouse-specific syntax.
+    logger.warn(
+      { err: e, dataScope },
+      'Failed to parse SQL for data scope injection — blocking query',
+    );
+    return res.status(403).json({
+      message:
+        'Query could not be validated against your data scope restrictions.',
+    });
+  }
+
+  next();
+};
+
+// --- Proxy ---
+
 const proxyMiddleware: RequestHandler =
   // prettier-ignore-next-line
   createProxyMiddleware({
@@ -197,7 +316,19 @@ const proxyMiddleware: RequestHandler =
     // }),
   });
 
-router.get('/*', hasConnectionId, getConnection, proxyMiddleware);
-router.post('/*', hasConnectionId, getConnection, proxyMiddleware);
+router.get(
+  '/*',
+  hasConnectionId,
+  getConnection,
+  injectDataScope,
+  proxyMiddleware,
+);
+router.post(
+  '/*',
+  hasConnectionId,
+  getConnection,
+  injectDataScope,
+  proxyMiddleware,
+);
 
 export default router;
