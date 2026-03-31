@@ -54,22 +54,6 @@ const nextConfig = {
     }
     return config;
   },
-  async rewrites() {
-    // Proxy browser OTLP requests to the OTel collector so the frontend
-    // can send self-telemetry without a separate ingress for the collector.
-    // HDX_OTEL_PROXY_DEST overrides the default (ClickStack OpAMP collector
-    // may not listen on OTLP ports — use the deployment collector instead).
-    const collectorUrl =
-      process.env.HDX_OTEL_PROXY_DEST ||
-      process.env.OTEL_EXPORTER_OTLP_ENDPOINT ||
-      'http://localhost:4318';
-    return [
-      {
-        source: '/v1/:path*',
-        destination: `${collectorUrl}/v1/:path*`,
-      },
-    ];
-  },
   async headers() {
     return [
       {
