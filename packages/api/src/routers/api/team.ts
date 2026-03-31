@@ -271,7 +271,7 @@ router.get('/members', async (req, res: TeamMembersExpRes, next) => {
       throw new Error(`User has no id`);
     }
     const [teamUsers, groups] = await Promise.all([
-      findUsersByTeam(teamId),
+      findUsersByTeam(teamId).populate('roleId'),
       Group.find({ teamId }),
     ]);
     const groupMap = new Map(groups.map(g => [g._id.toString(), g.name]));
@@ -279,6 +279,11 @@ router.get('/members', async (req, res: TeamMembersExpRes, next) => {
       data: teamUsers.map(user => {
         const userJson = user.toJSON({ virtuals: true });
         const groupId = (userJson as any).groupId?.toString();
+        const role = (userJson as any).roleId;
+        const roleId =
+          role && typeof role === 'object' ? role._id?.toString() : role?.toString();
+        const roleName =
+          role && typeof role === 'object' ? role.name : undefined;
         return {
           ...pick(userJson, [
             '_id',
@@ -288,6 +293,8 @@ router.get('/members', async (req, res: TeamMembersExpRes, next) => {
             'authMethod',
           ]),
           isCurrentUser: user._id.equals(userId),
+          isSuperAdmin: !!(userJson as any).isSuperAdmin,
+          ...(roleId && { roleId, roleName }),
           ...(groupId && {
             groupId,
             groupName: groupMap.get(groupId),
