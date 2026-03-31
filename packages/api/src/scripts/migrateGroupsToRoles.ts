@@ -86,6 +86,7 @@ async function migrateGroupsToRoles() {
   const usersWithoutRole = await User.find({
     roleId: { $exists: false },
     groupId: { $exists: false },
+    isSuperAdmin: { $ne: true },
   });
   for (const user of usersWithoutRole) {
     await User.updateOne(

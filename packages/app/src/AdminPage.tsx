@@ -1,14 +1,34 @@
+import { useCallback, useState } from 'react';
 import Head from 'next/head';
 import {
+  ActionIcon,
+  Badge,
   Center,
+  Collapse,
   Container,
+  Group,
+  Loader,
+  Pagination,
   Stack,
+  Switch,
+  Table,
   Tabs,
   Text,
   Title,
 } from '@mantine/core';
-import { IconShieldLock } from '@tabler/icons-react';
+import {
+  IconChevronDown,
+  IconChevronRight,
+  IconShieldLock,
+} from '@tabler/icons-react';
+import { useQueryClient } from '@tanstack/react-query';
 
+import {
+  useAdminAuditLog,
+  useAdminTeamMembers,
+  useAdminTeams,
+  useToggleSuperAdmin,
+} from './api';
 import { useIsSuperAdmin } from './hooks/usePermission';
 import { withAppNav } from './layout';
 import { useBrandDisplayName } from './theme/ThemeProvider';
@@ -28,6 +48,318 @@ function AccessDenied() {
   );
 }
 
+function formatDate(dateStr: string) {
+  try {
+    return new Date(dateStr).toLocaleString();
+  } catch {
+    return dateStr;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Team Members sub-table
+// ---------------------------------------------------------------------------
+function TeamMembersTable({ teamId }: { teamId: string }) {
+  const { data, isLoading } = useAdminTeamMembers(teamId);
+  const toggleSuperAdmin = useToggleSuperAdmin();
+  const queryClient = useQueryClient();
+  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+
+  const handleToggle = useCallback(
+    (userId: string, currentValue: boolean) => {
+      const action = currentValue ? 'revoke' : 'grant';
+      if (
+        !window.confirm(
+          `Are you sure you want to ${action} super admin for this user?`,
+        )
+      ) {
+        return;
+      }
+      setPendingUserId(userId);
+      toggleSuperAdmin.mutate(
+        { userId, isSuperAdmin: !currentValue },
+        {
+          onSettled: () => {
+            setPendingUserId(null);
+            queryClient.invalidateQueries({
+              queryKey: ['admin', 'team-members', teamId],
+            });
+          },
+        },
+      );
+    },
+    [toggleSuperAdmin, queryClient, teamId],
+  );
+
+  if (isLoading) {
+    return (
+      <Center py="md">
+        <Loader size="sm" />
+      </Center>
+    );
+  }
+
+  const members = data?.data ?? [];
+
+  if (members.length === 0) {
+    return (
+      <Text c="dimmed" size="sm" py="xs" pl="xl">
+        No members found.
+      </Text>
+    );
+  }
+
+  return (
+    <Table
+      highlightOnHover
+      withTableBorder={false}
+      withColumnBorders={false}
+      ml="xl"
+      mb="sm"
+    >
+      <Table.Thead>
+        <Table.Tr>
+          <Table.Th>Email</Table.Th>
+          <Table.Th>Name</Table.Th>
+          <Table.Th>Role</Table.Th>
+          <Table.Th>Super Admin</Table.Th>
+        </Table.Tr>
+      </Table.Thead>
+      <Table.Tbody>
+        {members.map((m: any) => (
+          <Table.Tr key={m._id ?? m.email}>
+            <Table.Td>
+              <Text size="sm">{m.email}</Text>
+            </Table.Td>
+            <Table.Td>
+              <Text size="sm">{m.name || '—'}</Text>
+            </Table.Td>
+            <Table.Td>
+              {m.roleId?.name ? (
+                <Badge variant="light" size="sm">
+                  {m.roleId.name}
+                </Badge>
+              ) : (
+                <Text c="dimmed" size="sm">
+                  —
+                </Text>
+              )}
+            </Table.Td>
+            <Table.Td>
+              <Switch
+                size="sm"
+                checked={!!m.isSuperAdmin}
+                disabled={pendingUserId === (m._id ?? m.email)}
+                onChange={() =>
+                  handleToggle(m._id ?? m.email, !!m.isSuperAdmin)
+                }
+                label={
+                  m.isSuperAdmin ? (
+                    <Badge color="red" variant="filled" size="xs">
+                      Super Admin
+                    </Badge>
+                  ) : null
+                }
+              />
+            </Table.Td>
+          </Table.Tr>
+        ))}
+      </Table.Tbody>
+    </Table>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Teams Tab
+// ---------------------------------------------------------------------------
+function TeamsPanel() {
+  const { data, isLoading } = useAdminTeams();
+  const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
+
+  if (isLoading) {
+    return (
+      <Center py="xl">
+        <Loader />
+      </Center>
+    );
+  }
+
+  const teams = data?.data ?? [];
+
+  if (teams.length === 0) {
+    return (
+      <Text c="dimmed" py="xl" ta="center">
+        No teams found.
+      </Text>
+    );
+  }
+
+  return (
+    <Table highlightOnHover withTableBorder withColumnBorders={false}>
+      <Table.Thead>
+        <Table.Tr>
+          <Table.Th w={40} />
+          <Table.Th>Team Name</Table.Th>
+          <Table.Th>Created</Table.Th>
+        </Table.Tr>
+      </Table.Thead>
+      <Table.Tbody>
+        {teams.map((team: any) => {
+          const isExpanded = expandedTeamId === team._id;
+          return (
+            <Table.Tr key={team._id} style={{ cursor: 'pointer' }}>
+              <Table.Td colSpan={3} p={0}>
+                <Table withTableBorder={false} withColumnBorders={false}>
+                  <Table.Tbody>
+                    <Table.Tr
+                      onClick={() =>
+                        setExpandedTeamId(isExpanded ? null : team._id)
+                      }
+                    >
+                      <Table.Td w={40}>
+                        <ActionIcon variant="subtle" size="sm">
+                          {isExpanded ? (
+                            <IconChevronDown size={16} />
+                          ) : (
+                            <IconChevronRight size={16} />
+                          )}
+                        </ActionIcon>
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm" fw={500}>
+                          {team.name}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm" c="dimmed">
+                          {team.createdAt ? formatDate(team.createdAt) : '—'}
+                        </Text>
+                      </Table.Td>
+                    </Table.Tr>
+                    <Table.Tr>
+                      <Table.Td colSpan={3} p={0}>
+                        <Collapse in={isExpanded}>
+                          {isExpanded && (
+                            <TeamMembersTable teamId={team._id} />
+                          )}
+                        </Collapse>
+                      </Table.Td>
+                    </Table.Tr>
+                  </Table.Tbody>
+                </Table>
+              </Table.Td>
+            </Table.Tr>
+          );
+        })}
+      </Table.Tbody>
+    </Table>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Audit Log action badge color mapping
+// ---------------------------------------------------------------------------
+function actionColor(action: string): string {
+  if (action.startsWith('create') || action.startsWith('add')) return 'green';
+  if (action.startsWith('delete') || action.startsWith('remove')) return 'red';
+  if (action.startsWith('update') || action.startsWith('edit')) return 'blue';
+  if (action.includes('super') || action.includes('admin')) return 'orange';
+  return 'gray';
+}
+
+// ---------------------------------------------------------------------------
+// Audit Log Tab
+// ---------------------------------------------------------------------------
+const AUDIT_PAGE_SIZE = 50;
+
+function AuditLogPanel() {
+  const [page, setPage] = useState(0);
+  const { data, isLoading } = useAdminAuditLog(page, AUDIT_PAGE_SIZE);
+
+  const logs = data?.data ?? [];
+  const totalCount = data?.totalCount ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / AUDIT_PAGE_SIZE));
+
+  if (isLoading) {
+    return (
+      <Center py="xl">
+        <Loader />
+      </Center>
+    );
+  }
+
+  if (logs.length === 0) {
+    return (
+      <Text c="dimmed" py="xl" ta="center">
+        No audit log entries found.
+      </Text>
+    );
+  }
+
+  return (
+    <Stack gap="md">
+      <Table highlightOnHover withTableBorder withColumnBorders={false}>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>Timestamp</Table.Th>
+            <Table.Th>Actor</Table.Th>
+            <Table.Th>Action</Table.Th>
+            <Table.Th>Target</Table.Th>
+            <Table.Th>Details</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {logs.map((log: any, idx: number) => (
+            <Table.Tr key={log._id ?? idx}>
+              <Table.Td>
+                <Text size="sm" c="dimmed">
+                  {log.createdAt ? formatDate(log.createdAt) : '—'}
+                </Text>
+              </Table.Td>
+              <Table.Td>
+                <Text size="sm">{log.actorEmail || log.actorId || '—'}</Text>
+              </Table.Td>
+              <Table.Td>
+                <Badge
+                  variant="light"
+                  color={actionColor(log.action ?? '')}
+                  size="sm"
+                >
+                  {log.action}
+                </Badge>
+              </Table.Td>
+              <Table.Td>
+                <Text size="sm">
+                  {[log.targetType, log.targetId].filter(Boolean).join(': ') ||
+                    '—'}
+                </Text>
+              </Table.Td>
+              <Table.Td>
+                <Text size="sm" c="dimmed" lineClamp={2}>
+                  {typeof log.details === 'object'
+                    ? JSON.stringify(log.details)
+                    : log.details || '—'}
+                </Text>
+              </Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+
+      <Group justify="center">
+        <Pagination
+          total={totalPages}
+          value={page + 1}
+          onChange={v => setPage(v - 1)}
+        />
+      </Group>
+    </Stack>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main Page
+// ---------------------------------------------------------------------------
 export default function AdminPage() {
   const brandName = useBrandDisplayName();
   const isSuperAdmin = useIsSuperAdmin();
@@ -53,31 +385,11 @@ export default function AdminPage() {
           </Tabs.List>
 
           <Tabs.Panel value="teams">
-            {/* TODO: Add full admin API hooks (e.g. useAdminTeams) and build
-                out team management UI with create/edit/delete capabilities */}
-            <Stack align="center" gap="sm" py="xl">
-              <IconShieldLock size={40} opacity={0.3} />
-              <Text size="lg" fw={500}>
-                Team Management
-              </Text>
-              <Text c="dimmed" size="sm">
-                Platform Admin &mdash; Coming Soon
-              </Text>
-            </Stack>
+            <TeamsPanel />
           </Tabs.Panel>
 
           <Tabs.Panel value="audit-log">
-            {/* TODO: Add global audit log viewer with filtering by team,
-                user, action type, and date range */}
-            <Stack align="center" gap="sm" py="xl">
-              <IconShieldLock size={40} opacity={0.3} />
-              <Text size="lg" fw={500}>
-                Global Audit Log
-              </Text>
-              <Text c="dimmed" size="sm">
-                Platform Admin &mdash; Coming Soon
-              </Text>
-            </Stack>
+            <AuditLogPanel />
           </Tabs.Panel>
         </Tabs>
       </Container>

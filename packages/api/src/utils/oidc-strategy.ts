@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import * as config from '@/config';
 import User from '@/models/user';
 import Team from '@/models/team';
+import Role from '@/models/role';
 import { promoteIfDefaultSuperAdmin } from '@/scripts/migrateGroupsToRoles';
 
 import logger from './logger';
@@ -95,6 +96,8 @@ export function configureOIDCStrategy(passport: any) {
               return done(new Error('No team exists. Please register the first user locally.'));
             }
 
+            const viewerRole = await Role.findOne({ name: 'Viewer', isSystem: true });
+
             user = new User({
               email: email.toLowerCase(),
               name,
@@ -102,6 +105,7 @@ export function configureOIDCStrategy(passport: any) {
               accessKey: uuidv4(),
               oidcSubject,
               oidcProvider: 'entra-id',
+              roleId: viewerRole?._id,
             });
             await user.save();
             logger.info(

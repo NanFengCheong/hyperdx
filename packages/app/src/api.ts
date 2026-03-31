@@ -714,3 +714,41 @@ const api = {
   },
 };
 export default api;
+
+// ---------------------------------------------------------------------------
+// Platform Admin API hooks
+// ---------------------------------------------------------------------------
+export const useAdminTeams = () =>
+  useQuery<{ data: any[] }>({
+    queryKey: ['admin', 'teams'],
+    queryFn: () => hdxServer('admin/teams').json(),
+  });
+
+export const useAdminTeamMembers = (teamId: string | null) =>
+  useQuery<{ data: any[] }>({
+    queryKey: ['admin', 'team-members', teamId],
+    queryFn: () =>
+      hdxServer(
+        `admin/team/${encodeURIComponent(teamId!)}/members`,
+      ).json(),
+    enabled: !!teamId,
+  });
+
+export const useToggleSuperAdmin = () =>
+  useMutation<any, Error, { userId: string; isSuperAdmin: boolean }>({
+    mutationFn: ({ userId, isSuperAdmin }) =>
+      hdxServer(
+        `admin/user/${encodeURIComponent(userId)}/super-admin`,
+        {
+          method: 'PATCH',
+          json: { isSuperAdmin },
+        },
+      ).json(),
+  });
+
+export const useAdminAuditLog = (page: number, limit: number) =>
+  useQuery<{ data: any[]; totalCount: number }>({
+    queryKey: ['admin', 'audit-log', page, limit],
+    queryFn: () =>
+      hdxServer(`admin/audit-log?page=${page}&limit=${limit}`).json(),
+  });
