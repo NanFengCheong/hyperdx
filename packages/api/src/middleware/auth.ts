@@ -1,4 +1,8 @@
 import { Connection } from '@hyperdx/common-utils/dist/types';
+import {
+  hasPermission,
+  resolvePermissions,
+} from '@hyperdx/common-utils/dist/permissions';
 import { setTraceAttributes } from '@hyperdx/node-opentelemetry';
 import type { NextFunction, Request, Response } from 'express';
 import { serializeError } from 'serialize-error';
@@ -85,15 +89,18 @@ export async function validateUserAccessKey(
 
   req.user = user;
 
-  // After finding the user, populate their group
+  // After finding the user, populate their group and role
   if (user.groupId) {
     await user.populate('groupId');
+  }
+  if (user.roleId) {
+    await user.populate('roleId');
   }
 
   next();
 }
 
-export function isUserAuthenticated(
+export async function isUserAuthenticated(
   req: Request,
   res: Response,
   next: NextFunction,
@@ -118,16 +125,34 @@ export function isUserAuthenticated(
       userEmail: req.user?.email,
     });
 
+    // Populate role for session-authenticated users
+    if (req.user && (req.user as any).roleId) {
+      await (req.user as any).populate('roleId');
+    }
+
     return next();
   }
   res.sendStatus(401);
 }
 
 export function getUserDataScope(req: Request): string {
-  const group = req.user?.groupId;
-  if (group && typeof group === 'object' && 'dataScope' in group) {
-    return (group as any).dataScope || '';
+  const user = req.user as any;
+  if (!user) return '';
+
+  // Super admin sees everything
+  if (user.isSuperAdmin) return '';
+
+  const role = user.roleId;
+  if (role && typeof role === 'object' && Array.isArray(role.dataScopes)) {
+    return role.dataScopes.join(' ');
   }
+
+  // Backwards compatibility: check old group.dataScope
+  const group = user.groupId;
+  if (group && typeof group === 'object' && group.dataScope) {
+    return group.dataScope;
+  }
+
   return '';
 }
 
@@ -168,4 +193,57 @@ export function requireWriteAccess(
     });
   }
   next();
+}
+
+export function getResolvedPermissions(req: Request): string[] {
+  const user = req.user as any;
+  if (!user) return [];
+
+  if (user.isSuperAdmin) return ['*:*'];
+
+  const role = user.roleId;
+  if (!role || typeof role !== 'object') return [];
+
+  return resolvePermissions(
+    role.permissions ?? [],
+    user.permissionOverrides?.grants ?? [],
+    user.permissionOverrides?.revokes ?? [],
+  );
+}
+
+export function requirePermission(permission: string) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const user = req.user as any;
+    if (!user) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    if (user.isSuperAdmin) {
+      return next();
+    }
+
+    const resolved = getResolvedPermissions(req);
+    if (hasPermission(resolved, permission)) {
+      return next();
+    }
+
+    return res.status(403).json({
+      message: `Forbidden: missing permission '${permission}'`,
+    });
+  };
+}
+
+export function requireSuperAdmin(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  const user = req.user as any;
+  if (!user) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+  if (!user.isSuperAdmin) {
+    return res.status(403).json({ message: 'Forbidden: super admin required' });
+  }
+  return next();
 }

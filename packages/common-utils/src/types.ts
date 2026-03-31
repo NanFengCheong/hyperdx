@@ -1237,8 +1237,15 @@ export const TeamMemberSchema = z.object({
   hasPasswordAuth: z.boolean(),
   authMethod: z.string().optional(),
   isCurrentUser: z.boolean(),
-  groupName: z.string().optional(),
-  groupId: z.string().optional(),
+  roleName: z.string().optional(),
+  roleId: z.string().optional(),
+  permissionOverrides: z
+    .object({
+      grants: z.array(z.string()),
+      revokes: z.array(z.string()),
+    })
+    .optional(),
+  isSuperAdmin: z.boolean().optional(),
 });
 
 export type TeamMember = z.infer<typeof TeamMemberSchema>;
@@ -1268,6 +1275,55 @@ export const GroupsApiResponseSchema = z.object({
 });
 
 export type GroupsApiResponse = z.infer<typeof GroupsApiResponseSchema>;
+
+export const RoleSchema = z.object({
+  _id: z.string(),
+  name: z.string(),
+  teamId: z.string().nullable(),
+  permissions: z.array(z.string()),
+  dataScopes: z.array(z.string()),
+  isSystem: z.boolean(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type Role = z.infer<typeof RoleSchema>;
+
+export const RolesApiResponseSchema = z.object({
+  data: z.array(RoleSchema),
+});
+
+export type RolesApiResponse = z.infer<typeof RolesApiResponseSchema>;
+
+export const AuditLogEntrySchema = z.object({
+  _id: z.string(),
+  teamId: z.string(),
+  actorId: z.string(),
+  actorEmail: z.string().optional(),
+  action: z.string(),
+  targetType: z.string(),
+  targetId: z.string(),
+  details: z.record(z.unknown()),
+  createdAt: z.string(),
+});
+
+export type AuditLogEntry = z.infer<typeof AuditLogEntrySchema>;
+
+export const AuditLogApiResponseSchema = z.object({
+  data: z.array(AuditLogEntrySchema),
+  totalCount: z.number(),
+});
+
+export type AuditLogApiResponse = z.infer<typeof AuditLogApiResponseSchema>;
+
+export const UserPermissionsSchema = z.object({
+  permissions: z.array(z.string()),
+  dataScopes: z.array(z.string()),
+  isSuperAdmin: z.boolean(),
+  role: RoleSchema.nullable(),
+});
+
+export type UserPermissions = z.infer<typeof UserPermissionsSchema>;
 
 export const TeamInvitationSchema = z.object({
   _id: z.string(),

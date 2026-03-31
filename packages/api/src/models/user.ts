@@ -13,6 +13,12 @@ export interface IUser {
   name: string;
   team: ObjectId;
   groupId?: ObjectId;
+  roleId?: ObjectId;
+  permissionOverrides?: {
+    grants: string[];
+    revokes: string[];
+  };
+  isSuperAdmin?: boolean;
   oidcSubject?: string;
   oidcProvider?: string;
 }
@@ -30,6 +36,18 @@ const UserSchema = new Schema(
     groupId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Group',
+    },
+    roleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Role',
+    },
+    permissionOverrides: {
+      grants: { type: [String], default: [] },
+      revokes: { type: [String], default: [] },
+    },
+    isSuperAdmin: {
+      type: Boolean,
+      default: false,
     },
     accessKey: {
       type: String,
