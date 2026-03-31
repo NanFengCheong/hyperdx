@@ -1,10 +1,11 @@
 import express from 'express';
-import mongoose from 'mongoose';
 import {
   isUserAuthenticated,
   requireSuperAdmin,
 } from '../../middleware/auth';
 import AuditLog from '../../models/auditLog';
+import User from '../../models/user';
+import Team from '../../models/team';
 
 const router = express.Router();
 
@@ -15,7 +16,6 @@ router.use(requireSuperAdmin);
 // GET /admin/teams — list all teams
 router.get('/teams', async (req, res, next) => {
   try {
-    const Team = mongoose.model('Team');
     const teams = await Team.find().sort({ createdAt: -1 });
     res.json({ data: teams });
   } catch (e) {
@@ -26,7 +26,6 @@ router.get('/teams', async (req, res, next) => {
 // GET /admin/team/:id/members — list members of a specific team
 router.get('/team/:id/members', async (req, res, next) => {
   try {
-    const User = mongoose.model('User');
     const members = await User.find({ team: req.params.id })
       .select('email name roleId isSuperAdmin permissionOverrides')
       .populate('roleId');
@@ -39,7 +38,6 @@ router.get('/team/:id/members', async (req, res, next) => {
 // PATCH /admin/user/:id/super-admin — toggle super admin status
 router.patch('/user/:id/super-admin', async (req, res, next) => {
   try {
-    const User = mongoose.model('User');
     const { isSuperAdmin } = req.body;
     const actor = req.user as any;
 
@@ -53,17 +51,17 @@ router.patch('/user/:id/super-admin', async (req, res, next) => {
       return res.status(400).json({ message: 'Cannot remove your own super admin status' });
     }
 
-    targetUser.isSuperAdmin = isSuperAdmin;
+    (targetUser as any).isSuperAdmin = isSuperAdmin;
     await targetUser.save();
 
     await AuditLog.create({
-      teamId: targetUser.team,
+      teamId: (targetUser as any).team,
       actorId: actor._id,
       actorEmail: actor.email,
       action: isSuperAdmin ? 'superadmin:granted' : 'superadmin:revoked',
       targetType: 'user',
       targetId: targetUser._id,
-      details: { email: targetUser.email },
+      details: { email: (targetUser as any).email },
     });
 
     res.json({ data: { ok: true } });
