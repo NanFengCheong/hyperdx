@@ -10,8 +10,8 @@ export const validatePassword = (password: string) => {
   if (!/\d/.test(password)) {
     return false;
   }
-  // Must include at least one special character
-  if (!/[!@#$%^&*(),.?":{}|<>;\-+=]/.test(password)) {
+  // Must include at least one special character (any non-alphanumeric)
+  if (!/\W/.test(password)) {
     return false;
   }
   return true;
