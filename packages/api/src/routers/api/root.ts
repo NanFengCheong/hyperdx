@@ -82,24 +82,46 @@ router.get('/auth/oidc', (req, res, next) => {
   if (!config.OIDC_ENABLED) {
     return res.status(404).json({ error: 'OIDC not configured' });
   }
+  // Store invite token in session so we can consume it after OIDC callback
+  if (req.query.invite_token) {
+    (req.session as any).inviteToken = req.query.invite_token;
+  }
   passport.authenticate('oidc')(req, res, next);
 });
 
 router.get('/auth/oidc/callback', (req, res, next) => {
+  const inviteToken = (req.session as any)?.inviteToken;
   passport.authenticate('oidc', (err: Error, user: any) => {
     if (err) {
       logger.error({ err }, 'OIDC callback error');
-      return res.redirect(
-        `${config.FRONTEND_URL}/login?err=${encodeURIComponent('authFail')}`,
-      );
+      const redirectPath = inviteToken
+        ? `/join-team?token=${inviteToken}&err=authFail`
+        : `/login?err=${encodeURIComponent('authFail')}`;
+      return res.redirect(`${config.FRONTEND_URL}${redirectPath}`);
     }
     if (!user) {
-      return res.redirect(`${config.FRONTEND_URL}/login?err=authFail`);
+      const redirectPath = inviteToken
+        ? `/join-team?token=${inviteToken}&err=authFail`
+        : `/login?err=authFail`;
+      return res.redirect(`${config.FRONTEND_URL}${redirectPath}`);
     }
-    req.logIn(user, (loginErr) => {
+    req.logIn(user, async (loginErr) => {
       if (loginErr) {
         logger.error({ err: loginErr }, 'OIDC session login error');
         return res.redirect(`${config.FRONTEND_URL}/login?err=authFail`);
+      }
+      // Consume invite token if present
+      if (inviteToken) {
+        try {
+          await TeamInvite.findOneAndRemove({ token: inviteToken });
+          delete (req.session as any).inviteToken;
+          logger.info(
+            { userId: user._id, inviteToken },
+            'Consumed invite token after OIDC login',
+          );
+        } catch (e) {
+          logger.error({ err: e, inviteToken }, 'Failed to consume invite token');
+        }
       }
       return res.redirect(`${config.FRONTEND_URL}/search`);
     });
