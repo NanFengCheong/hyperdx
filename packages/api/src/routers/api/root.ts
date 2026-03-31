@@ -13,6 +13,7 @@ import { createTeam, isTeamExisting } from '@/controllers/team';
 import { handleAuthError, redirectToDashboard } from '@/middleware/auth';
 import TeamInvite from '@/models/teamInvite';
 import User from '@/models/user'; // TODO -> do not import model directly
+import { promoteIfDefaultSuperAdmin } from '@/scripts/migrateGroupsToRoles';
 import { setupTeamDefaults } from '@/setupDefaults';
 import logger from '@/utils/logger';
 import passport from '@/utils/passport';
@@ -169,6 +170,9 @@ router.post(
           user.team = team._id;
           user.name = email;
           await user.save();
+
+          // Promote to super admin if email matches DEFAULT_SUPER_ADMIN_EMAIL
+          await promoteIfDefaultSuperAdmin(user);
 
           // Set up default connections and sources for this new team
           try {

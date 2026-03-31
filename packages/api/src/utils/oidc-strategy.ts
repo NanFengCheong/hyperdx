@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import * as config from '@/config';
 import User from '@/models/user';
 import Team from '@/models/team';
+import { promoteIfDefaultSuperAdmin } from '@/scripts/migrateGroupsToRoles';
 
 import logger from './logger';
 
@@ -108,6 +109,10 @@ export function configureOIDCStrategy(passport: any) {
               'Auto-provisioned new OIDC user',
             );
           }
+
+          // Promote to super admin if email matches DEFAULT_SUPER_ADMIN_EMAIL
+          // (handles race condition where user didn't exist at server startup)
+          await promoteIfDefaultSuperAdmin(user);
 
           return done(null, user);
         } catch (err: any) {

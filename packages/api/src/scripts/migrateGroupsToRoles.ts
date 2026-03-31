@@ -125,4 +125,25 @@ async function ensureDefaultSuperAdmin() {
   console.log(`DEFAULT_SUPER_ADMIN_EMAIL: promoted "${email}" to super admin`);
 }
 
-export { migrateGroupsToRoles, seedSystemRoles, ensureDefaultSuperAdmin };
+/**
+ * Promote a user to super admin if their email matches DEFAULT_SUPER_ADMIN_EMAIL.
+ * Call after user registration or first login to handle the race condition where
+ * the user didn't exist at server startup.
+ * Mutates the user document in-place and persists to DB.
+ */
+async function promoteIfDefaultSuperAdmin(user: any): Promise<void> {
+  const email = process.env.DEFAULT_SUPER_ADMIN_EMAIL;
+  if (!email) return;
+  if (user.isSuperAdmin) return;
+  if (user.email?.toLowerCase() !== email.toLowerCase()) return;
+
+  const User = mongoose.model('User');
+  await User.updateOne(
+    { _id: user._id },
+    { $set: { isSuperAdmin: true } },
+  );
+  user.isSuperAdmin = true;
+  console.log(`DEFAULT_SUPER_ADMIN_EMAIL: promoted "${email}" to super admin (post-auth)`);
+}
+
+export { migrateGroupsToRoles, seedSystemRoles, ensureDefaultSuperAdmin, promoteIfDefaultSuperAdmin };
