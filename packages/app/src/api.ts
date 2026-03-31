@@ -454,6 +454,107 @@ const api = {
         }).json(),
     });
   },
+  useMyPermissions() {
+    return useQuery({
+      queryKey: ['team/me/permissions'],
+      queryFn: () =>
+        hdxServer('team/me/permissions').json<{
+          permissions: string[];
+          dataScopes: string[];
+          isSuperAdmin: boolean;
+          role: { _id: string; name: string; isSystem: boolean } | null;
+        }>(),
+    });
+  },
+  useTeamRoles() {
+    return useQuery({
+      queryKey: ['team/roles'],
+      queryFn: () => hdxServer('team/roles').json<{ data: any[] }>(),
+    });
+  },
+  useCreateRole() {
+    return useMutation<
+      any,
+      Error | HTTPError,
+      {
+        name: string;
+        permissions: string[];
+        dataScopes?: string[];
+      }
+    >({
+      mutationFn: async body =>
+        hdxServer('team/role', { method: 'POST', json: body }).json(),
+    });
+  },
+  useUpdateRole() {
+    return useMutation<
+      any,
+      Error | HTTPError,
+      {
+        id: string;
+        name?: string;
+        permissions?: string[];
+        dataScopes?: string[];
+      }
+    >({
+      mutationFn: async ({ id, ...body }) =>
+        hdxServer(`team/role/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          json: body,
+        }).json(),
+    });
+  },
+  useDeleteRole() {
+    return useMutation<any, Error | HTTPError, { id: string }>({
+      mutationFn: async ({ id }) =>
+        hdxServer(`team/role/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+        }).json(),
+    });
+  },
+  useAssignMemberRole() {
+    return useMutation<
+      any,
+      Error | HTTPError,
+      {
+        userId: string;
+        roleId: string | null;
+      }
+    >({
+      mutationFn: async ({ userId, roleId }) =>
+        hdxServer(`team/member/${encodeURIComponent(userId)}/role`, {
+          method: 'PATCH',
+          json: { roleId },
+        }).json(),
+    });
+  },
+  useUpdateMemberPermissions() {
+    return useMutation<
+      any,
+      Error | HTTPError,
+      {
+        userId: string;
+        grants: string[];
+        revokes: string[];
+      }
+    >({
+      mutationFn: async ({ userId, grants, revokes }) =>
+        hdxServer(`team/member/${encodeURIComponent(userId)}/permissions`, {
+          method: 'PATCH',
+          json: { grants, revokes },
+        }).json(),
+    });
+  },
+  useTeamAuditLog(page = 0, limit = 50) {
+    return useQuery({
+      queryKey: ['team/audit-log', page, limit],
+      queryFn: () =>
+        hdxServer(`team/audit-log?page=${page}&limit=${limit}`).json<{
+          data: any[];
+          totalCount: number;
+        }>(),
+    });
+  },
   useSaveWebhook() {
     return useMutation<
       WebhookCreateApiResponse,

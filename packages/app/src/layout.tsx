@@ -6,6 +6,7 @@ import { IconX } from '@tabler/icons-react';
 import AppNav from '@/components/AppNav';
 import { IS_CLICKHOUSE_BUILD } from '@/config';
 
+import { PermissionProvider } from './contexts/PermissionContext';
 import { HDXSpotlightProvider } from './Spotlights';
 import { useLocalStorage } from './utils';
 
@@ -79,7 +80,9 @@ function PageWrapper({ children }: { children: React.ReactNode }) {
 export const withAppNav = (page: React.ReactNode): React.ReactNode => {
   return (
     <HDXSpotlightProvider>
-      <PageWrapper>{page}</PageWrapper>
+      <PermissionProvider>
+        <PageWrapper>{page}</PageWrapper>
+      </PermissionProvider>
     </HDXSpotlightProvider>
   );
 };
