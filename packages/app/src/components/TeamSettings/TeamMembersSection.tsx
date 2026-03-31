@@ -242,11 +242,14 @@ export default function TeamMembersSection() {
                       </div>
                       <Group mt={4} fz="xs">
                         <div>{member.email}</div>
-                        {member.hasPasswordAuth && (
-                          <div>
-                            <IconLock size={14} /> Password Auth
-                          </div>
-                        )}
+                        <div>
+                          <IconLock size={14} />{' '}
+                          {member.authMethod === 'oidc'
+                            ? 'Microsoft Auth'
+                            : member.authMethod === 'oidc+password'
+                              ? 'Microsoft + Password Auth'
+                              : 'Password Auth'}
+                        </div>
                       </Group>
                     </Table.Td>
                     <Table.Td>

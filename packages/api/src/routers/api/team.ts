@@ -257,6 +257,7 @@ router.get('/members', async (req, res: TeamMembersExpRes, next) => {
           'email',
           'name',
           'hasPasswordAuth',
+          'authMethod',
         ]),
         isCurrentUser: user._id.equals(userId),
       })),
