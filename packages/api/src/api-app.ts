@@ -85,6 +85,7 @@ if (config.USAGE_STATS_ENABLED) {
 app.use('/', routers.rootRouter);
 
 // PRIVATE ROUTES
+app.use('/admin', routers.adminRouter);
 app.use('/ai', isUserAuthenticated, routers.aiRouter);
 app.use(
   '/alerts',

@@ -1,3 +1,4 @@
+import adminRouter from './admin';
 import aiRouter from './ai';
 import alertsRouter from './alerts';
 import dashboardRouter from './dashboards';
@@ -7,6 +8,7 @@ import teamRouter from './team';
 import webhooksRouter from './webhooks';
 
 export default {
+  adminRouter,
   aiRouter,
   alertsRouter,
   dashboardRouter,
