@@ -30,6 +30,7 @@ import {
 } from '@tabler/icons-react';
 
 import { PageHeader } from '@/components/PageHeader';
+import { RequirePermission } from '@/components/RequirePermission';
 import { IS_K8S_DASHBOARD_ENABLED } from '@/config';
 import {
   useCreateDashboard,
@@ -207,51 +208,55 @@ export default function DashboardsListPage() {
                 <IconList size={16} />
               </ActionIcon>
             </ActionIcon.Group>
-            <Button
-              component={Link}
-              href="/dashboards/import"
-              variant="secondary"
-              leftSection={<IconUpload size={16} />}
-              data-testid="import-dashboard-button"
-            >
-              Import
-            </Button>
-            <Menu position="bottom-end" withinPortal>
-              <Menu.Target>
-                <Button
-                  variant="primary"
-                  leftSection={<IconPlus size={16} />}
-                  rightSection={<IconChevronDown size={14} />}
-                  loading={createDashboard.isPending}
-                  data-testid="new-dashboard-button"
-                >
-                  New Dashboard
-                </Button>
-              </Menu.Target>
-              <Menu.Dropdown>
-                <Menu.Item
-                  leftSection={<IconDeviceFloppy size={14} />}
-                  onClick={handleCreate}
-                  data-testid="create-dashboard-button"
-                >
-                  Saved Dashboard
-                  <Text size="xs" c="dimmed">
-                    Persisted for your team
-                  </Text>
-                </Menu.Item>
-                <Menu.Item
-                  component={Link}
-                  href="/dashboards"
-                  leftSection={<IconPlus size={14} />}
-                  data-testid="temp-dashboard-button"
-                >
-                  Temporary Dashboard
-                  <Text size="xs" c="dimmed">
-                    Lives in your browser only
-                  </Text>
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
+            <RequirePermission permission="dashboards:create">
+              <Button
+                component={Link}
+                href="/dashboards/import"
+                variant="secondary"
+                leftSection={<IconUpload size={16} />}
+                data-testid="import-dashboard-button"
+              >
+                Import
+              </Button>
+            </RequirePermission>
+            <RequirePermission permission="dashboards:create">
+              <Menu position="bottom-end" withinPortal>
+                <Menu.Target>
+                  <Button
+                    variant="primary"
+                    leftSection={<IconPlus size={16} />}
+                    rightSection={<IconChevronDown size={14} />}
+                    loading={createDashboard.isPending}
+                    data-testid="new-dashboard-button"
+                  >
+                    New Dashboard
+                  </Button>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Item
+                    leftSection={<IconDeviceFloppy size={14} />}
+                    onClick={handleCreate}
+                    data-testid="create-dashboard-button"
+                  >
+                    Saved Dashboard
+                    <Text size="xs" c="dimmed">
+                      Persisted for your team
+                    </Text>
+                  </Menu.Item>
+                  <Menu.Item
+                    component={Link}
+                    href="/dashboards"
+                    leftSection={<IconPlus size={14} />}
+                    data-testid="temp-dashboard-button"
+                  >
+                    Temporary Dashboard
+                    <Text size="xs" c="dimmed">
+                      Lives in your browser only
+                    </Text>
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            </RequirePermission>
           </Group>
         </Flex>
 
@@ -271,26 +276,28 @@ export default function DashboardsListPage() {
                 ? `No matching dashboards yet.`
                 : 'No dashboards yet.'}
             </Text>
-            <Group>
-              <Button
-                component={Link}
-                href="/dashboards/import"
-                variant="secondary"
-                leftSection={<IconUpload size={16} />}
-                data-testid="empty-import-dashboard-button"
-              >
-                Import
-              </Button>
-              <Button
-                variant="primary"
-                leftSection={<IconPlus size={16} />}
-                onClick={handleCreate}
-                loading={createDashboard.isPending}
-                data-testid="empty-create-dashboard-button"
-              >
-                New Dashboard
-              </Button>
-            </Group>
+            <RequirePermission permission="dashboards:create">
+              <Group>
+                <Button
+                  component={Link}
+                  href="/dashboards/import"
+                  variant="secondary"
+                  leftSection={<IconUpload size={16} />}
+                  data-testid="empty-import-dashboard-button"
+                >
+                  Import
+                </Button>
+                <Button
+                  variant="primary"
+                  leftSection={<IconPlus size={16} />}
+                  onClick={handleCreate}
+                  loading={createDashboard.isPending}
+                  data-testid="empty-create-dashboard-button"
+                >
+                  New Dashboard
+                </Button>
+              </Group>
+            </RequirePermission>
           </Stack>
         ) : viewMode === 'list' ? (
           <Table highlightOnHover>

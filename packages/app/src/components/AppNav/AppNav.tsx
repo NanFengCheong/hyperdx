@@ -37,12 +37,15 @@ import {
   IconLayoutGrid,
   IconSearch,
   IconSettings,
+  IconShieldLock,
   IconSitemap,
   IconTable,
 } from '@tabler/icons-react';
 
 import api from '@/api';
 import { IS_LOCAL_MODE } from '@/config';
+import { usePermissions } from '@/contexts/PermissionContext';
+import { useIsSuperAdmin } from '@/hooks/usePermission';
 import InstallInstructionModal from '@/InstallInstructionsModal';
 import OnboardingChecklist from '@/OnboardingChecklist';
 import { useSavedSearches, useUpdateSavedSearch } from '@/savedSearch';
@@ -78,6 +81,7 @@ type NavLinkConfig = {
   icon: React.ReactNode;
   isBeta?: boolean;
   cloudOnly?: boolean; // Only show when not in local mode
+  permission?: string; // Permission required to see this nav item
 };
 
 const NAV_LINKS: NavLinkConfig[] = [
@@ -86,6 +90,7 @@ const NAV_LINKS: NavLinkConfig[] = [
     label: 'Chart Explorer',
     href: '/chart',
     icon: <IconChartDots size={16} />,
+    permission: 'explorer:view',
   },
   {
     id: 'alerts',
@@ -93,12 +98,14 @@ const NAV_LINKS: NavLinkConfig[] = [
     href: '/alerts',
     icon: <IconBell size={16} />,
     cloudOnly: true,
+    permission: 'alerts:view',
   },
   {
     id: 'sessions',
     label: 'Client Sessions',
     href: '/sessions',
     icon: <IconDeviceLaptop size={16} />,
+    permission: 'sessions:view',
   },
   {
     id: 'service-map',
@@ -106,6 +113,7 @@ const NAV_LINKS: NavLinkConfig[] = [
     href: '/service-map',
     icon: <IconSitemap size={16} />,
     isBeta: true,
+    permission: 'servicemap:view',
   },
 ];
 
@@ -340,6 +348,8 @@ function useSearchableList<T extends AppNavLinkItem>({
 export default function AppNav({ fixed = false }: { fixed?: boolean }) {
   const wordmark = useWordmark();
   const logomark = useLogomark({ size: 22 });
+  const { can } = usePermissions();
+  const isSuperAdmin = useIsSuperAdmin();
 
   useEffect(() => {
     let redirectUrl;
@@ -589,6 +599,7 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
         >
           <div style={{ width: navWidth }} className={styles.navLinks}>
             {/* Search */}
+            {can('explorer:view') && (
             <AppNavLink
               label="Search"
               icon={<IconTable size={16} />}
@@ -596,8 +607,9 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
               isExpanded={isSearchExpanded}
               onToggle={() => setIsSearchExpanded(!isSearchExpanded)}
             />
+            )}
 
-            {!isCollapsed && (
+            {!isCollapsed && can('explorer:view') && (
               <Collapse in={isSearchExpanded}>
                 <div className={styles.subMenu}>
                   {isLogViewsLoading ? (
@@ -642,25 +654,29 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
               </Collapse>
             )}
             {/* Simple nav links from config */}
-            {NAV_LINKS.filter(link => !link.cloudOnly || !IS_LOCAL_MODE).map(
-              link => (
-                <AppNavLink
-                  key={link.id}
-                  label={link.label}
-                  href={link.href}
-                  icon={link.icon}
-                  isBeta={link.isBeta}
-                />
-              ),
-            )}
+            {NAV_LINKS.filter(
+              link =>
+                (!link.cloudOnly || !IS_LOCAL_MODE) &&
+                (!link.permission || can(link.permission)),
+            ).map(link => (
+              <AppNavLink
+                key={link.id}
+                label={link.label}
+                href={link.href}
+                icon={link.icon}
+                isBeta={link.isBeta}
+              />
+            ))}
 
             {/* Dashboards */}
-            <AppNavLink
-              label="Dashboards"
-              href="/dashboards/list"
-              icon={<IconLayoutGrid size={16} />}
-            />
-            {!isCollapsed && (
+            {can('dashboards:view') && (
+              <AppNavLink
+                label="Dashboards"
+                href="/dashboards/list"
+                icon={<IconLayoutGrid size={16} />}
+              />
+            )}
+            {!isCollapsed && can('dashboards:view') && (
               <Text size="xs" px="lg" py="xs" fw="lighter" fs="italic">
                 Saved dashboards have moved! Try the{' '}
                 <Anchor component={Link} href="/dashboards/list">
@@ -676,6 +692,15 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
                 label="Team Settings"
                 href="/team"
                 icon={<IconSettings size={16} />}
+              />
+            )}
+
+            {/* Platform Admin (Super Admins only) */}
+            {isSuperAdmin && (
+              <AppNavLink
+                label="Platform Admin"
+                href="/admin"
+                icon={<IconShieldLock size={16} />}
               />
             )}
           </div>
