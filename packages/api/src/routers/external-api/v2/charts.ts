@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { getConnectionById } from '@/controllers/connection';
 import { getSource } from '@/controllers/sources';
 import { getTeam } from '@/controllers/team';
+import { getUserDataScope } from '@/middleware/auth';
 import { IConnection } from '@/models/connection';
 import { ISource } from '@/models/source';
 import { validateRequestWithEnhancedErrors as validateRequest } from '@/utils/enhancedErrors';
@@ -600,6 +601,14 @@ router.post(
                 source,
                 connection,
               );
+
+            // Inject RBAC data scope filter if the user's group has one
+            const dataScope = getUserDataScope(req);
+            if (dataScope) {
+              chartConfig.where = chartConfig.where
+                ? `(${chartConfig.where}) (${dataScope})`
+                : dataScope;
+            }
 
             const clickhouseClient = new ClickhouseClient({
               host: connection.host,

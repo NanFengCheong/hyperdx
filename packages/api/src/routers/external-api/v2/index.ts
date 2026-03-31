@@ -1,6 +1,6 @@
 import express from 'express';
 
-import { validateUserAccessKey } from '@/middleware/auth';
+import { requireWriteAccess, validateUserAccessKey } from '@/middleware/auth';
 import alertsRouter from '@/routers/external-api/v2/alerts';
 import chartsRouter from '@/routers/external-api/v2/charts';
 import dashboardRouter from '@/routers/external-api/v2/dashboards';
@@ -29,14 +29,27 @@ router.get('/', validateUserAccessKey, (req, res, next) => {
   });
 });
 
-router.use('/alerts', defaultRateLimiter, validateUserAccessKey, alertsRouter);
+router.use(
+  '/alerts',
+  defaultRateLimiter,
+  validateUserAccessKey,
+  requireWriteAccess,
+  alertsRouter,
+);
 
-router.use('/charts', defaultRateLimiter, validateUserAccessKey, chartsRouter);
+router.use(
+  '/charts',
+  defaultRateLimiter,
+  validateUserAccessKey,
+  requireWriteAccess,
+  chartsRouter,
+);
 
 router.use(
   '/dashboards',
   defaultRateLimiter,
   validateUserAccessKey,
+  requireWriteAccess,
   dashboardRouter,
 );
 
@@ -44,6 +57,7 @@ router.use(
   '/sources',
   defaultRateLimiter,
   validateUserAccessKey,
+  requireWriteAccess,
   sourcesRouter,
 );
 
@@ -51,6 +65,7 @@ router.use(
   '/webhooks',
   defaultRateLimiter,
   validateUserAccessKey,
+  requireWriteAccess,
   webhooksRouter,
 );
 

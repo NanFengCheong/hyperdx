@@ -5,7 +5,7 @@ import session from 'express-session';
 import onHeaders from 'on-headers';
 
 import * as config from './config';
-import { isUserAuthenticated } from './middleware/auth';
+import { isUserAuthenticated, requireWriteAccess } from './middleware/auth';
 import defaultCors from './middleware/cors';
 import { appErrorHandler } from './middleware/error';
 import routers from './routers/api';
@@ -86,14 +86,39 @@ app.use('/', routers.rootRouter);
 
 // PRIVATE ROUTES
 app.use('/ai', isUserAuthenticated, routers.aiRouter);
-app.use('/alerts', isUserAuthenticated, routers.alertsRouter);
-app.use('/dashboards', isUserAuthenticated, routers.dashboardRouter);
+app.use(
+  '/alerts',
+  isUserAuthenticated,
+  requireWriteAccess,
+  routers.alertsRouter,
+);
+app.use(
+  '/dashboards',
+  isUserAuthenticated,
+  requireWriteAccess,
+  routers.dashboardRouter,
+);
 app.use('/me', isUserAuthenticated, routers.meRouter);
-app.use('/team', isUserAuthenticated, routers.teamRouter);
-app.use('/webhooks', isUserAuthenticated, routers.webhooksRouter);
-app.use('/connections', isUserAuthenticated, connectionsRouter);
-app.use('/sources', isUserAuthenticated, sourcesRouter);
-app.use('/saved-search', isUserAuthenticated, savedSearchRouter);
+app.use('/team', isUserAuthenticated, requireWriteAccess, routers.teamRouter);
+app.use(
+  '/webhooks',
+  isUserAuthenticated,
+  requireWriteAccess,
+  routers.webhooksRouter,
+);
+app.use(
+  '/connections',
+  isUserAuthenticated,
+  requireWriteAccess,
+  connectionsRouter,
+);
+app.use('/sources', isUserAuthenticated, requireWriteAccess, sourcesRouter);
+app.use(
+  '/saved-search',
+  isUserAuthenticated,
+  requireWriteAccess,
+  savedSearchRouter,
+);
 app.use('/clickhouse-proxy', isUserAuthenticated, clickhouseProxyRouter);
 // ---------------------------------------------------------------------
 

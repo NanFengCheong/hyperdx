@@ -85,6 +85,11 @@ export async function validateUserAccessKey(
 
   req.user = user;
 
+  // After finding the user, populate their group
+  if (user.groupId) {
+    await user.populate('groupId');
+  }
+
   next();
 }
 
@@ -118,6 +123,14 @@ export function isUserAuthenticated(
   res.sendStatus(401);
 }
 
+export function getUserDataScope(req: Request): string {
+  const group = req.user?.groupId;
+  if (group && typeof group === 'object' && 'dataScope' in group) {
+    return (group as any).dataScope || '';
+  }
+  return '';
+}
+
 export function getNonNullUserWithTeam(req: Request) {
   const user = req.user;
 
@@ -130,4 +143,29 @@ export function getNonNullUserWithTeam(req: Request) {
   }
 
   return { teamId: user.team, userId: user._id, email: user.email };
+}
+
+export function requireWriteAccess(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  // Allow read operations for all users
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return next();
+  }
+  // Check if user belongs to a read-only group
+  const group = req.user?.groupId;
+  if (
+    group &&
+    typeof group === 'object' &&
+    'accountAccess' in group &&
+    group.accountAccess === 'read-only'
+  ) {
+    return res.status(403).json({
+      message:
+        'Your group has read-only access. Write operations are not allowed.',
+    });
+  }
+  next();
 }

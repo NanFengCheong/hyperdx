@@ -8,7 +8,7 @@ export function findUserByAccessKey(accessKey: string) {
 }
 
 export function findUserById(id: string) {
-  return User.findById(id);
+  return User.findById(id).populate('groupId');
 }
 
 export function findUserByEmail(email: string) {
