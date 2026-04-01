@@ -268,6 +268,54 @@ function actionColor(action: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Audit Log description formatter
+// ---------------------------------------------------------------------------
+function formatAuditDescription(log: any): string {
+  const parts: string[] = [];
+
+  if (log.targetType) {
+    parts.push(log.targetType);
+  }
+
+  if (log.targetEmail) {
+    parts.push(log.targetEmail);
+  } else if (log.targetName) {
+    parts.push(log.targetName);
+  }
+
+  if (typeof log.details === 'object' && log.details != null) {
+    const detail = log.details as Record<string, unknown>;
+
+    // Show meaningful detail values, preferring emails/names over IDs
+    const fromLabel = detail.fromEmail ?? detail.fromName ?? detail.from;
+    const toLabel = detail.toEmail ?? detail.toName ?? detail.to;
+
+    if (fromLabel && toLabel) {
+      parts.push(`from "${fromLabel}" to "${toLabel}"`);
+    } else if (toLabel) {
+      parts.push(`→ ${toLabel}`);
+    } else if (fromLabel) {
+      parts.push(`from "${fromLabel}"`);
+    }
+
+    // Include any remaining human-readable keys
+    for (const [k, v] of Object.entries(detail)) {
+      if (
+        ['from', 'to', 'fromEmail', 'toEmail', 'fromName', 'toName'].includes(
+          k,
+        )
+      )
+        continue;
+      if (typeof v === 'string' && v.length < 80) {
+        parts.push(`${k}: ${v}`);
+      }
+    }
+  }
+
+  return parts.join(' — ') || '—';
+}
+
+// ---------------------------------------------------------------------------
 // Audit Log Tab
 // ---------------------------------------------------------------------------
 const AUDIT_PAGE_SIZE = 50;
@@ -304,8 +352,7 @@ function AuditLogPanel() {
             <Table.Th>Timestamp</Table.Th>
             <Table.Th>Actor</Table.Th>
             <Table.Th>Action</Table.Th>
-            <Table.Th>Target</Table.Th>
-            <Table.Th>Details</Table.Th>
+            <Table.Th>Description</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -317,7 +364,7 @@ function AuditLogPanel() {
                 </Text>
               </Table.Td>
               <Table.Td>
-                <Text size="sm">{log.actorEmail || log.actorId || '—'}</Text>
+                <Text size="sm">{log.actorEmail || '—'}</Text>
               </Table.Td>
               <Table.Td>
                 <Badge
@@ -330,15 +377,7 @@ function AuditLogPanel() {
               </Table.Td>
               <Table.Td>
                 <Text size="sm">
-                  {[log.targetType, log.targetId].filter(Boolean).join(': ') ||
-                    '—'}
-                </Text>
-              </Table.Td>
-              <Table.Td>
-                <Text size="sm" c="dimmed" lineClamp={2}>
-                  {typeof log.details === 'object'
-                    ? JSON.stringify(log.details)
-                    : log.details || '—'}
+                  {formatAuditDescription(log)}
                 </Text>
               </Table.Td>
             </Table.Tr>
