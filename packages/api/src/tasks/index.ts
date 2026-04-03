@@ -4,6 +4,7 @@ import { serializeError } from 'serialize-error';
 
 import { RUN_SCHEDULED_TASKS_EXTERNALLY } from '@/config';
 import CheckAlertTask from '@/tasks/checkAlerts';
+import CheckInactiveUsersTask from '@/tasks/checkInactiveUsers';
 import {
   taskExecutionDurationGauge,
   taskExecutionFailureCounter,
@@ -23,6 +24,8 @@ function createTask(argv: TaskArgs): HdxTask<TaskArgs> {
       return new CheckAlertTask(argv);
     case TaskName.PING_PONG:
       return new PingPongTask(argv);
+    case TaskName.CHECK_INACTIVE_USERS:
+      return new CheckInactiveUsersTask(argv);
     default:
       throw new Error(`Unknown task name ${taskName}`);
   }
