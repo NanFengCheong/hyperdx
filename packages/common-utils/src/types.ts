@@ -1246,6 +1246,9 @@ export const TeamMemberSchema = z.object({
     })
     .optional(),
   isSuperAdmin: z.boolean().optional(),
+  lastLoginAt: z.string().optional(),
+  disabledAt: z.string().nullable().optional(),
+  disabledReason: z.string().nullable().optional(),
 });
 
 export type TeamMember = z.infer<typeof TeamMemberSchema>;

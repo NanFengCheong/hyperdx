@@ -270,6 +270,18 @@ const api = {
         }).json<{ message: string }>(),
     });
   },
+  useReactivateTeamMember() {
+    return useMutation<
+      { message: string },
+      Error | HTTPError,
+      { userId: string }
+    >({
+      mutationFn: async ({ userId }: { userId: string }) =>
+        hdxServer(`team/member/${userId}/reactivate`, {
+          method: 'PATCH',
+        }).json<{ message: string }>(),
+    });
+  },
   useTeamInvitations() {
     return useQuery<TeamInvitationsApiResponse>({
       queryKey: [`team/invitations`],
