@@ -27,7 +27,7 @@ function getDaysUntilDisable(lastLoginAt: string | undefined): number | null {
   const daysSinceLogin = Math.floor(
     (Date.now() - new Date(lastLoginAt).getTime()) / msPerDay,
   );
-  return 90 - daysSinceLogin;
+  return Math.max(0, 90 - daysSinceLogin);
 }
 
 function getDaysLeftColor(daysLeft: number): string {

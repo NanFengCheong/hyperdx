@@ -342,6 +342,7 @@ router.delete(
 
 router.patch(
   '/member/:id/reactivate',
+  requirePermission('members:assign-group'),
   validateRequest({
     params: z.object({
       id: objectIdSchema,
@@ -359,10 +360,10 @@ router.patch(
       res.json({ message: 'User reactivated successfully' });
     } catch (e: any) {
       if (e.message === 'User not found in team') {
-        return res.status(403).json({ message: e.message });
+        return res.status(403).json({ message: 'Forbidden' });
       }
       if (e.message === 'User is not disabled') {
-        return res.status(400).json({ message: e.message });
+        return res.status(400).json({ message: 'User is not disabled' });
       }
       next(e);
     }

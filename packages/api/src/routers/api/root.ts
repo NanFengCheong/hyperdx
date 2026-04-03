@@ -106,6 +106,10 @@ router.get('/auth/oidc/callback', (req, res, next) => {
         : `/login?err=authFail`;
       return res.redirect(`${config.FRONTEND_URL}${redirectPath}`);
     }
+    // Block disabled users before establishing session
+    if (user.disabledAt != null) {
+      return res.redirect(`${config.FRONTEND_URL}/login?err=authFail`);
+    }
     req.logIn(user, async (loginErr) => {
       if (loginErr) {
         logger.error({ err: loginErr }, 'OIDC session login error');

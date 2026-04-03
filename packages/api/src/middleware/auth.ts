@@ -33,6 +33,11 @@ declare module 'express-session' {
 
 export async function redirectToDashboard(req: Request, res: Response) {
   if (req?.user?.team) {
+    // Block disabled users before updating lastLoginAt
+    if (req.user.disabledAt != null) {
+      req.logout(() => {});
+      return res.redirect(`${config.FRONTEND_URL}/login?err=authFail`);
+    }
     // Update lastLoginAt on successful password login
     await User.findByIdAndUpdate(req.user._id, { lastLoginAt: new Date() });
     return res.redirect(`${config.FRONTEND_URL}/search`);
