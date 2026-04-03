@@ -30,6 +30,7 @@ import {
   deleteTeamMember,
   findUserByEmail,
   findUsersByTeam,
+  reactivateTeamMember,
 } from '@/controllers/user';
 import { requirePermission } from '@/middleware/auth';
 import AuditLog from '@/models/auditLog';
@@ -294,6 +295,9 @@ router.get('/members', async (req, res: TeamMembersExpRes, next) => {
           ]),
           isCurrentUser: user._id.equals(userId),
           isSuperAdmin: !!(userJson as any).isSuperAdmin,
+          lastLoginAt: (userJson as any).lastLoginAt ?? null,
+          disabledAt: (userJson as any).disabledAt ?? null,
+          disabledReason: (userJson as any).disabledReason ?? null,
           ...(roleId && { roleId, roleName }),
           ...(groupId && {
             groupId,
@@ -331,6 +335,35 @@ router.delete(
 
       res.json({ message: 'User deleted' });
     } catch (e) {
+      next(e);
+    }
+  },
+);
+
+router.patch(
+  '/member/:id/reactivate',
+  validateRequest({
+    params: z.object({
+      id: objectIdSchema,
+    }),
+  }),
+  async (req, res, next) => {
+    try {
+      const teamId = req.user?.team;
+      if (teamId == null) {
+        throw new Error(`User ${req.user?._id} not associated with a team`);
+      }
+
+      await reactivateTeamMember(teamId, req.params.id);
+
+      res.json({ message: 'User reactivated successfully' });
+    } catch (e: any) {
+      if (e.message === 'User not found in team') {
+        return res.status(403).json({ message: e.message });
+      }
+      if (e.message === 'User is not disabled') {
+        return res.status(400).json({ message: e.message });
+      }
       next(e);
     }
   },

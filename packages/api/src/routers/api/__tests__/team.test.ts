@@ -98,29 +98,36 @@ Object {
     });
     const resp = await agent.get('/team/members').expect(200);
 
-    expect(resp.body.data).toMatchInlineSnapshot(`
-Array [
-  Object {
-    "_id": "${resp.body.data[0]._id}",
-    "email": "fake@deploysentinel.com",
-    "hasPasswordAuth": true,
-    "isCurrentUser": true,
-    "name": "fake@deploysentinel.com",
-  },
-  Object {
-    "_id": "${user1._id}",
-    "email": "user1@example.com",
-    "hasPasswordAuth": true,
-    "isCurrentUser": false,
-  },
-  Object {
-    "_id": "${user2._id}",
-    "email": "user2@example.com",
-    "hasPasswordAuth": true,
-    "isCurrentUser": false,
-  },
-]
-`);
+    expect(resp.body.data).toHaveLength(3);
+    expect(resp.body.data[0]).toMatchObject({
+      _id: resp.body.data[0]._id,
+      email: 'fake@deploysentinel.com',
+      hasPasswordAuth: true,
+      isCurrentUser: true,
+      name: 'fake@deploysentinel.com',
+      isSuperAdmin: false,
+      disabledAt: null,
+      disabledReason: null,
+    });
+    expect(resp.body.data[0].lastLoginAt).toBeDefined();
+    expect(resp.body.data[1]).toMatchObject({
+      _id: user1._id.toString(),
+      email: 'user1@example.com',
+      hasPasswordAuth: true,
+      isCurrentUser: false,
+      isSuperAdmin: false,
+      disabledAt: null,
+      disabledReason: null,
+    });
+    expect(resp.body.data[2]).toMatchObject({
+      _id: user2._id.toString(),
+      email: 'user2@example.com',
+      hasPasswordAuth: true,
+      isCurrentUser: false,
+      isSuperAdmin: false,
+      disabledAt: null,
+      disabledReason: null,
+    });
   });
 
   it('POST /team/invitation', async () => {
@@ -341,5 +348,109 @@ Array [
     const resp = await agent.patch('/team/apiKey').expect(200);
 
     expect(resp.body.newApiKey.length).toBeGreaterThan(0);
+  });
+
+  describe('PATCH /team/member/:id/reactivate', () => {
+    it('can reactivate a disabled user on same team', async () => {
+      const { agent, team } = await getLoggedInAgent(server);
+
+      const disabledUser = await User.create({
+        email: 'disabled@example.com',
+        team: team.id,
+        disabledAt: new Date('2026-01-01'),
+        disabledReason: 'Inactive for 90 days',
+      });
+
+      const resp = await agent
+        .patch(`/team/member/${disabledUser._id}/reactivate`)
+        .expect(200);
+
+      expect(resp.body.message).toBe('User reactivated successfully');
+
+      const updatedUser = await User.findById(disabledUser._id);
+      expect(updatedUser?.disabledAt).toBeNull();
+      expect(updatedUser?.disabledReason).toBeNull();
+    });
+
+    it('returns 400 for already-active user', async () => {
+      const { agent, team } = await getLoggedInAgent(server);
+
+      const activeUser = await User.create({
+        email: 'active@example.com',
+        team: team.id,
+      });
+
+      await agent
+        .patch(`/team/member/${activeUser._id}/reactivate`)
+        .expect(400);
+    });
+
+    it('returns 403 for user on different team', async () => {
+      const { agent } = await getLoggedInAgent(server);
+
+      const otherTeamId = new mongoose.Types.ObjectId();
+      const otherUser = await User.create({
+        email: 'other@example.com',
+        team: otherTeamId,
+        disabledAt: new Date('2026-01-01'),
+        disabledReason: 'Inactive for 90 days',
+      });
+
+      await agent
+        .patch(`/team/member/${otherUser._id}/reactivate`)
+        .expect(403);
+    });
+
+    it('resets lastLoginAt after reactivation', async () => {
+      const { agent, team } = await getLoggedInAgent(server);
+
+      const oldLoginDate = new Date('2025-01-01');
+      const disabledUser = await User.create({
+        email: 'disabled2@example.com',
+        team: team.id,
+        disabledAt: new Date('2026-01-01'),
+        disabledReason: 'Inactive for 90 days',
+        lastLoginAt: oldLoginDate,
+      });
+
+      const beforeReactivation = new Date();
+      await agent
+        .patch(`/team/member/${disabledUser._id}/reactivate`)
+        .expect(200);
+
+      const updatedUser = await User.findById(disabledUser._id);
+      expect(updatedUser?.lastLoginAt).not.toBeNull();
+      expect(updatedUser!.lastLoginAt!.getTime()).toBeGreaterThanOrEqual(
+        beforeReactivation.getTime(),
+      );
+    });
+  });
+
+  it('GET /team/members includes inactivity fields', async () => {
+    const { agent, team } = await getLoggedInAgent(server);
+
+    await User.create({
+      email: 'disabled-member@example.com',
+      team: team.id,
+      disabledAt: new Date('2026-01-01'),
+      disabledReason: 'Inactive for 90 days',
+    });
+
+    const resp = await agent.get('/team/members').expect(200);
+
+    const disabledMember = resp.body.data.find(
+      (m: any) => m.email === 'disabled-member@example.com',
+    );
+    expect(disabledMember).toBeDefined();
+    expect(disabledMember.disabledAt).toBe('2026-01-01T00:00:00.000Z');
+    expect(disabledMember.disabledReason).toBe('Inactive for 90 days');
+
+    // Active users should have null disabled fields
+    const activeMember = resp.body.data.find(
+      (m: any) => m.email === 'fake@deploysentinel.com',
+    );
+    expect(activeMember.disabledAt).toBeNull();
+    expect(activeMember.disabledReason).toBeNull();
+    expect(activeMember.lastLoginAt).toBeDefined();
   });
 });
