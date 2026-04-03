@@ -21,6 +21,9 @@ export interface IUser {
   isSuperAdmin?: boolean;
   oidcSubject?: string;
   oidcProvider?: string;
+  lastLoginAt?: Date;
+  disabledAt?: Date | null;
+  disabledReason?: string | null;
 }
 
 export type UserDocument = mongoose.HydratedDocument<IUser>;
@@ -62,6 +65,18 @@ const UserSchema = new Schema(
     },
     oidcProvider: {
       type: String,
+    },
+    lastLoginAt: {
+      type: Date,
+      default: Date.now,
+    },
+    disabledAt: {
+      type: Date,
+      default: null,
+    },
+    disabledReason: {
+      type: String,
+      default: null,
     },
   },
   {
