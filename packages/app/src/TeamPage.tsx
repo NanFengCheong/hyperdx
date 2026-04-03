@@ -202,7 +202,7 @@ export default function TeamPage() {
 
   const handleTabChange = useCallback(
     (value: string | null) => {
-      if (!value || value === activeTab) {
+      if (!value || value === queryTab) {
         return;
       }
 
@@ -225,7 +225,7 @@ export default function TeamPage() {
         },
       );
     },
-    [activeTab, router],
+    [queryTab, router],
   );
 
   return (
