@@ -21,6 +21,21 @@ import { IconLock, IconUserPlus } from '@tabler/icons-react';
 import api from '@/api';
 import { useBrandDisplayName } from '@/theme/ThemeProvider';
 
+function getDaysUntilDisable(lastLoginAt: string | undefined): number | null {
+  if (!lastLoginAt) return null;
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const daysSinceLogin = Math.floor(
+    (Date.now() - new Date(lastLoginAt).getTime()) / msPerDay,
+  );
+  return 90 - daysSinceLogin;
+}
+
+function getDaysLeftColor(daysLeft: number): string {
+  if (daysLeft > 30) return 'green';
+  if (daysLeft > 10) return 'yellow';
+  return 'red';
+}
+
 export default function TeamMembersSection() {
   const brandName = useBrandDisplayName();
   const hasAdminAccess = true;
@@ -71,6 +86,7 @@ export default function TeamMembersSection() {
   const saveTeamInvitation = api.useSaveTeamInvitation();
   const deleteTeamMember = api.useDeleteTeamMember();
   const deleteTeamInvitation = api.useDeleteTeamInvitation();
+  const reactivateTeamMember = api.useReactivateTeamMember();
 
   const sendTeamInviteAction = (email: string) => {
     if (email) {
@@ -236,6 +252,14 @@ export default function TeamMembersSection() {
         </Card.Section>
         <Card.Section>
           <Table horizontalSpacing="lg" verticalSpacing="xs">
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Member</Table.Th>
+                <Table.Th>Inactivity Status</Table.Th>
+                <Table.Th>Role</Table.Th>
+                <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
             <Table.Tbody>
               {!isLoadingMembers &&
                 Array.isArray(members?.data) &&
@@ -263,6 +287,68 @@ export default function TeamMembersSection() {
                               : 'Password Auth'}
                         </div>
                       </Group>
+                    </Table.Td>
+                    <Table.Td>
+                      {member.isSuperAdmin ? (
+                        <Badge variant="light" color="blue" tt="none">
+                          Exempt
+                        </Badge>
+                      ) : member.disabledAt ? (
+                        <Group gap="xs">
+                          <Badge variant="light" color="red" tt="none">
+                            Disabled —{' '}
+                            {new Date(member.disabledAt).toLocaleDateString()}
+                          </Badge>
+                          <Button
+                            size="compact-xs"
+                            variant="light"
+                            color="green"
+                            loading={reactivateTeamMember.isPending}
+                            onClick={() =>
+                              reactivateTeamMember.mutate(
+                                { userId: member._id },
+                                {
+                                  onSuccess: () => {
+                                    notifications.show({
+                                      color: 'green',
+                                      message: 'Team member reactivated',
+                                    });
+                                    refetchMembers();
+                                  },
+                                  onError: () => {
+                                    notifications.show({
+                                      color: 'red',
+                                      message: `Failed to reactivate. Please contact ${brandName} team.`,
+                                      autoClose: 5000,
+                                    });
+                                  },
+                                },
+                              )
+                            }
+                          >
+                            Reactivate
+                          </Button>
+                        </Group>
+                      ) : (
+                        (() => {
+                          const daysLeft = getDaysUntilDisable(
+                            member.lastLoginAt,
+                          );
+                          return daysLeft != null ? (
+                            <Badge
+                              variant="light"
+                              color={getDaysLeftColor(daysLeft)}
+                              tt="none"
+                            >
+                              {daysLeft} days left
+                            </Badge>
+                          ) : (
+                            <Badge variant="light" color="gray" tt="none">
+                              No login recorded
+                            </Badge>
+                          );
+                        })()
+                      )}
                     </Table.Td>
                     <Table.Td>
                       <Select
