@@ -111,6 +111,8 @@ router.get('/auth/oidc/callback', (req, res, next) => {
         logger.error({ err: loginErr }, 'OIDC session login error');
         return res.redirect(`${config.FRONTEND_URL}/login?err=authFail`);
       }
+      // Update lastLoginAt on successful OIDC login
+      await User.findByIdAndUpdate(user._id, { lastLoginAt: new Date() });
       // Consume invite token if present
       if (inviteToken) {
         try {

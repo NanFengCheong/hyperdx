@@ -9,6 +9,7 @@ import { serializeError } from 'serialize-error';
 
 import * as config from '@/config';
 import { findUserByAccessKey } from '@/controllers/user';
+import User from '@/models/user';
 import type { UserDocument } from '@/models/user';
 import logger from '@/utils/logger';
 
@@ -30,8 +31,10 @@ declare module 'express-session' {
   }
 }
 
-export function redirectToDashboard(req: Request, res: Response) {
+export async function redirectToDashboard(req: Request, res: Response) {
   if (req?.user?.team) {
+    // Update lastLoginAt on successful password login
+    await User.findByIdAndUpdate(req.user._id, { lastLoginAt: new Date() });
     return res.redirect(`${config.FRONTEND_URL}/search`);
   } else {
     logger.error(
@@ -119,6 +122,12 @@ export async function isUserAuthenticated(
   }
 
   if (req.isAuthenticated()) {
+    // Block disabled users from accessing the application
+    if (req.user?.disabledAt != null) {
+      req.logout(() => {});
+      return res.sendStatus(401);
+    }
+
     // set user id as trace attribute
     setTraceAttributes({
       userId: req.user?._id.toString(),
