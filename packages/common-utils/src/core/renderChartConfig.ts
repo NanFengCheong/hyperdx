@@ -1043,7 +1043,8 @@ async function renderWith(
               );
 
           if (clause.isSubquery === false) {
-            return chSql`(${resolvedSql}) AS ${{ Identifier: clause.name }}`;
+            // Can not use Identifier param in WITH alias position
+            return chSql`(${resolvedSql}) AS ${clause.name}`;
           }
           // Can not use identifier here
           return chSql`${clause.name} AS (${resolvedSql})`;
