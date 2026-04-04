@@ -22,7 +22,6 @@ import ConnectionsSection from './components/TeamSettings/ConnectionsSection';
 import AuditLogSection from './components/TeamSettings/AuditLogSection';
 import RolesSection from './components/TeamSettings/RolesSection';
 import IntegrationsSection from './components/TeamSettings/IntegrationsSection';
-import SecurityPoliciesSection from './components/TeamSettings/SecurityPoliciesSection';
 import SourcesSection from './components/TeamSettings/SourcesSection';
 import TeamMembersSection from './components/TeamSettings/TeamMembersSection';
 import TeamQueryConfigSection from './components/TeamSettings/TeamQueryConfigSection';
@@ -56,9 +55,6 @@ export default function TeamPage() {
   const router = useRouter();
   const { data: team, refetch: refetchTeam, isLoading } = api.useTeam();
   const setTeamName = api.useSetTeamName();
-  const allowedAuthMethods = team?.allowedAuthMethods ?? [];
-  const hasAllowedAuthMethods = allowedAuthMethods.length > 0;
-
   const hasAdminAccess = true;
   const [isEditingTeamName, setIsEditingTeamName] = useState(false);
   const form = useForm<{ name: string }>({
@@ -113,30 +109,18 @@ export default function TeamPage() {
           id: 'team-members',
           content: <TeamMembersSection />,
         },
+      ],
+    },
+    {
+      value: 'roles',
+      label: 'Roles',
+      sections: [
         {
           id: 'roles',
           content: <RolesSection />,
         },
       ],
     },
-    ...(hasAllowedAuthMethods
-      ? [
-          {
-            value: 'access',
-            label: 'Access',
-            sections: [
-              {
-                id: 'team-access-security-policies',
-                content: (
-                  <SecurityPoliciesSection
-                    allowedAuthMethods={allowedAuthMethods}
-                  />
-                ),
-              },
-            ],
-          },
-        ]
-      : []),
     {
       value: 'integrations',
       label: 'Integrations',
