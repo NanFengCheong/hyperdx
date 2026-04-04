@@ -149,19 +149,6 @@ export const useSpotlightActions = () => {
           );
         },
       },
-      {
-        id: 'cloud',
-        group: 'Menu',
-        leftSection: logomark,
-        label: `${brandName} Cloud`,
-        description: `Ready to use ${brandName} Cloud? Get started for free.`,
-        keywords: ['account', 'profile'],
-        onClick: () => {
-          router.push(
-            'https://clickhouse.com/docs/use-cases/observability/clickstack/getting-started#deploy-with-clickhouse-cloud',
-          );
-        },
-      },
     );
 
     return logViewActions;

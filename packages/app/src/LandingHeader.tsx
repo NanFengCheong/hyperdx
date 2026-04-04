@@ -49,15 +49,6 @@ export default function LandingHeader({
 
             <Group gap="lg" visibleFrom="lg">
               <Anchor
-                href="https://hyperdx.io"
-                c={activeKey === 'cloud' ? 'var(--color-text-primary)' : 'gray'}
-                underline="never"
-                style={{ fontWeight: activeKey === 'cloud' ? 600 : 400 }}
-                size="sm"
-              >
-                {brandName} Cloud
-              </Anchor>
-              <Anchor
                 href="https://clickhouse.com/docs/use-cases/observability/clickstack"
                 c={activeKey === 'docs' ? 'var(--color-text-primary)' : 'gray'}
                 underline="never"
@@ -103,13 +94,6 @@ export default function LandingHeader({
           {/* Mobile menu */}
           {opened && (
             <Group gap="sm" mt="md" hiddenFrom="lg" style={{ fontSize: 14 }}>
-              <Anchor
-                href="https://hyperdx.io"
-                underline="never"
-                style={{ fontWeight: activeKey === 'cloud' ? 600 : 400 }}
-              >
-                {brandName} Cloud
-              </Anchor>
               <Anchor
                 href="https://clickhouse.com/docs/use-cases/observability/clickstack"
                 underline="never"

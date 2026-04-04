@@ -58,7 +58,6 @@ import { useWindowSize } from '@/utils';
 import packageJson from '../../../package.json';
 
 import {
-  AppNavCloudBanner,
   AppNavContext,
   AppNavHelpMenu,
   AppNavLink,
@@ -711,7 +710,6 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
               className={styles.onboardingSection}
             >
               <OnboardingChecklist onAddDataClick={openInstallInstructions} />
-              <AppNavCloudBanner />
             </div>
           )}
         </ScrollArea>
