@@ -20,7 +20,6 @@ import { PageHeader } from './components/PageHeader';
 import ApiKeysSection from './components/TeamSettings/ApiKeysSection';
 import ConnectionsSection from './components/TeamSettings/ConnectionsSection';
 import AuditLogSection from './components/TeamSettings/AuditLogSection';
-import RolesSection from './components/TeamSettings/RolesSection';
 import IntegrationsSection from './components/TeamSettings/IntegrationsSection';
 import SourcesSection from './components/TeamSettings/SourcesSection';
 import TeamMembersSection from './components/TeamSettings/TeamMembersSection';
@@ -108,16 +107,6 @@ export default function TeamPage() {
         {
           id: 'team-members',
           content: <TeamMembersSection />,
-        },
-      ],
-    },
-    {
-      value: 'roles',
-      label: 'Roles',
-      sections: [
-        {
-          id: 'roles',
-          content: <RolesSection />,
         },
       ],
     },

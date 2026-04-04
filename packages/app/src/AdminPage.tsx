@@ -29,6 +29,7 @@ import {
   useAdminTeams,
   useToggleSuperAdmin,
 } from './api';
+import RolesSection from './components/TeamSettings/RolesSection';
 import { useIsSuperAdmin } from './hooks/usePermission';
 import { withAppNav } from './layout';
 import { useBrandDisplayName } from './theme/ThemeProvider';
@@ -420,11 +421,16 @@ export default function AdminPage() {
         <Tabs defaultValue="teams">
           <Tabs.List mb="lg">
             <Tabs.Tab value="teams">Teams</Tabs.Tab>
+            <Tabs.Tab value="roles">Roles</Tabs.Tab>
             <Tabs.Tab value="audit-log">Global Audit Log</Tabs.Tab>
           </Tabs.List>
 
           <Tabs.Panel value="teams">
             <TeamsPanel />
+          </Tabs.Panel>
+
+          <Tabs.Panel value="roles">
+            <RolesSection />
           </Tabs.Panel>
 
           <Tabs.Panel value="audit-log">
