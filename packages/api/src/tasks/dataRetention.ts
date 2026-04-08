@@ -1,9 +1,10 @@
-import { RETENTION_DAYS_AUDITLOG, RETENTION_DAYS_ALERTHISTORY } from '@/config';
+import mongoose from 'mongoose';
+
+import { RETENTION_DAYS_ALERTHISTORY, RETENTION_DAYS_AUDITLOG } from '@/config';
 import AuditLog from '@/models/auditLog';
+import PlatformSetting from '@/models/platformSetting';
 import { DataRetentionTaskArgs, HdxTask } from '@/tasks/types';
 import logger from '@/utils/logger';
-import mongoose from 'mongoose';
-import PlatformSetting from '@/models/platformSetting';
 
 /**
  * Default retention periods (in days) for MongoDB collections.

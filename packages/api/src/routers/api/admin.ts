@@ -1,15 +1,16 @@
 import express from 'express';
 import { z } from 'zod';
+
+import {
+  RETENTION_DAYS_ALERTHISTORY,
+  RETENTION_DAYS_AUDITLOG,
+} from '../../config';
 import { isUserAuthenticated, requireSuperAdmin } from '../../middleware/auth';
 import AuditLog from '../../models/auditLog';
-import User from '../../models/user';
-import Team from '../../models/team';
-import DataRetentionTask from '../../tasks/dataRetention';
 import PlatformSetting from '../../models/platformSetting';
-import {
-  RETENTION_DAYS_AUDITLOG,
-  RETENTION_DAYS_ALERTHISTORY,
-} from '../../config';
+import Team from '../../models/team';
+import User from '../../models/user';
+import DataRetentionTask from '../../tasks/dataRetention';
 
 const router = express.Router();
 

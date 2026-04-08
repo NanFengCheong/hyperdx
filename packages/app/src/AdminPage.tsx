@@ -20,6 +20,8 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
+import { notifications } from '@mantine/notifications';
 import {
   IconChevronDown,
   IconChevronRight,
@@ -28,9 +30,10 @@ import {
   IconTrash,
 } from '@tabler/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { notifications } from '@mantine/notifications';
-import { DatePickerInput } from '@mantine/dates';
 
+import RolesSection from './components/TeamSettings/RolesSection';
+import { useIsSuperAdmin } from './hooks/usePermission';
+import { useBrandDisplayName } from './theme/ThemeProvider';
 import {
   useAdminAuditLog,
   useAdminTeamMembers,
@@ -40,10 +43,7 @@ import {
   useToggleSuperAdmin,
   useUpdateDataRetentionSettings,
 } from './api';
-import RolesSection from './components/TeamSettings/RolesSection';
-import { useIsSuperAdmin } from './hooks/usePermission';
 import { withAppNav } from './layout';
-import { useBrandDisplayName } from './theme/ThemeProvider';
 
 function AccessDenied() {
   return (
@@ -608,7 +608,7 @@ function DataRetentionPanel() {
         <Group>
           <Button
             leftSection={<IconTrash size={16} />}
-            variant="default"
+            variant="secondary"
             onClick={() => {
               setDryRun(true);
               handleRun();
@@ -644,7 +644,7 @@ function DataRetentionPanel() {
               : 'This will permanently delete expired documents from all configured collections. This action cannot be undone.'}
           </Text>
           <Group justify="flex-end">
-            <Button variant="default" onClick={() => setModalOpen(false)}>
+            <Button variant="secondary" onClick={() => setModalOpen(false)}>
               Cancel
             </Button>
             <Button
