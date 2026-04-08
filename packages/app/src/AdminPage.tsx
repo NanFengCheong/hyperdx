@@ -10,6 +10,7 @@ import {
   Group,
   Loader,
   Modal,
+  NumberInput,
   Pagination,
   Stack,
   Switch,
@@ -34,8 +35,10 @@ import {
   useAdminAuditLog,
   useAdminTeamMembers,
   useAdminTeams,
+  useDataRetentionSettings,
   useRunDataRetention,
   useToggleSuperAdmin,
+  useUpdateDataRetentionSettings,
 } from './api';
 import RolesSection from './components/TeamSettings/RolesSection';
 import { useIsSuperAdmin } from './hooks/usePermission';
@@ -466,7 +469,56 @@ function DataRetentionPanel() {
   const [dryRun, setDryRun] = useState(false);
   const queryClient = useQueryClient();
 
+  const { data: settingsData, isLoading: settingsLoading } =
+    useDataRetentionSettings();
+  const updateSettings = useUpdateDataRetentionSettings();
   const runRetention = useRunDataRetention();
+
+  const [auditLog, setAuditLog] = useState<number | string>(90);
+  const [alertHistory, setAlertHistory] = useState<number | string>(30);
+  const [settingsInitialized, setSettingsInitialized] = useState(false);
+
+  // Sync form state when settings load
+  if (settingsData?.data && !settingsInitialized) {
+    setAuditLog(settingsData.data.auditLog);
+    setAlertHistory(settingsData.data.alertHistory);
+    setSettingsInitialized(true);
+  }
+
+  const handleSaveSettings = useCallback(() => {
+    const auditLogNum = Number(auditLog);
+    const alertHistoryNum = Number(alertHistory);
+    if (!auditLogNum || auditLogNum < 1 || !alertHistoryNum || alertHistoryNum < 1) {
+      notifications.show({
+        color: 'red',
+        title: 'Invalid Settings',
+        message: 'Retention days must be at least 1.',
+      });
+      return;
+    }
+    updateSettings.mutate(
+      { auditLog: auditLogNum, alertHistory: alertHistoryNum },
+      {
+        onSuccess: () => {
+          notifications.show({
+            color: 'green',
+            title: 'Settings Saved',
+            message: 'Data retention settings updated successfully.',
+          });
+          queryClient.invalidateQueries({
+            queryKey: ['admin', 'data-retention-settings'],
+          });
+        },
+        onError: (e) => {
+          notifications.show({
+            color: 'red',
+            title: 'Save Failed',
+            message: e.message ?? 'Failed to update retention settings.',
+          });
+        },
+      },
+    );
+  }, [auditLog, alertHistory, updateSettings, queryClient]);
 
   const handleRun = useCallback(() => {
     setModalOpen(true);
@@ -499,36 +551,86 @@ function DataRetentionPanel() {
   }, [dryRun, runRetention, queryClient]);
 
   return (
-    <Stack gap="md">
-      <Text size="sm" c="dimmed">
-        Manually trigger the data retention job. This will clean up expired data
-        from MongoDB collections based on configured retention policies.
-      </Text>
+    <Stack gap="lg">
+      {/* Retention Settings */}
+      <Stack gap="sm">
+        <Title order={4}>Retention Settings</Title>
+        <Text size="sm" c="dimmed">
+          Configure how many days data is retained before cleanup. Changes take
+          effect on the next retention run.
+        </Text>
 
-      <Group>
-        <Button
-          leftSection={<IconTrash size={16} />}
-          variant="default"
-          onClick={() => {
-            setDryRun(true);
-            handleRun();
-          }}
-          loading={runRetention.isPending && dryRun}
-        >
-          Dry Run
-        </Button>
-        <Button
-          leftSection={<IconPlayerPlay size={16} />}
-          color="red"
-          onClick={() => {
-            setDryRun(false);
-            handleRun();
-          }}
-          loading={runRetention.isPending && !dryRun}
-        >
-          Run Cleanup
-        </Button>
-      </Group>
+        {settingsLoading ? (
+          <Center py="md">
+            <Loader size="sm" />
+          </Center>
+        ) : (
+          <>
+            <Group grow>
+              <NumberInput
+                label="Audit Log (days)"
+                value={auditLog}
+                onChange={setAuditLog}
+                min={1}
+                max={3650}
+                size="sm"
+              />
+              <NumberInput
+                label="Alert History (days)"
+                value={alertHistory}
+                onChange={setAlertHistory}
+                min={1}
+                max={3650}
+                size="sm"
+              />
+            </Group>
+            <Group>
+              <Button
+                onClick={handleSaveSettings}
+                loading={updateSettings.isPending}
+                size="sm"
+              >
+                Save Settings
+              </Button>
+            </Group>
+          </>
+        )}
+      </Stack>
+
+      {/* Manual Cleanup */}
+      <Stack gap="sm">
+        <Title order={4}>Manual Cleanup</Title>
+        <Text size="sm" c="dimmed">
+          Manually trigger the data retention job. This will clean up expired
+          data from MongoDB collections based on the configured retention
+          settings above.
+        </Text>
+
+        <Group>
+          <Button
+            leftSection={<IconTrash size={16} />}
+            variant="default"
+            onClick={() => {
+              setDryRun(true);
+              handleRun();
+            }}
+            loading={runRetention.isPending && dryRun}
+          >
+            Dry Run
+          </Button>
+          <Button
+            leftSection={<IconPlayerPlay size={16} />}
+            color="red"
+            onClick={() => {
+              setDryRun(false);
+              handleRun();
+            }}
+            loading={runRetention.isPending && !dryRun}
+          >
+            Run Cleanup
+          </Button>
+        </Group>
+      </Stack>
 
       <Modal
         opened={modalOpen}
