@@ -28,6 +28,10 @@ declare module 'express-session' {
   interface Session {
     messages: string[]; // Set by passport
     passport: { user: string }; // Set by passport
+    pendingAuth?: {
+      userId: string;
+      verified: false;
+    };
   }
 }
 
@@ -124,6 +128,11 @@ export async function isUserAuthenticated(
       team: '_local_team_',
     };
     return next();
+  }
+
+  // Block pending 2FA sessions from accessing protected routes
+  if (req.session.pendingAuth && !req.session.pendingAuth.verified) {
+    return res.sendStatus(401);
   }
 
   if (req.isAuthenticated()) {
