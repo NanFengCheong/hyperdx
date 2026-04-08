@@ -38,12 +38,12 @@ export function Layout({ preview, children }: LayoutProps) {
 }
 
 const bodyStyle = {
-  backgroundColor: '#f6f9fc',
+  backgroundColor: '#1a1d23',
   fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
 };
 
 const containerStyle = {
-  backgroundColor: '#ffffff',
+  backgroundColor: '#242731',
   margin: '0 auto',
   padding: '20px 0 48px',
   marginBottom: '64px',
@@ -58,15 +58,17 @@ const logoStyle = {
   fontSize: '24px',
   fontWeight: 'bold' as const,
   color: '#0ea5e9',
+  margin: '0',
 };
 
 const hrStyle = {
-  borderColor: '#e6ebf1',
+  borderColor: '#3d4155',
   margin: '20px 48px',
 };
 
 const footerStyle = {
-  color: '#8898aa',
+  color: '#8b8fa3',
   fontSize: '12px',
   padding: '0 48px',
+  lineHeight: '18px',
 };
