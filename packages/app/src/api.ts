@@ -843,3 +843,22 @@ export const useRunDataRetention = () =>
         json: { dryRun },
       }).json(),
   });
+
+export const useDataRetentionSettings = () =>
+  useQuery<{ data: { auditLog: number; alertHistory: number } }>({
+    queryKey: ['admin', 'data-retention-settings'],
+    queryFn: () => hdxServer('admin/data-retention/settings').json(),
+  });
+
+export const useUpdateDataRetentionSettings = () =>
+  useMutation<
+    { data: { ok: boolean } },
+    Error,
+    { auditLog: number; alertHistory: number }
+  >({
+    mutationFn: (settings) =>
+      hdxServer('admin/data-retention/settings', {
+        method: 'PUT',
+        json: settings,
+      }).json(),
+  });
