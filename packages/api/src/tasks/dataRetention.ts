@@ -133,9 +133,7 @@ export default class DataRetentionTask
       `dataRetention: Starting ${dryRun ? '[DRY RUN] ' : ''}data retention cleanup`,
     );
 
-    for (const [collectionName, defaultDays] of Object.entries(
-      DEFAULT_RETENTION_DAYS,
-    )) {
+    for (const collectionName of Object.keys(DEFAULT_RETENTION_DAYS)) {
       const retentionDays = await getRetentionDays(collectionName);
       if (retentionDays === 0) {
         logger.info(`${collectionName}: No retention policy configured, skipping`);
