@@ -16,6 +16,6 @@ export const hyperdxTheme: ThemeConfig = {
     png32: '/favicons/hyperdx/favicon-32x32.png',
     png16: '/favicons/hyperdx/favicon-16x16.png',
     appleTouchIcon: '/favicons/hyperdx/apple-touch-icon.png',
-    themeColor: '#25292e', // Dark background
+    themeColor: '#EB1B38', // Red (matches favicon logo)
   },
 };
