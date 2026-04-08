@@ -34,7 +34,7 @@ const localModeFetch: typeof fetch = (
   return fetch(`${url.toString()}`, init);
 };
 
-const standardModeFetch: typeof fetch = (
+const standardModeFetch: typeof fetch = async (
   input: RequestInfo | URL,
   init?: RequestInit,
 ) => {
@@ -42,6 +42,21 @@ const standardModeFetch: typeof fetch = (
   // authorization is handled on the backend, don't send this header
   delete init.headers?.['Authorization'];
   delete init.headers?.['authorization'];
+
+  // Base64 encode POST body to prevent WAF SQL injection false positives
+  if (init.body) {
+    const bodyStr =
+      typeof init.body === 'string'
+        ? init.body
+        : init.body instanceof ReadableStream
+          ? await new Response(init.body).text()
+          : String(init.body);
+    const bytes = new TextEncoder().encode(bodyStr);
+    init.body = btoa(Array.from(bytes, b => String.fromCodePoint(b)).join(''));
+    if (!init.headers) init.headers = {};
+    (init.headers as Record<string, string>)['x-hdx-body-encoding'] = 'base64';
+  }
+
   return fetch(input, init);
 };
 

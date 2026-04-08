@@ -277,7 +277,9 @@ const proxyMiddleware: RequestHandler =
 
         if (_req.method === 'POST') {
           // TODO: Use fixRequestBody after this issue is resolved: https://github.com/chimurai/http-proxy-middleware/issues/1102
-          proxyReq.write(_req.body);
+          const body = _req.body;
+          proxyReq.setHeader('content-length', Buffer.byteLength(body, 'utf-8'));
+          proxyReq.write(body);
         }
       },
       proxyRes: (proxyRes, _req, res) => {
@@ -323,10 +325,23 @@ router.get(
   injectDataScope,
   proxyMiddleware,
 );
+// Decode base64-encoded body from frontend (bypasses WAF SQL injection detection)
+const decodeBase64Body: RequestHandler = (req, _res, next) => {
+  if (
+    req.headers['x-hdx-body-encoding'] === 'base64' &&
+    typeof req.body === 'string'
+  ) {
+    req.body = Buffer.from(req.body, 'base64').toString('utf-8');
+    delete req.headers['x-hdx-body-encoding'];
+  }
+  next();
+};
+
 router.post(
   '/*',
   hasConnectionId,
   getConnection,
+  decodeBase64Body,
   injectDataScope,
   proxyMiddleware,
 );
