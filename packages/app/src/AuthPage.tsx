@@ -242,6 +242,11 @@ export default function AuthPage({ action }: { action: 'register' | 'login' }) {
                       </Button>
                     </>
                   )}
+                  {!isRegister && (
+                    <div className="text-center fs-8">
+                      <Link href="/forgot">Forgot password?</Link>
+                    </div>
+                  )}
                 </Stack>
               </Paper>
 
@@ -260,9 +265,13 @@ export default function AuthPage({ action }: { action: 'register' | 'login' }) {
                         ? 'Failed to login with email and password, please try again.'
                         : err === 'passwordAuthNotAllowed'
                           ? 'Password authentication is not allowed by your team admin.'
-                          : err === 'teamAlreadyExists'
-                            ? 'Team already exists, please login instead.'
-                            : 'Unknown error occurred, please try again later.'}
+                          : err === 'magicLinkSessionMismatch'
+                            ? 'Magic link must be opened in the same browser where you logged in.'
+                            : err === 'magicLinkExpired'
+                              ? 'Magic link has expired. Please log in again.'
+                              : err === 'teamAlreadyExists'
+                                ? 'Team already exists, please login instead.'
+                                : 'Unknown error occurred, please try again later.'}
                 </Notification>
               )}
 
