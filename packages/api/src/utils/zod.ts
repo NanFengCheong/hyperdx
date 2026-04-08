@@ -485,10 +485,16 @@ export const externalDashboardTileListSchema = z
 // ==============================
 // Alerts
 // ==============================
-const zChannel = z.object({
-  type: z.literal('webhook'),
-  webhookId: z.string().min(1),
-});
+const zChannel = z.union([
+  z.object({
+    type: z.literal('webhook'),
+    webhookId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal('email'),
+    userIds: z.array(z.string().min(1)).min(1),
+  }),
+]);
 
 const zSavedSearchAlert = z.object({
   source: z.literal(AlertSource.SAVED_SEARCH),

@@ -314,14 +314,25 @@ export const ALERT_INTERVAL_TO_MINUTES: Record<AlertInterval, number> = {
   '1d': 1440,
 };
 
-export const zAlertChannelType = z.literal('webhook');
+export const zAlertChannelType = z.union([
+  z.literal('webhook'),
+  z.literal('email'),
+]);
 
 export type AlertChannelType = z.infer<typeof zAlertChannelType>;
 
-export const zAlertChannel = z.object({
-  type: zAlertChannelType,
-  webhookId: z.string().nonempty("Webhook ID can't be empty"),
-});
+export const zAlertChannel = z.union([
+  z.object({
+    type: z.literal('webhook'),
+    webhookId: z.string().nonempty("Webhook ID can't be empty"),
+  }),
+  z.object({
+    type: z.literal('email'),
+    userIds: z
+      .array(z.string().nonempty("User ID can't be empty"))
+      .min(1, 'At least one recipient is required'),
+  }),
+]);
 
 export const zSavedSearchAlert = z.object({
   source: z.literal(AlertSource.SAVED_SEARCH),

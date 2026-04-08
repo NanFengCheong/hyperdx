@@ -201,6 +201,7 @@ describe('Single Invocation Alert Test', () => {
       connection.id,
       alertProvider,
       new Map([[webhook.id.toString(), webhook]]),
+      new Map(),
     );
 
     // Verify alert state changed to ALERT (from DB)
@@ -377,6 +378,7 @@ describe('Single Invocation Alert Test', () => {
       connection.id,
       alertProvider,
       new Map([[webhook.id.toString(), webhook]]),
+      new Map(),
     );
 
     // Alert should fire because 2 "web" logs exceed threshold of 1
@@ -505,6 +507,7 @@ describe('Single Invocation Alert Test', () => {
       connection.id,
       alertProvider,
       new Map([[webhook.id.toString(), webhook]]),
+      new Map(),
     );
 
     // Alert should NOT fire because filter excludes all logs
@@ -644,6 +647,7 @@ describe('Single Invocation Alert Test', () => {
       connection.id,
       alertProvider,
       new Map([[webhook.id.toString(), webhook]]),
+      new Map(),
     );
 
     // Alert should NOT fire: only 1 web error matches both conditions,
@@ -839,6 +843,7 @@ describe('Single Invocation Alert Test', () => {
       connection.id,
       alertProvider,
       new Map([[webhook.id.toString(), webhook]]),
+      new Map(),
     );
 
     // Get the webhook call to inspect the title

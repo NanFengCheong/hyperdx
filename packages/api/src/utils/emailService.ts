@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer';
 
 import { renderLoginVerification } from '@/emails/LoginVerification';
 import { renderPasswordReset } from '@/emails/PasswordReset';
+import { renderAlertNotification } from '@/emails/AlertNotification';
 import * as config from '@/config';
 import logger from '@/utils/logger';
 
@@ -14,10 +15,9 @@ function getTransporter(): nodemailer.Transporter | null {
       host: config.SMTP_HOST,
       port: config.SMTP_PORT,
       secure: config.SMTP_SECURE,
-      auth:
-        config.SMTP_USER
-          ? { user: config.SMTP_USER, pass: config.SMTP_PASS }
-          : undefined,
+      auth: config.SMTP_USER
+        ? { user: config.SMTP_USER, pass: config.SMTP_PASS }
+        : undefined,
     });
   }
   return transporter;
@@ -59,7 +59,11 @@ export async function sendLoginVerificationEmail(
   code: string,
   magicLink: string,
 ): Promise<boolean> {
-  const { html, text } = await renderLoginVerification({ name, code, magicLink });
+  const { html, text } = await renderLoginVerification({
+    name,
+    code,
+    magicLink,
+  });
   return sendEmail({
     to,
     subject: `Your verification code: ${code}`,
@@ -78,6 +82,40 @@ export async function sendPasswordResetEmail(
   return sendEmail({
     to,
     subject: 'Reset your password',
+    html,
+    text,
+  });
+}
+
+interface AlertNotificationEmailOptions {
+  to: string;
+  name: string;
+  title: string;
+  body: string;
+  hdxLink: string;
+  state: 'ALERT' | 'OK';
+  startTime: string;
+  endTime: string;
+}
+
+export async function sendAlertNotificationEmail(
+  options: AlertNotificationEmailOptions,
+): Promise<boolean> {
+  const { html, text } = await renderAlertNotification({
+    title: options.title,
+    body: options.body,
+    hdxLink: options.hdxLink,
+    state: options.state,
+    startTime: options.startTime,
+    endTime: options.endTime,
+  });
+  const subject =
+    options.state === 'OK'
+      ? `✅ Resolved: ${options.title}`
+      : `🚨 ${options.title}`;
+  return sendEmail({
+    to: options.to,
+    subject,
     html,
     text,
   });

@@ -33,6 +33,10 @@ export type AlertChannel =
       webhookId: string;
     }
   | {
+      type: 'email';
+      userIds: string[];
+    }
+  | {
       type: null;
     };
 

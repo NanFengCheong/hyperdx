@@ -113,6 +113,7 @@ export const TILE_ALERT_INTERVAL_OPTIONS = _.pick(ALERT_INTERVAL_OPTIONS, [
 ]);
 
 export const ALERT_CHANNEL_OPTIONS: Record<AlertChannelType, string> = {
+  email: 'Email',
   webhook: 'Webhook',
 };
 
@@ -123,8 +124,8 @@ export const DEFAULT_TILE_ALERT: z.infer<typeof ChartAlertBaseSchema> = {
   scheduleOffsetMinutes: 0,
   scheduleStartAt: null,
   channel: {
-    type: 'webhook',
-    webhookId: '',
+    type: 'email',
+    userIds: [],
   },
 };
 

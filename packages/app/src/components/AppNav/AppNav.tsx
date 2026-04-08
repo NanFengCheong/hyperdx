@@ -675,15 +675,6 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
                 icon={<IconLayoutGrid size={16} />}
               />
             )}
-            {!isCollapsed && can('dashboards:view') && (
-              <Text size="xs" px="lg" py="xs" fw="lighter" fs="italic">
-                Saved dashboards have moved! Try the{' '}
-                <Anchor component={Link} href="/dashboards/list">
-                  Dashboards page
-                </Anchor>
-                .
-              </Text>
-            )}
 
             {/* Team Settings (Cloud only) */}
             {!IS_LOCAL_MODE && (

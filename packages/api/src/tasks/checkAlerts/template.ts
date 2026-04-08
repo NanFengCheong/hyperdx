@@ -27,6 +27,7 @@ import { AlertSource, AlertState, AlertThresholdType } from '@/models/alert';
 import { IDashboard } from '@/models/dashboard';
 import { ISavedSearch } from '@/models/savedSearch';
 import { ISource } from '@/models/source';
+import { IUser } from '@/models/user';
 import { IWebhook } from '@/models/webhook';
 import {
   computeAliasWithClauses,
@@ -38,6 +39,7 @@ import {
 } from '@/tasks/checkAlerts/providers';
 import { escapeJsonString, unflattenObject } from '@/tasks/util';
 import { truncateString } from '@/utils/common';
+import { sendAlertNotificationEmail } from '@/utils/emailService';
 import logger from '@/utils/logger';
 import * as slack from '@/utils/slack';
 
@@ -140,8 +142,14 @@ const notifyChannel = async ({
       }
       break;
     }
+    case 'email': {
+      await handleSendEmail(channel.users, message);
+      break;
+    }
     default:
-      throw new Error(`Unsupported channel type: ${channel.type}`);
+      throw new Error(
+        `Unsupported channel type: ${(channel as { type: string }).type}`,
+      );
   }
 };
 
@@ -302,6 +310,40 @@ export const handleSendGenericWebhook = async (
   }
 };
 
+export const handleSendEmail = async (users: IUser[], message: Message) => {
+  if (users.length === 0) {
+    logger.warn('No recipients for email notification');
+    return;
+  }
+
+  const startTimeStr = formatDate(new Date(message.startTime), { isUTC: true });
+  const endTimeStr = formatDate(new Date(message.endTime), { isUTC: true });
+
+  for (const user of users) {
+    try {
+      await sendAlertNotificationEmail({
+        to: user.email,
+        name: user.name,
+        title: message.title,
+        body: message.body,
+        hdxLink: message.hdxLink,
+        state: message.state as 'ALERT' | 'OK',
+        startTime: startTimeStr,
+        endTime: endTimeStr,
+      });
+    } catch (e) {
+      logger.error(
+        {
+          error: serializeError(e),
+          userId: user._id?.toString(),
+          email: user.email,
+        },
+        'Failed to send alert notification email',
+      );
+    }
+  }
+};
+
 export const buildAlertMessageTemplateHdxLink = (
   alertProvider: AlertProvider,
   {
@@ -395,6 +437,9 @@ export const getDefaultExternalAction = (
   if (alert.channel.type === 'webhook' && alert.channel.webhookId != null) {
     return `@${alert.channel.type}-${alert.channel.webhookId}`;
   }
+  if (alert.channel.type === 'email' && alert.channel.userIds != null) {
+    return `@${alert.channel.type}-${alert.channel.userIds.join(',')}`;
+  }
   return null;
 };
 
@@ -421,25 +466,40 @@ const findWebhookByName = (
 
 const getPopulatedChannel = (
   channelType: AlertChannelType,
-  channelIdOrNamePrefix: string,
+  channelIdOrUserIds: string | string[],
   teamWebhooksById: Map<string, IWebhook>,
+  teamUsersById: Map<string, IUser>,
 ): PopulatedAlertChannel | undefined => {
   switch (channelType) {
     case 'webhook': {
       const webhook =
-        teamWebhooksById.get(channelIdOrNamePrefix) ??
-        findWebhookByName(channelIdOrNamePrefix, teamWebhooksById);
+        teamWebhooksById.get(channelIdOrUserIds as string) ??
+        findWebhookByName(channelIdOrUserIds as string, teamWebhooksById);
 
       if (!webhook) {
         logger.error(
           {
-            webhookId: channelIdOrNamePrefix,
+            webhookId: channelIdOrUserIds,
           },
           'webhook not found',
         );
         return undefined;
       }
       return { type: 'webhook', channel: webhook };
+    }
+    case 'email': {
+      const userIds = Array.isArray(channelIdOrUserIds)
+        ? channelIdOrUserIds
+        : [channelIdOrUserIds];
+      const users = userIds
+        .map(id => teamUsersById.get(id))
+        .filter((u): u is IUser => u != null);
+
+      if (users.length === 0) {
+        logger.error({ userIds }, 'no users found for email channel');
+        return undefined;
+      }
+      return { type: 'email', users };
     }
     default: {
       logger.error({ channelType }, 'Unsupported alert channel type');
@@ -458,6 +518,7 @@ export const renderAlertTemplate = async ({
   title,
   view,
   teamWebhooksById,
+  teamUsersById,
 }: {
   alertProvider: AlertProvider;
   clickhouseClient: ClickhouseClient;
@@ -467,6 +528,7 @@ export const renderAlertTemplate = async ({
   title: string;
   view: AlertMessageTemplateDefaultView;
   teamWebhooksById: Map<string, IWebhook>;
+  teamUsersById: Map<string, IUser>;
 }) => {
   const {
     alert,
@@ -524,8 +586,12 @@ export const renderAlertTemplate = async ({
 
       const channel = getPopulatedChannel(
         channelType,
-        renderedIdOrNamePrefix,
+        // For email channels, the id is a comma-separated list of user IDs
+        channelType === 'email'
+          ? renderedIdOrNamePrefix.split(',')
+          : renderedIdOrNamePrefix,
         teamWebhooksById,
+        teamUsersById,
       );
 
       if (channel) {
@@ -536,7 +602,11 @@ export const renderAlertTemplate = async ({
           alertId: alert.id,
           channel: {
             type: channel.type,
-            id: channel.channel._id.toString(),
+            // For email, use a hash of user IDs as the channel identifier
+            id:
+              channel.type === 'email'
+                ? channel.users.map(u => u._id.toString()).join(',')
+                : channel.channel._id.toString(),
           },
           // Explicitly track if this is a grouped alert
           isGrouped: view.isGroupedAlert,

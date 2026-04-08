@@ -9,6 +9,7 @@ import { IConnection } from '@/models/connection';
 import { IDashboard } from '@/models/dashboard';
 import { ISavedSearch } from '@/models/savedSearch';
 import { ISource } from '@/models/source';
+import { IUser } from '@/models/user';
 import { IWebhook } from '@/models/webhook';
 import DefaultAlertProvider from '@/tasks/checkAlerts/providers/default';
 import logger from '@/utils/logger';
@@ -21,7 +22,9 @@ export enum AlertTaskType {
 }
 
 // Discriminated union of possible alert channel types with populated channel data
-export type PopulatedAlertChannel = { type: 'webhook' } & { channel: IWebhook };
+export type PopulatedAlertChannel =
+  | ({ type: 'webhook' } & { channel: IWebhook })
+  | ({ type: 'email' } & { users: IUser[] });
 
 // Details about the alert and the source for the alert. Depending on
 // the taskType either:
@@ -83,6 +86,9 @@ export interface AlertProvider {
 
   /** Fetch all webhooks for the given team, returning a map of webhook ID to webhook */
   getWebhooks(teamId: string | ObjectId): Promise<Map<string, IWebhook>>;
+
+  /** Fetch all active users for the given team, returning a map of user ID to user */
+  getUsers(teamId: string | ObjectId): Promise<Map<string, IUser>>;
 
   /** Create and return an authenticated ClickHouse client */
   getClickHouseClient(

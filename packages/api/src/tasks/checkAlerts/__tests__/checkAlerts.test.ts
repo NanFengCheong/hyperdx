@@ -28,6 +28,7 @@ import Dashboard, { IDashboard } from '@/models/dashboard';
 import { ISavedSearch, SavedSearch } from '@/models/savedSearch';
 import { ISource, Source } from '@/models/source';
 import { ITeam } from '@/models/team';
+import { IUser } from '@/models/user';
 import Webhook, { IWebhook } from '@/models/webhook';
 import * as checkAlert from '@/tasks/checkAlerts';
 import {
@@ -709,6 +710,7 @@ describe('checkAlerts', () => {
         teamWebhooksById: new Map<string, typeof webhook>([
           [webhook._id.toString(), webhook],
         ]),
+        teamUsersById: new Map(),
       });
 
       expect(slack.postMessageToWebhook).toHaveBeenCalledTimes(2);
@@ -743,6 +745,7 @@ describe('checkAlerts', () => {
         teamWebhooksById: new Map<string, typeof webhook>([
           [webhook._id.toString(), webhook],
         ]),
+        teamUsersById: new Map(),
       });
 
       expect(slack.postMessageToWebhook).toHaveBeenNthCalledWith(
@@ -803,6 +806,7 @@ describe('checkAlerts', () => {
         teamWebhooksById: new Map<string, typeof webhook>([
           [webhook._id.toString(), webhook],
         ]),
+        teamUsersById: new Map(),
       });
 
       expect(slack.postMessageToWebhook).toHaveBeenNthCalledWith(
@@ -850,6 +854,7 @@ describe('checkAlerts', () => {
         [anotherWebhook._id.toString(), anotherWebhook],
         [myWebhook._id.toString(), myWebhook],
       ]);
+      const teamUsersById = new Map();
 
       await renderAlertTemplate({
         alertProvider,
@@ -886,6 +891,7 @@ describe('checkAlerts', () => {
         },
         title: '🚨 Alert for "My Search" - 10 lines found',
         teamWebhooksById,
+        teamUsersById,
       });
 
       // @webhook should not be called
@@ -910,6 +916,7 @@ describe('checkAlerts', () => {
         },
         title: '🚨 Alert for "My Search" - 10 lines found',
         teamWebhooksById,
+        teamUsersById,
       });
 
       expect(slack.postMessageToWebhook).toHaveBeenCalledTimes(2);
@@ -1001,6 +1008,7 @@ describe('checkAlerts', () => {
         teamWebhooksById: new Map<string, typeof webhook>([
           [webhook._id.toString(), webhook],
         ]),
+        teamUsersById: new Map(),
       });
 
       expect(slack.postMessageToWebhook).toHaveBeenCalledTimes(1);
@@ -1180,6 +1188,7 @@ describe('checkAlerts', () => {
       connection: IConnection,
       alertProvider: AlertProvider,
       teamWebhooksById: Map<string, IWebhook>,
+      teamUsersById: Map<string, IUser> = new Map(),
     ) => {
       const previousMap = await getPreviousAlertHistories(
         [details.alert.id],
@@ -1195,6 +1204,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        teamUsersById,
       );
     };
 
@@ -1239,6 +1249,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       expect(querySpy).not.toHaveBeenCalled();
@@ -1288,6 +1299,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
       expect(querySpy).not.toHaveBeenCalled();
       expect(
@@ -1301,6 +1313,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
       expect(querySpy).toHaveBeenCalledTimes(1);
       expect(
@@ -1380,6 +1393,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
       expect((await Alert.findById(details.alert.id))!.state).toBe('ALERT');
 
@@ -1392,6 +1406,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
       // alert should still be in alert state
       expect((await Alert.findById(details.alert.id))!.state).toBe('ALERT');
@@ -1404,6 +1419,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
       // alert should be in ok state
       expect((await Alert.findById(details.alert.id))!.state).toBe('ALERT');
@@ -1416,6 +1432,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
       // alert should be in ok state
       expect((await Alert.findById(details.alert.id))!.state).toBe('OK');
@@ -1571,6 +1588,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
       expect((await Alert.findById(details.alert.id))!.state).toBe('ALERT');
 
@@ -1583,6 +1601,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
       // alert should still be in alert state
       expect((await Alert.findById(details.alert.id))!.state).toBe('ALERT');
@@ -1595,6 +1614,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
       // alert should be in ok state
       expect((await Alert.findById(details.alert.id))!.state).toBe('OK');
@@ -1764,6 +1784,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
       expect((await Alert.findById(details.alert.id))!.state).toBe('ALERT');
 
@@ -1776,6 +1797,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
       // alert should still be in alert state
       expect((await Alert.findById(details.alert.id))!.state).toBe('ALERT');
@@ -1788,6 +1810,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
       // alert should be in ok state
       expect((await Alert.findById(details.alert.id))!.state).toBe('OK');
@@ -1912,6 +1935,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Overall alert should be in ALERT state (because at least one group is alerting)
@@ -1939,6 +1963,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Overall alert should still be in ALERT state (service-a is still alerting)
@@ -2059,6 +2084,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Verify histories were created for both groups
@@ -2081,6 +2107,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Verify NO new histories were created (still only 2 from first run)
@@ -2102,6 +2129,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Verify new histories were created (should have 4 now)
@@ -2172,6 +2200,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Verify history was created
@@ -2247,6 +2276,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       let alertHistories = await AlertHistory.find({
@@ -2283,6 +2313,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Verify NO new histories were created
@@ -2388,6 +2419,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Overall alert should be in ALERT state (because at least one group is alerting)
@@ -2415,6 +2447,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Overall alert should still be in ALERT state (service-a is still alerting)
@@ -2569,6 +2602,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
       expect((await Alert.findById(details.alert.id))!.state).toBe('ALERT');
 
@@ -2581,6 +2615,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
       // alert should still be in alert state
       expect((await Alert.findById(details.alert.id))!.state).toBe('ALERT');
@@ -2593,6 +2628,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
       // alert should be in ok state
       expect((await Alert.findById(details.alert.id))!.state).toBe('OK');
@@ -2767,6 +2803,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       expect((await Alert.findById(details.alert.id))!.state).toBe('ALERT');
@@ -2915,6 +2952,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Alert should be in ALERT state because one of the buckets exceeded threshold
@@ -2979,6 +3017,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Alert should be auto-resolved to OK state
@@ -3142,6 +3181,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Alert should be in ALERT state (service-b still alerting)
@@ -3200,6 +3240,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Check all alert histories after second run
@@ -3286,6 +3327,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Alert should be in OK state because there are two logs in the first period
@@ -3318,6 +3360,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Alert should be in ALERT state because there are no logs in the second period
@@ -3412,6 +3455,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Alert should be in OK state because there are two logs in the first period
@@ -3442,6 +3486,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Alert should be in ALERT state because there are no logs in the second period
@@ -3534,6 +3579,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Alert should be in OK state because there are two logs in the first period
@@ -3564,6 +3610,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Alert should be in OK state because there are no logs in the second period
@@ -3674,6 +3721,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Alert should be in ALERT state because the api service has 2 error logs
@@ -3721,6 +3769,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Alert should be in ALERT state because now the app service is in alarm
@@ -3767,6 +3816,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Alert should be in OK state since app should have been resolved
@@ -3870,6 +3920,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Alert should be in ALERT state because the api service has 2 error logs
@@ -3916,6 +3967,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Alert should be in OK state because grouped alerts do not alert due to zero-fill
@@ -3999,6 +4051,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Alert should be in ALERT state because the api service has 2 error logs
@@ -4045,6 +4098,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Alert should be in ALERT state because there is no data and the period is zero-filled
@@ -4138,6 +4192,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Verify webhook was NOT called
@@ -4221,6 +4276,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Verify webhook WAS called
@@ -4299,6 +4355,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Verify webhook WAS called
@@ -4408,6 +4465,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       expect((await Alert.findById(details.alert.id))!.state).toBe('ALERT');
@@ -4505,6 +4563,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // No matching rows, so alert should remain in OK/INSUFFICIENT_DATA state
@@ -4610,6 +4669,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Only 1 log matches svc:"api", which meets threshold > 1
@@ -4842,6 +4902,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       const nextWindow = new Date('2023-11-16T22:15:00.000Z');
@@ -4856,6 +4917,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Assert - Alert ran and has a state consistent with the data in the MV
@@ -4986,6 +5048,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       const nextWindow = new Date('2023-11-16T22:15:00.000Z');
@@ -5000,6 +5063,7 @@ describe('checkAlerts', () => {
         connection.id,
         alertProvider,
         teamWebhooksById,
+        new Map(),
       );
 
       // Assert - Alert ran and has a state consistent with the data in the base table

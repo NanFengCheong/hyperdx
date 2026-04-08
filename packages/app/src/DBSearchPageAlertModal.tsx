@@ -121,8 +121,8 @@ const AlertForm = ({
           thresholdType: AlertThresholdType.ABOVE,
           source: AlertSource.SAVED_SEARCH,
           channel: {
-            type: 'webhook',
-            webhookId: '',
+            type: 'email',
+            userIds: [],
           },
         },
     resolver: zodResolver(SavedSearchAlertFormSchema),

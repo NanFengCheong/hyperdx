@@ -38,6 +38,7 @@ import AlertHistory, { IAlertHistory } from '@/models/alertHistory';
 import { IDashboard } from '@/models/dashboard';
 import { ISavedSearch } from '@/models/savedSearch';
 import { ISource } from '@/models/source';
+import { IUser } from '@/models/user';
 import { IWebhook } from '@/models/webhook';
 import {
   AlertDetails,
@@ -230,6 +231,7 @@ const fireChannelEvent = async ({
   totalCount,
   windowSizeInMins,
   teamWebhooksById,
+  teamUsersById,
 }: {
   alert: IAlert;
   alertProvider: AlertProvider;
@@ -247,6 +249,7 @@ const fireChannelEvent = async ({
   totalCount: number;
   windowSizeInMins: number;
   teamWebhooksById: Map<string, IWebhook>;
+  teamUsersById: Map<string, IUser>;
 }) => {
   const team = alert.team;
   if (team == null) {
@@ -317,6 +320,7 @@ const fireChannelEvent = async ({
     template: alert.message,
     view: templateView,
     teamWebhooksById,
+    teamUsersById,
   });
 };
 
@@ -568,6 +572,7 @@ export const processAlert = async (
   connectionId: string,
   alertProvider: AlertProvider,
   teamWebhooksById: Map<string, IWebhook>,
+  teamUsersById: Map<string, IUser>,
 ) => {
   const { alert, source, previousMap } = details;
   try {
@@ -785,6 +790,7 @@ export const processAlert = async (
           totalCount,
           windowSizeInMins,
           teamWebhooksById,
+          teamUsersById,
         });
       } catch (e) {
         logger.error(
@@ -1068,6 +1074,7 @@ export default class CheckAlertTask implements HdxTask<CheckAlertsTaskArgs> {
   async processAlertTask(
     alertTask: AlertTask,
     teamWebhooksById: Map<string, IWebhook>,
+    teamUsersById: Map<string, IUser>,
   ) {
     await tasksTracer.startActiveSpan('processAlertTask', async span => {
       span.setAttribute(
@@ -1099,6 +1106,7 @@ export default class CheckAlertTask implements HdxTask<CheckAlertsTaskArgs> {
               conn.id,
               this.provider,
               teamWebhooksById,
+              teamUsersById,
             ),
           );
         }
@@ -1137,24 +1145,30 @@ export default class CheckAlertTask implements HdxTask<CheckAlertsTaskArgs> {
 
     const teams = new Set(alertTasks.map(t => t.conn.team.toString()));
     const teamToWebhooks = new Map<string, Map<string, IWebhook>>();
+    const teamToUsers = new Map<string, Map<string, IUser>>();
     for (const teamId of teams) {
       const teamWebhooksById = await this.provider.getWebhooks(teamId);
       teamToWebhooks.set(teamId, teamWebhooksById);
+      const teamUsersById = await this.provider.getUsers(teamId);
+      teamToUsers.set(teamId, teamUsersById);
     }
     logger.debug(
       {
         args: this.args,
         teamCount: teams.size,
         teamWebhookCount: teamToWebhooks.size,
+        teamUserCount: teamToUsers.size,
       },
-      `Obtained teams and webhooks for all alertTasks`,
+      `Obtained teams, webhooks, and users for all alertTasks`,
     );
 
     for (const task of alertTasks) {
       const teamWebhooksById =
         teamToWebhooks.get(task.conn.team.toString()) ?? new Map();
+      const teamUsersById =
+        teamToUsers.get(task.conn.team.toString()) ?? new Map();
       this.task_queue.add(async () =>
-        this.processAlertTask(task, teamWebhooksById),
+        this.processAlertTask(task, teamWebhooksById, teamUsersById),
       );
     }
     logger.debug(

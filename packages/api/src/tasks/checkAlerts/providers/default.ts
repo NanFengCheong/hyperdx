@@ -14,6 +14,7 @@ import Connection, { IConnection } from '@/models/connection';
 import Dashboard from '@/models/dashboard';
 import { type ISavedSearch, SavedSearch } from '@/models/savedSearch';
 import { type ISource, Source } from '@/models/source';
+import User, { IUser } from '@/models/user';
 import Webhook, { IWebhook } from '@/models/webhook';
 import {
   type AlertDetails,
@@ -336,6 +337,14 @@ export default class DefaultAlertProvider implements AlertProvider {
       team: new mongoose.Types.ObjectId(teamId),
     });
     return new Map<string, IWebhook>(webhooks.map(w => [w.id, w]));
+  }
+
+  async getUsers(teamId: string | ObjectId): Promise<Map<string, IUser>> {
+    const users = await User.find({
+      team: new mongoose.Types.ObjectId(teamId),
+      disabledAt: null,
+    });
+    return new Map<string, IUser>(users.map(u => [u.id, u]));
   }
 
   async getClickHouseClient(
