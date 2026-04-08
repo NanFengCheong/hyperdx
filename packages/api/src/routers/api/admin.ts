@@ -8,6 +8,11 @@ import AuditLog from '../../models/auditLog';
 import User from '../../models/user';
 import Team from '../../models/team';
 import DataRetentionTask from '../../tasks/dataRetention';
+import PlatformSetting from '../../models/platformSetting';
+import {
+  RETENTION_DAYS_AUDITLOG,
+  RETENTION_DAYS_ALERTHISTORY,
+} from '../../config';
 
 const router = express.Router();
 
@@ -103,6 +108,75 @@ router.get('/audit-log', async (req, res, next) => {
     ]);
 
     res.json({ data, totalCount, page, limit });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// GET /admin/data-retention/settings — get current retention settings
+router.get('/data-retention/settings', async (req, res, next) => {
+  try {
+    const setting = await PlatformSetting.findOne({ key: 'dataRetention' });
+
+    const defaults = {
+      auditLog: RETENTION_DAYS_AUDITLOG,
+      alertHistory: RETENTION_DAYS_ALERTHISTORY,
+    };
+
+    const value = setting?.value as Record<string, number> | undefined;
+
+    res.json({
+      data: {
+        auditLog: value?.auditLog ?? defaults.auditLog,
+        alertHistory: value?.alertHistory ?? defaults.alertHistory,
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// PUT /admin/data-retention/settings — update retention settings
+const retentionSettingsSchema = z.object({
+  auditLog: z.number().int().min(1).max(3650),
+  alertHistory: z.number().int().min(1).max(3650),
+});
+
+router.put('/data-retention/settings', async (req, res, next) => {
+  try {
+    const actor = req.user as any;
+    const parseResult = retentionSettingsSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({
+        message: 'Invalid settings',
+        errors: parseResult.error.errors,
+      });
+    }
+
+    const { auditLog, alertHistory } = parseResult.data;
+
+    await PlatformSetting.findOneAndUpdate(
+      { key: 'dataRetention' },
+      {
+        $set: {
+          value: { auditLog, alertHistory },
+          updatedBy: actor._id,
+        },
+      },
+      { upsert: true, new: true },
+    );
+
+    await AuditLog.create({
+      teamId: actor._id,
+      actorId: actor._id,
+      actorEmail: actor.email,
+      action: 'data_retention.settings_updated',
+      targetType: 'PlatformSetting',
+      targetId: 'dataRetention',
+      details: { auditLog, alertHistory },
+    });
+
+    res.json({ data: { ok: true } });
   } catch (e) {
     next(e);
   }
