@@ -251,9 +251,7 @@ function TeamsPanel() {
                     <Table.Tr>
                       <Table.Td colSpan={3} p={0}>
                         <Collapse in={isExpanded}>
-                          {isExpanded && (
-                            <TeamMembersTable teamId={team._id} />
-                          )}
+                          {isExpanded && <TeamMembersTable teamId={team._id} />}
                         </Collapse>
                       </Table.Td>
                     </Table.Tr>
@@ -313,9 +311,7 @@ function formatAuditDescription(log: any): string {
     // Include any remaining human-readable keys
     for (const [k, v] of Object.entries(detail)) {
       if (
-        ['from', 'to', 'fromEmail', 'toEmail', 'fromName', 'toName'].includes(
-          k,
-        )
+        ['from', 'to', 'fromEmail', 'toEmail', 'fromName', 'toName'].includes(k)
       )
         continue;
       if (typeof v === 'string' && v.length < 80) {
@@ -399,7 +395,7 @@ function AuditLogPanel() {
           label="Actor Email"
           placeholder="Filter by actor email..."
           value={actorFilter}
-          onChange={(e) => setActorFilter(e.currentTarget.value)}
+          onChange={e => setActorFilter(e.currentTarget.value)}
           size="sm"
         />
       </Group>
@@ -441,9 +437,7 @@ function AuditLogPanel() {
                 </Badge>
               </Table.Td>
               <Table.Td>
-                <Text size="sm">
-                  {formatAuditDescription(log)}
-                </Text>
+                <Text size="sm">{formatAuditDescription(log)}</Text>
               </Table.Td>
             </Table.Tr>
           ))}
@@ -488,7 +482,12 @@ function DataRetentionPanel() {
   const handleSaveSettings = useCallback(() => {
     const auditLogNum = Number(auditLog);
     const alertHistoryNum = Number(alertHistory);
-    if (!auditLogNum || auditLogNum < 1 || !alertHistoryNum || alertHistoryNum < 1) {
+    if (
+      !auditLogNum ||
+      auditLogNum < 1 ||
+      !alertHistoryNum ||
+      alertHistoryNum < 1
+    ) {
       notifications.show({
         color: 'red',
         title: 'Invalid Settings',
@@ -509,7 +508,7 @@ function DataRetentionPanel() {
             queryKey: ['admin', 'data-retention-settings'],
           });
         },
-        onError: (e) => {
+        onError: e => {
           notifications.show({
             color: 'red',
             title: 'Save Failed',
@@ -539,7 +538,7 @@ function DataRetentionPanel() {
           });
           queryClient.invalidateQueries({ queryKey: ['admin', 'audit-log'] });
         },
-        onError: (e) => {
+        onError: e => {
           notifications.show({
             color: 'red',
             title: 'Cleanup Failed',

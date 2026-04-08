@@ -1,9 +1,6 @@
 import express from 'express';
 import { z } from 'zod';
-import {
-  isUserAuthenticated,
-  requireSuperAdmin,
-} from '../../middleware/auth';
+import { isUserAuthenticated, requireSuperAdmin } from '../../middleware/auth';
 import AuditLog from '../../models/auditLog';
 import User from '../../models/user';
 import Team from '../../models/team';
@@ -55,7 +52,9 @@ router.patch('/user/:id/super-admin', async (req, res, next) => {
 
     // Prevent removing own super admin
     if (targetUser._id.equals(actor._id) && !isSuperAdmin) {
-      return res.status(400).json({ message: 'Cannot remove your own super admin status' });
+      return res
+        .status(400)
+        .json({ message: 'Cannot remove your own super admin status' });
     }
 
     (targetUser as any).isSuperAdmin = isSuperAdmin;
@@ -88,15 +87,24 @@ router.get('/audit-log', async (req, res, next) => {
 
     // Date range filter
     if (req.query.fromDate) {
-      filter.createdAt = { ...filter.createdAt, $gte: new Date(req.query.fromDate as string) };
+      filter.createdAt = {
+        ...filter.createdAt,
+        $gte: new Date(req.query.fromDate as string),
+      };
     }
     if (req.query.toDate) {
-      filter.createdAt = { ...filter.createdAt, $lte: new Date(req.query.toDate as string) };
+      filter.createdAt = {
+        ...filter.createdAt,
+        $lte: new Date(req.query.toDate as string),
+      };
     }
 
     // Actor email filter
     if (req.query.actorEmail) {
-      filter.actorEmail = { $regex: req.query.actorEmail as string, $options: 'i' };
+      filter.actorEmail = {
+        $regex: req.query.actorEmail as string,
+        $options: 'i',
+      };
     }
 
     const [data, totalCount] = await Promise.all([
@@ -205,7 +213,9 @@ router.post('/data-retention/run', async (req, res, next) => {
       teamId: actor._id,
       actorId: actor._id,
       actorEmail: actor.email,
-      action: dryRun ? 'data_retention.manual_dry_run' : 'data_retention.manual_run',
+      action: dryRun
+        ? 'data_retention.manual_dry_run'
+        : 'data_retention.manual_run',
       targetType: 'System',
       targetId: 'data-retention',
       details: { triggeredBy: actor.email, dryRun },

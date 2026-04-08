@@ -1,7 +1,4 @@
-import {
-  RETENTION_DAYS_AUDITLOG,
-  RETENTION_DAYS_ALERTHISTORY,
-} from '@/config';
+import { RETENTION_DAYS_AUDITLOG, RETENTION_DAYS_ALERTHISTORY } from '@/config';
 import AuditLog from '@/models/auditLog';
 import { DataRetentionTaskArgs, HdxTask } from '@/tasks/types';
 import logger from '@/utils/logger';
@@ -34,7 +31,10 @@ async function getRetentionDays(collectionName: string): Promise<number> {
       return value[dbKey];
     }
   } catch (error) {
-    logger.warn({ error, collectionName }, 'Failed to read retention settings from DB, using env defaults');
+    logger.warn(
+      { error, collectionName },
+      'Failed to read retention settings from DB, using env defaults',
+    );
   }
   return DEFAULT_RETENTION_DAYS[collectionName] ?? 0;
 }
@@ -67,7 +67,10 @@ async function writeAuditLog(
       details,
     });
   } catch (error) {
-    logger.error({ error, action }, 'Failed to write audit log for data retention task');
+    logger.error(
+      { error, action },
+      'Failed to write audit log for data retention task',
+    );
   }
 }
 
@@ -97,7 +100,9 @@ export async function applyRetention(
   });
 
   if (count === 0) {
-    logger.info(`${collectionName}: No documents older than ${retentionDays} days`);
+    logger.info(
+      `${collectionName}: No documents older than ${retentionDays} days`,
+    );
     return 0;
   }
 
@@ -136,7 +141,9 @@ export default class DataRetentionTask
     for (const collectionName of Object.keys(DEFAULT_RETENTION_DAYS)) {
       const retentionDays = await getRetentionDays(collectionName);
       if (retentionDays === 0) {
-        logger.info(`${collectionName}: No retention policy configured, skipping`);
+        logger.info(
+          `${collectionName}: No retention policy configured, skipping`,
+        );
         continue;
       }
 
@@ -163,7 +170,9 @@ export default class DataRetentionTask
             retentionDays,
             deletedCount,
             dryRun,
-            retentionCutoff: new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString(),
+            retentionCutoff: new Date(
+              Date.now() - retentionDays * 24 * 60 * 60 * 1000,
+            ).toISOString(),
           },
         );
       } catch (error) {

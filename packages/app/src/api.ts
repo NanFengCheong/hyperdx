@@ -709,11 +709,7 @@ const api = {
     });
   },
   useVerifyOtp() {
-    return useMutation<
-      { status: string },
-      Error,
-      { code: string }
-    >({
+    return useMutation<{ status: string }, Error, { code: string }>({
       mutationFn: async ({ code }) =>
         hdxServer('verify-otp', {
           method: 'POST',
@@ -722,11 +718,7 @@ const api = {
     });
   },
   useResendOtp() {
-    return useMutation<
-      { status: string },
-      Error,
-      void
-    >({
+    return useMutation<{ status: string }, Error, void>({
       mutationFn: async () =>
         hdxServer('resend-otp', {
           method: 'POST',
@@ -734,11 +726,7 @@ const api = {
     });
   },
   useForgotPassword() {
-    return useMutation<
-      { status: string },
-      Error,
-      { email: string }
-    >({
+    return useMutation<{ status: string }, Error, { email: string }>({
       mutationFn: async ({ email }) =>
         hdxServer('forgot-password', {
           method: 'POST',
@@ -758,7 +746,7 @@ const api = {
         confirmPassword: string;
       }
     >({
-      mutationFn: async (data) =>
+      mutationFn: async data =>
         hdxServer('reset-password', {
           method: 'POST',
           json: data,
@@ -798,22 +786,17 @@ export const useAdminTeamMembers = (teamId: string | null) =>
   useQuery<{ data: any[] }>({
     queryKey: ['admin', 'team-members', teamId],
     queryFn: () =>
-      hdxServer(
-        `admin/team/${encodeURIComponent(teamId!)}/members`,
-      ).json(),
+      hdxServer(`admin/team/${encodeURIComponent(teamId!)}/members`).json(),
     enabled: !!teamId,
   });
 
 export const useToggleSuperAdmin = () =>
   useMutation<any, Error, { userId: string; isSuperAdmin: boolean }>({
     mutationFn: ({ userId, isSuperAdmin }) =>
-      hdxServer(
-        `admin/user/${encodeURIComponent(userId)}/super-admin`,
-        {
-          method: 'PATCH',
-          json: { isSuperAdmin },
-        },
-      ).json(),
+      hdxServer(`admin/user/${encodeURIComponent(userId)}/super-admin`, {
+        method: 'PATCH',
+        json: { isSuperAdmin },
+      }).json(),
   });
 
 export const useAdminAuditLog = (
@@ -836,7 +819,11 @@ export const useAdminAuditLog = (
   });
 
 export const useRunDataRetention = () =>
-  useMutation<{ data: { ok: boolean; dryRun: boolean } }, Error, { dryRun: boolean }>({
+  useMutation<
+    { data: { ok: boolean; dryRun: boolean } },
+    Error,
+    { dryRun: boolean }
+  >({
     mutationFn: ({ dryRun }) =>
       hdxServer('admin/data-retention/run', {
         method: 'POST',
@@ -856,7 +843,7 @@ export const useUpdateDataRetentionSettings = () =>
     Error,
     { auditLog: number; alertHistory: number }
   >({
-    mutationFn: (settings) =>
+    mutationFn: settings =>
       hdxServer('admin/data-retention/settings', {
         method: 'PUT',
         json: settings,
