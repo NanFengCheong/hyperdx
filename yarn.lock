@@ -4458,6 +4458,7 @@ __metadata:
     promised-handlebars: "npm:^2.0.1"
     protobufjs: "npm:^7.5.2"
     react: "npm:^19.2.4"
+    react-dom: "npm:^19.0.0"
     react-email: "npm:^5.2.10"
     rimraf: "npm:^4.4.1"
     serialize-error: "npm:^8.1.0"
@@ -24698,6 +24699,17 @@ __metadata:
   peerDependencies:
     react: ^19.2.1
   checksum: 10c0/e56b6b3d72314df580ca800b70a69a21c6372703c8f45d9b5451ca6519faefb2496d76ffa9c5adb94136d2bbf2fd303d0dfc208a2cd77ede3132877471af9470
+  languageName: node
+  linkType: hard
+
+"react-dom@npm:^19.0.0":
+  version: 19.2.4
+  resolution: "react-dom@npm:19.2.4"
+  dependencies:
+    scheduler: "npm:^0.27.0"
+  peerDependencies:
+    react: ^19.2.4
+  checksum: 10c0/f0c63f1794dedb154136d4d0f59af00b41907f4859571c155940296808f4b94bf9c0c20633db75b5b2112ec13d8d7dd4f9bf57362ed48782f317b11d05a44f35
   languageName: node
   linkType: hard
 

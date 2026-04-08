@@ -51,6 +51,7 @@
     "promised-handlebars": "^2.0.1",
     "protobufjs": "^7.5.2",
     "react": "^19.2.4",
+    "react-dom": "^19.0.0",
     "react-email": "^5.2.10",
     "serialize-error": "^8.1.0",
     "uuid": "^8.3.2",
