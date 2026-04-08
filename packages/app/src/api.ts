@@ -49,6 +49,7 @@ function loginHook(request: Request, options: any, response: Response) {
     '/login',
     '/register',
     '/reset-password',
+    '/verify',
     '/auth/oidc/callback',
   ];
   if (!WHITELIST_PATHS.includes(Router.pathname) && response.status === 401) {
@@ -704,6 +705,63 @@ const api = {
             password,
             confirmPassword,
           },
+        }).json<{ status: string }>(),
+    });
+  },
+  useVerifyOtp() {
+    return useMutation<
+      { status: string },
+      Error,
+      { code: string }
+    >({
+      mutationFn: async ({ code }) =>
+        hdxServer('verify-otp', {
+          method: 'POST',
+          json: { code },
+        }).json<{ status: string }>(),
+    });
+  },
+  useResendOtp() {
+    return useMutation<
+      { status: string },
+      Error,
+      void
+    >({
+      mutationFn: async () =>
+        hdxServer('resend-otp', {
+          method: 'POST',
+        }).json<{ status: string }>(),
+    });
+  },
+  useForgotPassword() {
+    return useMutation<
+      { status: string },
+      Error,
+      { email: string }
+    >({
+      mutationFn: async ({ email }) =>
+        hdxServer('forgot-password', {
+          method: 'POST',
+          json: { email },
+        }).json<{ status: string }>(),
+    });
+  },
+  useResetPassword() {
+    return useMutation<
+      { status: string },
+      Error,
+      {
+        email: string;
+        code?: string;
+        token?: string;
+        password: string;
+        confirmPassword: string;
+      }
+    >({
+      mutationFn: async (data) =>
+        hdxServer('reset-password', {
+          method: 'POST',
+          json: data,
         }).json<{ status: string }>(),
     });
   },
