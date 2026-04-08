@@ -3,30 +3,38 @@ import Head from 'next/head';
 import {
   ActionIcon,
   Badge,
+  Button,
   Center,
   Collapse,
   Container,
   Group,
   Loader,
+  Modal,
   Pagination,
   Stack,
   Switch,
   Table,
   Tabs,
   Text,
+  TextInput,
   Title,
 } from '@mantine/core';
 import {
   IconChevronDown,
   IconChevronRight,
+  IconPlayerPlay,
   IconShieldLock,
+  IconTrash,
 } from '@tabler/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
+import { notifications } from '@mantine/notifications';
+import { DatePickerInput } from '@mantine/dates';
 
 import {
   useAdminAuditLog,
   useAdminTeamMembers,
   useAdminTeams,
+  useRunDataRetention,
   useToggleSuperAdmin,
 } from './api';
 import RolesSection from './components/TeamSettings/RolesSection';
@@ -323,11 +331,30 @@ const AUDIT_PAGE_SIZE = 50;
 
 function AuditLogPanel() {
   const [page, setPage] = useState(0);
-  const { data, isLoading } = useAdminAuditLog(page, AUDIT_PAGE_SIZE);
+  const [fromDate, setFromDate] = useState<Date | null>(null);
+  const [toDate, setToDate] = useState<Date | null>(null);
+  const [actorFilter, setActorFilter] = useState('');
+
+  const filters = {
+    fromDate: fromDate?.toISOString(),
+    toDate: toDate?.toISOString(),
+    actorEmail: actorFilter || undefined,
+  };
+
+  const { data, isLoading } = useAdminAuditLog(page, AUDIT_PAGE_SIZE, filters);
 
   const logs = data?.data ?? [];
   const totalCount = data?.totalCount ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / AUDIT_PAGE_SIZE));
+
+  const handleFilterReset = () => {
+    setFromDate(null);
+    setToDate(null);
+    setActorFilter('');
+    setPage(0);
+  };
+
+  const hasActiveFilters = fromDate || toDate || actorFilter;
 
   if (isLoading) {
     return (
@@ -347,6 +374,40 @@ function AuditLogPanel() {
 
   return (
     <Stack gap="md">
+      {/* Filters */}
+      <Group grow>
+        <DatePickerInput
+          label="From Date"
+          placeholder="Select start date"
+          value={fromDate}
+          onChange={setFromDate}
+          clearable
+          size="sm"
+        />
+        <DatePickerInput
+          label="To Date"
+          placeholder="Select end date"
+          value={toDate}
+          onChange={setToDate}
+          clearable
+          size="sm"
+        />
+        <TextInput
+          label="Actor Email"
+          placeholder="Filter by actor email..."
+          value={actorFilter}
+          onChange={(e) => setActorFilter(e.currentTarget.value)}
+          size="sm"
+        />
+      </Group>
+      {hasActiveFilters && (
+        <Group justify="flex-end">
+          <Button variant="subtle" size="xs" onClick={handleFilterReset}>
+            Clear Filters
+          </Button>
+        </Group>
+      )}
+
       <Table highlightOnHover withTableBorder withColumnBorders={false}>
         <Table.Thead>
           <Table.Tr>
@@ -398,6 +459,108 @@ function AuditLogPanel() {
 }
 
 // ---------------------------------------------------------------------------
+// Data Retention Tab
+// ---------------------------------------------------------------------------
+function DataRetentionPanel() {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [dryRun, setDryRun] = useState(false);
+  const queryClient = useQueryClient();
+
+  const runRetention = useRunDataRetention();
+
+  const handleRun = useCallback(() => {
+    setModalOpen(true);
+  }, []);
+
+  const handleConfirm = useCallback(() => {
+    setModalOpen(false);
+    runRetention.mutate(
+      { dryRun },
+      {
+        onSuccess: () => {
+          notifications.show({
+            color: 'green',
+            title: dryRun ? 'Dry Run Complete' : 'Cleanup Complete',
+            message: dryRun
+              ? 'Data retention dry run finished. No data was deleted.'
+              : 'Data retention cleanup completed successfully.',
+          });
+          queryClient.invalidateQueries({ queryKey: ['admin', 'audit-log'] });
+        },
+        onError: (e) => {
+          notifications.show({
+            color: 'red',
+            title: 'Cleanup Failed',
+            message: e.message ?? 'An error occurred during data retention.',
+          });
+        },
+      },
+    );
+  }, [dryRun, runRetention, queryClient]);
+
+  return (
+    <Stack gap="md">
+      <Text size="sm" c="dimmed">
+        Manually trigger the data retention job. This will clean up expired data
+        from MongoDB collections based on configured retention policies.
+      </Text>
+
+      <Group>
+        <Button
+          leftSection={<IconTrash size={16} />}
+          variant="default"
+          onClick={() => {
+            setDryRun(true);
+            handleRun();
+          }}
+          loading={runRetention.isPending && dryRun}
+        >
+          Dry Run
+        </Button>
+        <Button
+          leftSection={<IconPlayerPlay size={16} />}
+          color="red"
+          onClick={() => {
+            setDryRun(false);
+            handleRun();
+          }}
+          loading={runRetention.isPending && !dryRun}
+        >
+          Run Cleanup
+        </Button>
+      </Group>
+
+      <Modal
+        opened={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={dryRun ? 'Confirm Dry Run' : 'Confirm Data Cleanup'}
+        centered
+      >
+        <Stack gap="md">
+          <Text size="sm">
+            {dryRun
+              ? 'This will scan and report how many expired documents would be deleted. No data will be modified.'
+              : 'This will permanently delete expired documents from all configured collections. This action cannot be undone.'}
+          </Text>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              color={dryRun ? 'blue' : 'red'}
+              onClick={handleConfirm}
+              loading={runRetention.isPending}
+            >
+              {dryRun ? 'Run Dry Run' : 'Confirm Cleanup'}
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+    </Stack>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Page
 // ---------------------------------------------------------------------------
 export default function AdminPage() {
@@ -423,6 +586,7 @@ export default function AdminPage() {
             <Tabs.Tab value="teams">Teams</Tabs.Tab>
             <Tabs.Tab value="roles">Roles</Tabs.Tab>
             <Tabs.Tab value="audit-log">Global Audit Log</Tabs.Tab>
+            <Tabs.Tab value="data-retention">Data Retention</Tabs.Tab>
           </Tabs.List>
 
           <Tabs.Panel value="teams">
@@ -435,6 +599,10 @@ export default function AdminPage() {
 
           <Tabs.Panel value="audit-log">
             <AuditLogPanel />
+          </Tabs.Panel>
+
+          <Tabs.Panel value="data-retention">
+            <DataRetentionPanel />
           </Tabs.Panel>
         </Tabs>
       </Container>

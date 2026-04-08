@@ -4,6 +4,7 @@ export enum TaskName {
   PING_PONG = 'ping-pong',
   CHECK_ALERTS = 'check-alerts',
   CHECK_INACTIVE_USERS = 'check-inactive-users',
+  DATA_RETENTION = 'data-retention',
 }
 
 /**
@@ -34,10 +35,16 @@ const checkInactiveUsersTaskArgsSchema = z.object({
   taskName: z.literal(TaskName.CHECK_INACTIVE_USERS),
 });
 
+const dataRetentionTaskArgsSchema = z.object({
+  taskName: z.literal(TaskName.DATA_RETENTION),
+  dryRun: z.boolean().optional().default(false),
+});
+
 const taskArgsSchema = z.discriminatedUnion('taskName', [
   pingTaskArgsSchema,
   checkAlertsTaskArgsSchema,
   checkInactiveUsersTaskArgsSchema,
+  dataRetentionTaskArgsSchema,
 ]);
 
 export type PingTaskArgs = z.infer<typeof pingTaskArgsSchema>;
@@ -45,6 +52,7 @@ export type CheckAlertsTaskArgs = z.infer<typeof checkAlertsTaskArgsSchema>;
 export type CheckInactiveUsersTaskArgs = z.infer<
   typeof checkInactiveUsersTaskArgsSchema
 >;
+export type DataRetentionTaskArgs = z.infer<typeof dataRetentionTaskArgsSchema>;
 export type TaskArgs = z.infer<typeof taskArgsSchema>;
 
 /**

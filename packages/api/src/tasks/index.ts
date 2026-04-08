@@ -5,6 +5,7 @@ import { serializeError } from 'serialize-error';
 import { RUN_SCHEDULED_TASKS_EXTERNALLY } from '@/config';
 import CheckAlertTask from '@/tasks/checkAlerts';
 import CheckInactiveUsersTask from '@/tasks/checkInactiveUsers';
+import DataRetentionTask from '@/tasks/dataRetention';
 import {
   taskExecutionDurationGauge,
   taskExecutionFailureCounter,
@@ -26,6 +27,8 @@ function createTask(argv: TaskArgs): HdxTask<TaskArgs> {
       return new PingPongTask(argv);
     case TaskName.CHECK_INACTIVE_USERS:
       return new CheckInactiveUsersTask(argv);
+    case TaskName.DATA_RETENTION:
+      return new DataRetentionTask(argv);
     default:
       throw new Error(`Unknown task name ${taskName}`);
   }
@@ -68,17 +71,33 @@ const instrumentedMain = timeExec(main, duration => {
 // WARNING: the cron job will be enabled only in development mode
 if (!RUN_SCHEDULED_TASKS_EXTERNALLY) {
   logger.info('In-app cron job is enabled');
-  // run cron job every 1 minute
-  const job = CronJob.from({
-    cronTime: '0 * * * * *',
-    waitForCompletion: true,
-    onTick: async () => instrumentedMain(argv),
-    errorHandler: async err => {
-      console.error(err);
-    },
-    start: true,
-    timeZone: 'UTC',
-  });
+
+  if (argv.taskName === TaskName.DATA_RETENTION) {
+    // Data retention: daily at 3 AM MYT (19:00 UTC)
+    logger.info('Data retention cron: daily at 3:00 AM MYT (19:00 UTC)');
+    CronJob.from({
+      cronTime: '0 19 * * *', // 19:00 UTC = 3:00 AM MYT
+      waitForCompletion: true,
+      onTick: async () => instrumentedMain(argv),
+      errorHandler: async err => {
+        console.error(err);
+      },
+      start: true,
+      timeZone: 'UTC',
+    });
+  } else {
+    // All other tasks: every minute
+    const job = CronJob.from({
+      cronTime: '0 * * * * *',
+      waitForCompletion: true,
+      onTick: async () => instrumentedMain(argv),
+      errorHandler: async err => {
+        console.error(err);
+      },
+      start: true,
+      timeZone: 'UTC',
+    });
+  }
 } else {
   logger.warn('In-app cron job is disabled');
   instrumentedMain(argv)

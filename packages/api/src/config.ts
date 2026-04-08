@@ -81,3 +81,7 @@ export const SMTP_ENABLED = !!env.SMTP_HOST;
 export const OTP_EXPIRY_SECONDS = Number.parseInt(env.OTP_EXPIRY_SECONDS || '300');
 export const OTP_MAX_ATTEMPTS = Number.parseInt(env.OTP_MAX_ATTEMPTS || '5');
 export const OTP_LOCKOUT_SECONDS = Number.parseInt(env.OTP_LOCKOUT_SECONDS || '900');
+
+// Data Retention Configuration (in days)
+export const RETENTION_DAYS_AUDITLOG = Number.parseInt(env.RETENTION_DAYS_AUDITLOG || '90');
+export const RETENTION_DAYS_ALERTHISTORY = Number.parseInt(env.RETENTION_DAYS_ALERTHISTORY || '30');

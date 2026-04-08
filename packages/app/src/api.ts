@@ -816,9 +816,30 @@ export const useToggleSuperAdmin = () =>
       ).json(),
   });
 
-export const useAdminAuditLog = (page: number, limit: number) =>
-  useQuery<{ data: any[]; totalCount: number }>({
-    queryKey: ['admin', 'audit-log', page, limit],
-    queryFn: () =>
-      hdxServer(`admin/audit-log?page=${page}&limit=${limit}`).json(),
+export const useAdminAuditLog = (
+  page: number,
+  limit: number,
+  filters?: { fromDate?: string; toDate?: string; actorEmail?: string },
+) =>
+  useQuery<{ data: any[]; totalCount: number; page: number; limit: number }>({
+    queryKey: ['admin', 'audit-log', page, limit, filters],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(limit),
+      });
+      if (filters?.fromDate) params.set('fromDate', filters.fromDate);
+      if (filters?.toDate) params.set('toDate', filters.toDate);
+      if (filters?.actorEmail) params.set('actorEmail', filters.actorEmail);
+      return hdxServer(`admin/audit-log?${params}`).json();
+    },
+  });
+
+export const useRunDataRetention = () =>
+  useMutation<{ data: { ok: boolean; dryRun: boolean } }, Error, { dryRun: boolean }>({
+    mutationFn: ({ dryRun }) =>
+      hdxServer('admin/data-retention/run', {
+        method: 'POST',
+        json: { dryRun },
+      }).json(),
   });

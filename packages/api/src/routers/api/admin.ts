@@ -1,4 +1,5 @@
 import express from 'express';
+import { z } from 'zod';
 import {
   isUserAuthenticated,
   requireSuperAdmin,
@@ -6,6 +7,7 @@ import {
 import AuditLog from '../../models/auditLog';
 import User from '../../models/user';
 import Team from '../../models/team';
+import DataRetentionTask from '../../tasks/dataRetention';
 
 const router = express.Router();
 
@@ -70,21 +72,82 @@ router.patch('/user/:id/super-admin', async (req, res, next) => {
   }
 });
 
-// GET /admin/audit-log — global audit log (all teams)
+// GET /admin/audit-log — global audit log (all teams) with optional filters
 router.get('/audit-log', async (req, res, next) => {
   try {
     const page = parseInt(req.query.page as string) || 0;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
 
+    // Build filter query
+    const filter: Record<string, any> = {};
+
+    // Date range filter
+    if (req.query.fromDate) {
+      filter.createdAt = { ...filter.createdAt, $gte: new Date(req.query.fromDate as string) };
+    }
+    if (req.query.toDate) {
+      filter.createdAt = { ...filter.createdAt, $lte: new Date(req.query.toDate as string) };
+    }
+
+    // Actor email filter
+    if (req.query.actorEmail) {
+      filter.actorEmail = { $regex: req.query.actorEmail as string, $options: 'i' };
+    }
+
     const [data, totalCount] = await Promise.all([
-      AuditLog.find()
+      AuditLog.find(filter)
         .sort({ createdAt: -1 })
         .skip(page * limit)
         .limit(limit),
-      AuditLog.countDocuments(),
+      AuditLog.countDocuments(filter),
     ]);
 
-    res.json({ data, totalCount });
+    res.json({ data, totalCount, page, limit });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// POST /admin/data-retention/run — manual data retention cleanup
+const dataRetentionRunSchema = z.object({
+  dryRun: z.boolean().optional().default(false),
+});
+
+router.post('/data-retention/run', async (req, res, next) => {
+  try {
+    const actor = req.user as any;
+
+    const parseResult = dataRetentionRunSchema.safeParse(req.body ?? {});
+    if (!parseResult.success) {
+      return res.status(400).json({
+        message: 'Invalid request body',
+        errors: parseResult.error.errors,
+      });
+    }
+
+    const { dryRun } = parseResult.data;
+
+    await AuditLog.create({
+      teamId: actor._id,
+      actorId: actor._id,
+      actorEmail: actor.email,
+      action: dryRun ? 'data_retention.manual_dry_run' : 'data_retention.manual_run',
+      targetType: 'System',
+      targetId: 'data-retention',
+      details: { triggeredBy: actor.email, dryRun },
+    });
+
+    const task = new DataRetentionTask({
+      taskName: 'data-retention' as any,
+      dryRun,
+    });
+
+    try {
+      await task.execute();
+      res.json({ data: { ok: true, dryRun } });
+    } finally {
+      await task.asyncDispose();
+    }
   } catch (e) {
     next(e);
   }
