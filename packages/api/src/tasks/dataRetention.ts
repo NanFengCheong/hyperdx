@@ -6,6 +6,7 @@ import AuditLog from '@/models/auditLog';
 import { DataRetentionTaskArgs, HdxTask } from '@/tasks/types';
 import logger from '@/utils/logger';
 import mongoose from 'mongoose';
+import PlatformSetting from '@/models/platformSetting';
 
 /**
  * Default retention periods (in days) for MongoDB collections.
@@ -18,9 +19,23 @@ const DEFAULT_RETENTION_DAYS: Record<string, number> = {
 
 /**
  * Returns the configured retention days for a collection.
- * Uses values from config.ts (which reads from environment variables).
+ * Reads from PlatformSetting DB first, falls back to env vars in config.ts.
  */
-function getRetentionDays(collectionName: string): number {
+async function getRetentionDays(collectionName: string): Promise<number> {
+  try {
+    const setting = await PlatformSetting.findOne({ key: 'dataRetention' });
+    const value = setting?.value as Record<string, number> | undefined;
+    const keyMap: Record<string, string> = {
+      AuditLog: 'auditLog',
+      AlertHistory: 'alertHistory',
+    };
+    const dbKey = keyMap[collectionName];
+    if (dbKey && value?.[dbKey] != null) {
+      return value[dbKey];
+    }
+  } catch (error) {
+    logger.warn({ error, collectionName }, 'Failed to read retention settings from DB, using env defaults');
+  }
   return DEFAULT_RETENTION_DAYS[collectionName] ?? 0;
 }
 
@@ -121,7 +136,7 @@ export default class DataRetentionTask
     for (const [collectionName, defaultDays] of Object.entries(
       DEFAULT_RETENTION_DAYS,
     )) {
-      const retentionDays = getRetentionDays(collectionName);
+      const retentionDays = await getRetentionDays(collectionName);
       if (retentionDays === 0) {
         logger.info(`${collectionName}: No retention policy configured, skipping`);
         continue;
