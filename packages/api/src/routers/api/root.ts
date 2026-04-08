@@ -17,6 +17,7 @@ import OtpVerification, {
 } from '@/models/otpVerification';
 import TeamInvite from '@/models/teamInvite';
 import User from '@/models/user'; // TODO -> do not import model directly
+import Role from '@/models/role';
 import { promoteIfDefaultSuperAdmin } from '@/scripts/migrateGroupsToRoles';
 import { setupTeamDefaults } from '@/setupDefaults';
 import logger from '@/utils/logger';
@@ -133,6 +134,10 @@ router.get('/auth/oidc/callback', (req, res, next) => {
           logger.info(
             { userId: user._id, inviteToken },
             'Consumed invite token after OIDC login',
+          );
+          // New invite users go to pending page instead of dashboard
+          return res.redirect(
+            `${config.FRONTEND_URL}/join-team?success=pending&token=${inviteToken}`,
           );
         } catch (e) {
           logger.error({ err: e, inviteToken }, 'Failed to consume invite token');
@@ -514,11 +519,15 @@ router.post('/team/setup/:token', async (req, res, next) => {
       return res.status(401).send('Invalid token');
     }
 
+    // Assign default Viewer role to new invite users
+    const viewerRole = await Role.findOne({ name: 'Viewer', isSystem: true });
+
     (User as any).register(
       new User({
         email: teamInvite.email,
         name: teamInvite.email,
         team: teamInvite.teamId,
+        roleId: viewerRole?._id,
       }),
       password, // TODO: validate password
       async (err: Error, user: any) => {
@@ -535,7 +544,11 @@ router.post('/team/setup/:token', async (req, res, next) => {
           if (err) {
             return next(err);
           }
-          redirectToDashboard(req, res);
+          // Redirect to join-team with success state instead of dashboard
+          // so user sees "Registration successful — pending admin access grant"
+          res.redirect(
+            `${config.FRONTEND_URL}/join-team?success=pending&token=${token}`,
+          );
         });
       },
     );

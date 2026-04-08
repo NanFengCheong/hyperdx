@@ -8,8 +8,9 @@ import {
   PasswordInput,
   Stack,
   Text,
+  Title,
 } from '@mantine/core';
-import { IconLock } from '@tabler/icons-react';
+import { IconLock, IconCircleCheck } from '@tabler/icons-react';
 
 import { useBrandDisplayName } from './theme/ThemeProvider';
 import { PasswordCheck } from './PasswordCheck';
@@ -18,10 +19,53 @@ import api from './api';
 export default function JoinTeam() {
   const router = useRouter();
   const brandName = useBrandDisplayName();
-  const { err, token } = router.query;
+  const { err, token, success } = router.query;
   const { data: authConfig } = api.useAuthConfig();
   const showOidc = authConfig?.oidcEnabled;
   const [password, setPassword] = useState('');
+
+  const isSuccess = success === 'pending';
+
+  if (isSuccess) {
+    return (
+      <div className="AuthPage">
+        <NextSeo title={`Registration Successful - ${brandName}`} />
+        <div className="d-flex align-items-center justify-content-center vh-100 p-2">
+          <div>
+            <div className="text-center mb-4">
+              <h2 className="me-2 text-center">Registration Successful</h2>
+            </div>
+            <Paper p="xl" withBorder>
+              <Stack gap="lg" align="center">
+                <IconCircleCheck size={48} color="#40c057" />
+                <Title order={4} className="text-center">
+                  You&apos;re all set!
+                </Title>
+                <Text c="dimmed" className="text-center">
+                  Your account has been created. A platform administrator will
+                  review your access and grant permissions shortly.
+                </Text>
+                <Text c="dimmed" size="sm" className="text-center">
+                  You will receive a notification once your access has been
+                  approved.
+                </Text>
+                <Button
+                  component="a"
+                  href="/login"
+                  variant="primary"
+                  size="md"
+                  fullWidth
+                  data-test-id="go-to-login"
+                >
+                  Go to Login
+                </Button>
+              </Stack>
+            </Paper>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="AuthPage">
