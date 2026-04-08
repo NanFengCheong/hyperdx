@@ -164,7 +164,7 @@ const AlertForm = ({
           </Text>
           <Group gap="xs">
             <Text size="sm" opacity={0.7}>
-              Alert when
+              Alert when <span style={{ color: 'red' }}>*</span>
             </Text>
             <NativeSelect
               data={optionsToSelectData(ALERT_THRESHOLD_TYPE_OPTIONS)}
@@ -179,7 +179,7 @@ const AlertForm = ({
               name={`threshold`}
             />
             <Text size="sm" opacity={0.7}>
-              lines appear within
+              lines appear within <span style={{ color: 'red' }}>*</span>
             </Text>
             <NativeSelect
               data={optionsToSelectData(ALERT_INTERVAL_OPTIONS)}
@@ -188,7 +188,7 @@ const AlertForm = ({
               control={control}
             />
             <Text size="sm" opacity={0.7}>
-              via
+              via <span style={{ color: 'red' }}>*</span>
             </Text>
             <NativeSelect
               data={optionsToSelectData(ALERT_CHANNEL_OPTIONS)}
@@ -220,7 +220,7 @@ const AlertForm = ({
         </Paper>
         <Paper px="md" py="sm" radius="xs">
           <Text size="xxs" opacity={0.5} mb={4}>
-            Send to
+            Send to <span style={{ color: 'red' }}>*</span>
           </Text>
           <AlertChannelForm control={control} type={channelType} />
         </Paper>
