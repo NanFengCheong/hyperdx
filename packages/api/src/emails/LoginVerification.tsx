@@ -1,6 +1,7 @@
 import { Button, Section, Text } from '@react-email/components';
 import * as React from 'react';
 import { render } from '@react-email/components';
+import { hyperdxTheme } from '../theme/hyperdxTheme';
 
 import { Layout } from './components/Layout';
 
@@ -38,9 +39,14 @@ export async function renderLoginVerification(props: LoginVerificationProps) {
 }
 
 const sectionStyle = { padding: '0 48px' };
-const textStyle = { fontSize: '16px', color: '#e0e0e0', lineHeight: '24px' };
+const textStyle = {
+  fontSize: hyperdxTheme.fontSizes.md,
+  color: hyperdxTheme.colors.dark[0],
+  lineHeight: '24px',
+  fontFamily: hyperdxTheme.fontFamily,
+};
 const codeContainerStyle = {
-  background: '#2d3142',
+  background: hyperdxTheme.colors.dark[4],
   borderRadius: '8px',
   margin: '20px 0',
   padding: '20px',
@@ -50,13 +56,13 @@ const codeStyle = {
   fontSize: '28px',
   fontWeight: 'bold' as const,
   letterSpacing: '8px',
-  color: '#ffffff',
+  color: hyperdxTheme.white,
   fontFamily: 'monospace',
 };
 const buttonStyle = {
-  backgroundColor: '#0ea5e9',
+  backgroundColor: hyperdxTheme.colors.green[6],
   borderRadius: '6px',
-  color: '#fff',
+  color: hyperdxTheme.white,
   fontSize: '16px',
   fontWeight: 'bold' as const,
   textDecoration: 'none',
@@ -64,4 +70,5 @@ const buttonStyle = {
   display: 'block',
   padding: '14px 24px',
   margin: '16px 0',
+  fontFamily: hyperdxTheme.fontFamily,
 };

@@ -9,6 +9,7 @@ import {
   Text,
 } from '@react-email/components';
 import * as React from 'react';
+import { hyperdxTheme } from '../../theme/hyperdxTheme';
 
 interface LayoutProps {
   preview: string;
@@ -38,12 +39,12 @@ export function Layout({ preview, children }: LayoutProps) {
 }
 
 const bodyStyle = {
-  backgroundColor: '#1a1d23',
-  fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
+  backgroundColor: hyperdxTheme.colors.dark[7],
+  fontFamily: hyperdxTheme.fontFamily,
 };
 
 const containerStyle = {
-  backgroundColor: '#242731',
+  backgroundColor: hyperdxTheme.colors.dark[6],
   margin: '0 auto',
   padding: '20px 0 48px',
   marginBottom: '64px',
@@ -57,17 +58,17 @@ const headerStyle = {
 const logoStyle = {
   fontSize: '24px',
   fontWeight: 'bold' as const,
-  color: '#0ea5e9',
+  color: hyperdxTheme.colors.green[6],
   margin: '0',
 };
 
 const hrStyle = {
-  borderColor: '#3d4155',
+  borderColor: hyperdxTheme.colors.gray[8],
   margin: '20px 48px',
 };
 
 const footerStyle = {
-  color: '#8b8fa3',
+  color: hyperdxTheme.colors.gray[5],
   fontSize: '12px',
   padding: '0 48px',
   lineHeight: '18px',
