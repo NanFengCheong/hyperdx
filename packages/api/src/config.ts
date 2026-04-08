@@ -66,3 +66,18 @@ export const OIDC_CALLBACK_URL = env.OIDC_CALLBACK_URL as string;
 export const OIDC_SCOPE = (env.OIDC_SCOPE || 'openid profile email') as string;
 export const OIDC_ALLOWED_DOMAINS = (env.OIDC_ALLOWED_DOMAINS || '') as string;
 export const OIDC_ENABLED = !!(env.OIDC_ISSUER && env.OIDC_CLIENT_ID);
+
+// SMTP Configuration
+export const SMTP_HOST = env.SMTP_HOST as string;
+export const SMTP_PORT = Number.parseInt(env.SMTP_PORT || '587');
+export const SMTP_SECURE = env.SMTP_SECURE === 'true';
+export const SMTP_USER = env.SMTP_USER as string;
+export const SMTP_PASS = env.SMTP_PASS as string;
+export const SMTP_FROM = (env.SMTP_FROM || 'noreply@hyperdx.io') as string;
+export const SMTP_FROM_NAME = (env.SMTP_FROM_NAME || 'HyperDX') as string;
+export const SMTP_ENABLED = !!env.SMTP_HOST;
+
+// OTP / 2FA Configuration
+export const OTP_EXPIRY_SECONDS = Number.parseInt(env.OTP_EXPIRY_SECONDS || '300');
+export const OTP_MAX_ATTEMPTS = Number.parseInt(env.OTP_MAX_ATTEMPTS || '5');
+export const OTP_LOCKOUT_SECONDS = Number.parseInt(env.OTP_LOCKOUT_SECONDS || '900');
