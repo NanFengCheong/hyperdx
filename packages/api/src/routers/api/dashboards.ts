@@ -29,17 +29,21 @@ import { objectIdSchema } from '@/utils/zod';
 // create routes that will get and update dashboards
 const router = express.Router();
 
-router.get('/', requirePermission('dashboards:view'), async (req, res, next) => {
-  try {
-    const { teamId } = getNonNullUserWithTeam(req);
+router.get(
+  '/',
+  requirePermission('dashboards:view'),
+  async (req, res, next) => {
+    try {
+      const { teamId } = getNonNullUserWithTeam(req);
 
-    const dashboards = await getDashboards(teamId);
+      const dashboards = await getDashboards(teamId);
 
-    return res.json(dashboards);
-  } catch (e) {
-    next(e);
-  }
-});
+      return res.json(dashboards);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
 
 router.post(
   '/',

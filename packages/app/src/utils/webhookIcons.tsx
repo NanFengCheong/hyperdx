@@ -3,7 +3,12 @@ import {
   WebhookApiData,
   WebhookService,
 } from '@hyperdx/common-utils/dist/types';
-import { IconBrandSlack, IconBrandTelegram, IconLink, IconMail } from '@tabler/icons-react';
+import {
+  IconBrandSlack,
+  IconBrandTelegram,
+  IconLink,
+  IconMail,
+} from '@tabler/icons-react';
 
 import { IncidentIOIcon } from '@/SVGIcons';
 

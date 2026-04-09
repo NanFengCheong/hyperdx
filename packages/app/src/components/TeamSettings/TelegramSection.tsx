@@ -35,7 +35,10 @@ export default function TelegramSection() {
       return;
     }
     if (!webhookSecret && !existing?.webhookSecret) {
-      notifications.show({ color: 'red', message: 'Webhook secret is required' });
+      notifications.show({
+        color: 'red',
+        message: 'Webhook secret is required',
+      });
       return;
     }
 
@@ -46,11 +49,17 @@ export default function TelegramSection() {
         webhookSecret: webhookSecret || existing?.webhookSecret || '',
       });
       queryClient.invalidateQueries({ queryKey: ['team', 'telegram-config'] });
-      notifications.show({ color: 'green', message: 'Telegram configuration saved' });
+      notifications.show({
+        color: 'green',
+        message: 'Telegram configuration saved',
+      });
       setBotToken('');
       setWebhookSecret('');
     } catch {
-      notifications.show({ color: 'red', message: 'Failed to save Telegram configuration' });
+      notifications.show({
+        color: 'red',
+        message: 'Failed to save Telegram configuration',
+      });
     }
   };
 
@@ -59,9 +68,13 @@ export default function TelegramSection() {
       <Box>
         <Group gap="xs" mb="sm">
           <IconBrandTelegram size={20} />
-          <Text fw={500} size="sm">Telegram</Text>
+          <Text fw={500} size="sm">
+            Telegram
+          </Text>
         </Group>
-        <Text size="xs" c="dimmed">Loading...</Text>
+        <Text size="xs" c="dimmed">
+          Loading...
+        </Text>
       </Box>
     );
   }
@@ -70,7 +83,9 @@ export default function TelegramSection() {
     <Box>
       <Group gap="xs" mb="sm">
         <IconBrandTelegram size={20} />
-        <Text fw={500} size="sm">Telegram</Text>
+        <Text fw={500} size="sm">
+          Telegram
+        </Text>
       </Group>
       <Stack gap="sm">
         <PasswordInput

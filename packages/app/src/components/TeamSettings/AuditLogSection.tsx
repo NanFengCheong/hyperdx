@@ -1,13 +1,5 @@
 import { useState } from 'react';
-import {
-  Box,
-  Button,
-  Card,
-  Divider,
-  Group,
-  Table,
-  Text,
-} from '@mantine/core';
+import { Box, Button, Card, Divider, Group, Table, Text } from '@mantine/core';
 import { IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 
 import api from '@/api';
@@ -35,7 +27,8 @@ export default function AuditLogSection() {
   const formatDetails = (details: any) => {
     if (!details) return '\u2014';
     try {
-      const str = typeof details === 'string' ? details : JSON.stringify(details);
+      const str =
+        typeof details === 'string' ? details : JSON.stringify(details);
       return str.length > 80 ? str.slice(0, 80) + '\u2026' : str;
     } catch {
       return '\u2014';
@@ -70,13 +63,20 @@ export default function AuditLogSection() {
                       <Text size="xs">{entry.actorEmail ?? '\u2014'}</Text>
                     </Table.Td>
                     <Table.Td>
-                      <Text size="xs" fw={500}>{entry.action ?? '\u2014'}</Text>
+                      <Text size="xs" fw={500}>
+                        {entry.action ?? '\u2014'}
+                      </Text>
                     </Table.Td>
                     <Table.Td>
                       <Text size="xs">{entry.targetType ?? '\u2014'}</Text>
                     </Table.Td>
                     <Table.Td>
-                      <Text size="xs" c="dimmed" style={{ maxWidth: 300 }} truncate>
+                      <Text
+                        size="xs"
+                        c="dimmed"
+                        style={{ maxWidth: 300 }}
+                        truncate
+                      >
                         {formatDetails(entry.details)}
                       </Text>
                     </Table.Td>

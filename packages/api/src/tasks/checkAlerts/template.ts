@@ -29,6 +29,7 @@ import { ISavedSearch } from '@/models/savedSearch';
 import { ISource } from '@/models/source';
 import { IUser } from '@/models/user';
 import { IWebhook } from '@/models/webhook';
+import { sendAlertMessage } from '@/services/telegram';
 import {
   computeAliasWithClauses,
   doesExceedThreshold,
@@ -42,7 +43,6 @@ import { truncateString } from '@/utils/common';
 import { sendAlertNotificationEmail } from '@/utils/emailService';
 import logger from '@/utils/logger';
 import * as slack from '@/utils/slack';
-import { sendAlertMessage } from '@/services/telegram';
 
 const MAX_MESSAGE_LENGTH = 500;
 const NOTIFY_FN_NAME = '__hdx_notify_channel__';
@@ -327,8 +327,12 @@ export const handleSendEmail = async (users: IUser[], message: Message) => {
   }
 
   // Use MYT (Malaysia Time, UTC+8) for all datetime formatting
-  const startTimeStr = formatDate(new Date(message.startTime), { timezone: 'Asia/Kuala_Lumpur' });
-  const endTimeStr = formatDate(new Date(message.endTime), { timezone: 'Asia/Kuala_Lumpur' });
+  const startTimeStr = formatDate(new Date(message.startTime), {
+    timezone: 'Asia/Kuala_Lumpur',
+  });
+  const endTimeStr = formatDate(new Date(message.endTime), {
+    timezone: 'Asia/Kuala_Lumpur',
+  });
 
   for (const user of users) {
     try {

@@ -13,15 +13,19 @@ import { getNonNullUserWithTeam, requirePermission } from '@/middleware/auth';
 
 const router = express.Router();
 
-router.get('/', requirePermission('connections:view'), async (req, res, next) => {
-  try {
-    const connections = await getConnections();
+router.get(
+  '/',
+  requirePermission('connections:view'),
+  async (req, res, next) => {
+    try {
+      const connections = await getConnections();
 
-    res.json(connections.map(c => c.toJSON({ virtuals: true })));
-  } catch (e) {
-    next(e);
-  }
-});
+      res.json(connections.map(c => c.toJSON({ virtuals: true })));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
 
 router.post(
   '/',
@@ -107,16 +111,20 @@ router.put(
   },
 );
 
-router.delete('/:id', requirePermission('connections:delete'), async (req, res, next) => {
-  try {
-    const { teamId } = getNonNullUserWithTeam(req);
+router.delete(
+  '/:id',
+  requirePermission('connections:delete'),
+  async (req, res, next) => {
+    try {
+      const { teamId } = getNonNullUserWithTeam(req);
 
-    await deleteConnection(teamId.toString(), req.params.id);
+      await deleteConnection(teamId.toString(), req.params.id);
 
-    res.status(200).send();
-  } catch (e) {
-    next(e);
-  }
-});
+      res.status(200).send();
+    } catch (e) {
+      next(e);
+    }
+  },
+);
 
 export default router;

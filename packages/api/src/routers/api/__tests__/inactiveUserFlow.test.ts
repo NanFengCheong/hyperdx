@@ -28,9 +28,7 @@ describe('inactive user auto-disable full flow', () => {
     });
 
     // Simulate 91 days of inactivity
-    const ninetyOneDaysAgo = new Date(
-      Date.now() - 91 * 24 * 60 * 60 * 1000,
-    );
+    const ninetyOneDaysAgo = new Date(Date.now() - 91 * 24 * 60 * 60 * 1000);
     await User.findByIdAndUpdate(targetUser._id, {
       lastLoginAt: ninetyOneDaysAgo,
     });
@@ -55,9 +53,7 @@ describe('inactive user auto-disable full flow', () => {
 
     // Reactivate via API
     const beforeReactivation = new Date();
-    await agent
-      .patch(`/team/member/${targetUser._id}/reactivate`)
-      .expect(200);
+    await agent.patch(`/team/member/${targetUser._id}/reactivate`).expect(200);
 
     // Verify user fields are reset
     const reactivatedUser = await User.findById(targetUser._id);
@@ -104,9 +100,7 @@ describe('inactive user auto-disable full flow', () => {
     const { team } = await getLoggedInAgent(server);
 
     // Create a user who logged in 30 days ago (well within threshold)
-    const thirtyDaysAgo = new Date(
-      Date.now() - 30 * 24 * 60 * 60 * 1000,
-    );
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const activeUser = await User.create({
       email: 'active-user@example.com',
       team: team.id,

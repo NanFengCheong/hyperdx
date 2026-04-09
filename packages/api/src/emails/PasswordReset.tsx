@@ -1,8 +1,8 @@
 import { Button, Section, Text } from '@react-email/components';
-import * as React from 'react';
 import { render } from '@react-email/components';
-import { hyperdxTheme } from '../theme/hyperdxTheme';
+import * as React from 'react';
 
+import { hyperdxTheme } from '../theme/hyperdxTheme';
 import { Layout } from './components/Layout';
 
 interface PasswordResetProps {
@@ -16,14 +16,14 @@ function PasswordResetEmail({ name, code, magicLink }: PasswordResetProps) {
     <Layout preview="Reset your HyperDX password">
       <Section style={sectionStyle}>
         <Text style={textStyle}>Hi {name},</Text>
-        <Text style={textStyle}>
-          Enter this code to reset your password:
-        </Text>
+        <Text style={textStyle}>Enter this code to reset your password:</Text>
         <Section style={codeContainerStyle}>
           <Text style={codeStyle}>{code}</Text>
         </Section>
         <Text style={textStyle}>This code expires in 5 minutes.</Text>
-        <Text style={textStyle}>Or click the button below to reset instantly:</Text>
+        <Text style={textStyle}>
+          Or click the button below to reset instantly:
+        </Text>
         <Button style={buttonStyle} href={magicLink}>
           Reset Password
         </Button>

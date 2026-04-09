@@ -15,18 +15,18 @@ import OtpVerification, {
   generateOtpPair,
   hashOtp,
 } from '@/models/otpVerification';
+import Role from '@/models/role';
 import TeamInvite from '@/models/teamInvite';
 import User from '@/models/user'; // TODO -> do not import model directly
-import Role from '@/models/role';
 import { promoteIfDefaultSuperAdmin } from '@/scripts/migrateGroupsToRoles';
 import { setupTeamDefaults } from '@/setupDefaults';
-import logger from '@/utils/logger';
-import passport from '@/utils/passport';
-import { validatePassword } from '@/utils/validators';
 import {
   sendLoginVerificationEmail,
   sendPasswordResetEmail,
 } from '@/utils/emailService';
+import logger from '@/utils/logger';
+import passport from '@/utils/passport';
+import { validatePassword } from '@/utils/validators';
 
 const registrationSchema = z
   .object({
@@ -119,7 +119,7 @@ router.get('/auth/oidc/callback', (req, res, next) => {
     if (user.disabledAt != null) {
       return res.redirect(`${config.FRONTEND_URL}/login?err=authFail`);
     }
-    req.logIn(user, async (loginErr) => {
+    req.logIn(user, async loginErr => {
       if (loginErr) {
         logger.error({ err: loginErr }, 'OIDC session login error');
         return res.redirect(`${config.FRONTEND_URL}/login?err=authFail`);
@@ -140,7 +140,10 @@ router.get('/auth/oidc/callback', (req, res, next) => {
             `${config.FRONTEND_URL}/join-team?success=pending&token=${inviteToken}`,
           );
         } catch (e) {
-          logger.error({ err: e, inviteToken }, 'Failed to consume invite token');
+          logger.error(
+            { err: e, inviteToken },
+            'Failed to consume invite token',
+          );
         }
       }
       return res.redirect(`${config.FRONTEND_URL}/search`);
@@ -167,7 +170,7 @@ router.post('/login/password', (req, res, next) => {
       }
 
       if (!config.SMTP_ENABLED) {
-        return req.logIn(user, async (loginErr) => {
+        return req.logIn(user, async loginErr => {
           if (loginErr) return next(loginErr);
           await User.findByIdAndUpdate(user._id, { lastLoginAt: new Date() });
           return res.redirect(`${config.FRONTEND_URL}/search`);
@@ -175,9 +178,7 @@ router.post('/login/password', (req, res, next) => {
       }
 
       const { code, magicToken, codeHash, magicTokenHash } = generateOtpPair();
-      const expiresAt = new Date(
-        Date.now() + config.OTP_EXPIRY_SECONDS * 1000,
-      );
+      const expiresAt = new Date(Date.now() + config.OTP_EXPIRY_SECONDS * 1000);
 
       await OtpVerification.findOneAndUpdate(
         { userId: user._id, type: 'login_2fa' },
@@ -258,7 +259,7 @@ router.post('/verify-otp', async (req, res) => {
   await OtpVerification.deleteOne({ _id: otp._id });
   delete req.session.pendingAuth;
 
-  req.logIn(user, async (err) => {
+  req.logIn(user, async err => {
     if (err) {
       return res.status(500).json({ error: 'loginFailed' });
     }
@@ -272,7 +273,9 @@ router.get('/verify-magic', async (req, res) => {
   const pendingAuth = req.session.pendingAuth;
 
   if (!token || !pendingAuth?.userId) {
-    return res.redirect(`${config.FRONTEND_URL}/login?err=magicLinkSessionMismatch`);
+    return res.redirect(
+      `${config.FRONTEND_URL}/login?err=magicLinkSessionMismatch`,
+    );
   }
 
   const otp = await OtpVerification.findOne({
@@ -293,7 +296,7 @@ router.get('/verify-magic', async (req, res) => {
   await OtpVerification.deleteOne({ _id: otp._id });
   delete req.session.pendingAuth;
 
-  req.logIn(user, async (err) => {
+  req.logIn(user, async err => {
     if (err) {
       return res.redirect(`${config.FRONTEND_URL}/login?err=authFail`);
     }
@@ -313,7 +316,9 @@ router.post('/resend-otp', async (req, res) => {
     type: 'login_2fa',
   });
   if (existing && Date.now() - existing.createdAt.getTime() < 60_000) {
-    return res.status(429).json({ error: 'rateLimited', retryAfterSeconds: 60 });
+    return res
+      .status(429)
+      .json({ error: 'rateLimited', retryAfterSeconds: 60 });
   }
 
   const user = await User.findById(pendingAuth.userId);
@@ -331,7 +336,12 @@ router.post('/resend-otp', async (req, res) => {
   );
 
   const magicLink = `${config.FRONTEND_URL}/verify?token=${magicToken}`;
-  await sendLoginVerificationEmail(user.email, user.name || user.email, code, magicLink);
+  await sendLoginVerificationEmail(
+    user.email,
+    user.name || user.email,
+    code,
+    magicLink,
+  );
 
   return res.json({ status: 'sent' });
 });
@@ -356,7 +366,12 @@ router.post('/forgot-password', async (req, res) => {
   );
 
   const magicLink = `${config.FRONTEND_URL}/reset-password?token=${magicToken}`;
-  await sendPasswordResetEmail(user.email, user.name || user.email, code, magicLink);
+  await sendPasswordResetEmail(
+    user.email,
+    user.name || user.email,
+    code,
+    magicLink,
+  );
 });
 
 router.post('/reset-password', async (req, res) => {
@@ -367,7 +382,12 @@ router.post('/reset-password', async (req, res) => {
   }
 
   const validatePassword = (pass: string) => {
-    return pass.length >= 8 && /[A-Z]/.test(pass) && /[a-z]/.test(pass) && /[0-9]/.test(pass);
+    return (
+      pass.length >= 8 &&
+      /[A-Z]/.test(pass) &&
+      /[a-z]/.test(pass) &&
+      /[0-9]/.test(pass)
+    );
   };
 
   if (!validatePassword(password)) {
@@ -452,7 +472,9 @@ router.post(
           const team = await createTeam({
             name: `${email}'s Team`,
             collectorAuthenticationEnforced: true,
-            allowedAuthMethods: config.OIDC_ENABLED ? ['password', 'oidc'] : ['password'],
+            allowedAuthMethods: config.OIDC_ENABLED
+              ? ['password', 'oidc']
+              : ['password'],
           });
           user.team = team._id;
           user.name = email;

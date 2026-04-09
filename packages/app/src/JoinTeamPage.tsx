@@ -10,11 +10,11 @@ import {
   Text,
   Title,
 } from '@mantine/core';
-import { IconLock, IconCircleCheck } from '@tabler/icons-react';
+import { IconCircleCheck, IconLock } from '@tabler/icons-react';
 
 import { useBrandDisplayName } from './theme/ThemeProvider';
-import { PasswordCheck } from './PasswordCheck';
 import api from './api';
+import { PasswordCheck } from './PasswordCheck';
 
 export default function JoinTeam() {
   const router = useRouter();
@@ -118,7 +118,7 @@ export default function JoinTeam() {
                     placeholder="Password"
                     leftSection={<IconLock size={16} />}
                     value={password}
-                    onChange={(e) => setPassword(e.currentTarget.value)}
+                    onChange={e => setPassword(e.currentTarget.value)}
                     required
                   />
                   <Notification withCloseButton={false}>

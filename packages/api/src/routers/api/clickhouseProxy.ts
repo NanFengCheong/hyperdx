@@ -278,7 +278,10 @@ const proxyMiddleware: RequestHandler =
         if (_req.method === 'POST') {
           // TODO: Use fixRequestBody after this issue is resolved: https://github.com/chimurai/http-proxy-middleware/issues/1102
           const body = _req.body;
-          proxyReq.setHeader('content-length', Buffer.byteLength(body, 'utf-8'));
+          proxyReq.setHeader(
+            'content-length',
+            Buffer.byteLength(body, 'utf-8'),
+          );
           proxyReq.write(body);
         }
       },

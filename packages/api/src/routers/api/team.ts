@@ -1,3 +1,7 @@
+import {
+  ALL_PERMISSIONS,
+  resolvePermissions,
+} from '@hyperdx/common-utils/dist/permissions';
 import type {
   RotateApiKeyApiResponse,
   TeamApiResponse,
@@ -6,15 +10,14 @@ import type {
   TeamTagsApiResponse,
   UpdateClickHouseSettingsApiResponse,
 } from '@hyperdx/common-utils/dist/types';
-import { TeamClickHouseSettingsSchema, TelegramConfigSchema } from '@hyperdx/common-utils/dist/types';
 import {
-  ALL_PERMISSIONS,
-  resolvePermissions,
-} from '@hyperdx/common-utils/dist/permissions';
+  TeamClickHouseSettingsSchema,
+  TelegramConfigSchema,
+} from '@hyperdx/common-utils/dist/types';
 import crypto from 'crypto';
 import express from 'express';
-import mongoose from 'mongoose';
 import pick from 'lodash/pick';
+import mongoose from 'mongoose';
 import { z } from 'zod';
 import { processRequest, validateRequest } from 'zod-express-middleware';
 
@@ -191,7 +194,9 @@ router.put(
       // Validate bot token before saving
       const tokenValidation = await validateBotToken(req.body.botToken);
       if (!tokenValidation.ok) {
-        return res.status(400).json({ error: `Invalid bot token: ${tokenValidation.error}` });
+        return res
+          .status(400)
+          .json({ error: `Invalid bot token: ${tokenValidation.error}` });
       }
 
       await updateTeamTelegramConfig(teamId, req.body);
@@ -340,7 +345,9 @@ router.get('/members', async (req, res: TeamMembersExpRes, next) => {
         const groupId = (userJson as any).groupId?.toString();
         const role = (userJson as any).roleId;
         const roleId =
-          role && typeof role === 'object' ? role._id?.toString() : role?.toString();
+          role && typeof role === 'object'
+            ? role._id?.toString()
+            : role?.toString();
         const roleName =
           role && typeof role === 'object' ? role.name : undefined;
         return {
@@ -655,15 +662,11 @@ router.post(
             !p.endsWith(':*') &&
             p !== '*:*')
         ) {
-          return res
-            .status(400)
-            .json({ message: `Invalid permission: ${p}` });
+          return res.status(400).json({ message: `Invalid permission: ${p}` });
         }
       }
       if (dataScopes && !Array.isArray(dataScopes)) {
-        return res
-          .status(400)
-          .json({ message: 'dataScopes must be an array' });
+        return res.status(400).json({ message: 'dataScopes must be an array' });
       }
       const scopeRegex = /^[a-zA-Z0-9._-]+:[a-zA-Z0-9._-]+$/;
       for (const s of dataScopes ?? []) {
@@ -908,10 +911,7 @@ router.get(
     try {
       const { teamId } = getNonNullUserWithTeam(req);
       const page = parseInt(req.query.page as string) || 0;
-      const limit = Math.min(
-        parseInt(req.query.limit as string) || 50,
-        100,
-      );
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
 
       const [data, totalCount] = await Promise.all([
         AuditLog.find({ teamId })

@@ -21,81 +21,85 @@ import { alertSchema, objectIdSchema } from '@/utils/zod';
 const router = express.Router();
 
 type AlertsExpRes = express.Response<AlertsApiResponse>;
-router.get('/', requirePermission('alerts:view'), async (req, res: AlertsExpRes, next) => {
-  try {
-    const teamId = req.user?.team;
-    if (teamId == null) {
-      return res.sendStatus(403);
-    }
+router.get(
+  '/',
+  requirePermission('alerts:view'),
+  async (req, res: AlertsExpRes, next) => {
+    try {
+      const teamId = req.user?.team;
+      if (teamId == null) {
+        return res.sendStatus(403);
+      }
 
-    const alerts = await getAlertsEnhanced(teamId);
+      const alerts = await getAlertsEnhanced(teamId);
 
-    const historyMap = await getRecentAlertHistoriesBatch(
-      alerts.map(alert => ({
-        alertId: new ObjectId(alert._id),
-        interval: alert.interval,
-      })),
-      20,
-    );
+      const historyMap = await getRecentAlertHistoriesBatch(
+        alerts.map(alert => ({
+          alertId: new ObjectId(alert._id),
+          interval: alert.interval,
+        })),
+        20,
+      );
 
-    const data = alerts.map(alert => {
-      const history = historyMap.get(alert._id.toString()) ?? [];
+      const data = alerts.map(alert => {
+        const history = historyMap.get(alert._id.toString()) ?? [];
 
-      return {
-        history,
-        silenced: alert.silenced
-          ? {
-              by: alert.silenced.by?.email,
-              at: alert.silenced.at,
-              until: alert.silenced.until,
-            }
-          : undefined,
-        createdBy: alert.createdBy
-          ? pick(alert.createdBy, ['email', 'name'])
-          : undefined,
-        channel: pick(alert.channel, ['type']),
-        ...(alert.dashboard && {
-          dashboardId: alert.dashboard._id,
-          dashboard: {
-            tiles: alert.dashboard.tiles
-              .filter(tile => tile.id === alert.tileId)
-              .map(tile => ({
-                id: tile.id,
-                config: { name: tile.config.name },
-              })),
-            ...pick(alert.dashboard, ['_id', 'updatedAt', 'name', 'tags']),
-          },
-        }),
-        ...(alert.savedSearch && {
-          savedSearchId: alert.savedSearch._id,
-          savedSearch: pick(alert.savedSearch, [
+        return {
+          history,
+          silenced: alert.silenced
+            ? {
+                by: alert.silenced.by?.email,
+                at: alert.silenced.at,
+                until: alert.silenced.until,
+              }
+            : undefined,
+          createdBy: alert.createdBy
+            ? pick(alert.createdBy, ['email', 'name'])
+            : undefined,
+          channel: pick(alert.channel, ['type']),
+          ...(alert.dashboard && {
+            dashboardId: alert.dashboard._id,
+            dashboard: {
+              tiles: alert.dashboard.tiles
+                .filter(tile => tile.id === alert.tileId)
+                .map(tile => ({
+                  id: tile.id,
+                  config: { name: tile.config.name },
+                })),
+              ...pick(alert.dashboard, ['_id', 'updatedAt', 'name', 'tags']),
+            },
+          }),
+          ...(alert.savedSearch && {
+            savedSearchId: alert.savedSearch._id,
+            savedSearch: pick(alert.savedSearch, [
+              '_id',
+              'createdAt',
+              'name',
+              'updatedAt',
+              'tags',
+            ]),
+          }),
+          ...pick(alert, [
             '_id',
+            'interval',
+            'scheduleOffsetMinutes',
+            'scheduleStartAt',
+            'threshold',
+            'thresholdType',
+            'state',
+            'source',
+            'tileId',
             'createdAt',
-            'name',
             'updatedAt',
-            'tags',
           ]),
-        }),
-        ...pick(alert, [
-          '_id',
-          'interval',
-          'scheduleOffsetMinutes',
-          'scheduleStartAt',
-          'threshold',
-          'thresholdType',
-          'state',
-          'source',
-          'tileId',
-          'createdAt',
-          'updatedAt',
-        ]),
-      };
-    });
-    sendJson(res, { data });
-  } catch (e) {
-    next(e);
-  }
-});
+        };
+      });
+      sendJson(res, { data });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
 
 router.post(
   '/',

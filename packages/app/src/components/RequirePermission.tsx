@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+
 import { usePermission } from '../hooks/usePermission';
 
 interface RequirePermissionProps {

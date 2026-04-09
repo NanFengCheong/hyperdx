@@ -12,9 +12,9 @@ import {
 } from '@mantine/core';
 import { IconAt } from '@tabler/icons-react';
 
-import { useBrandDisplayName } from '@/theme/ThemeProvider';
 import api from '@/api';
 import LandingHeader from '@/LandingHeader';
+import { useBrandDisplayName } from '@/theme/ThemeProvider';
 
 type FormData = { email: string };
 
@@ -29,7 +29,7 @@ export default function ForgotPage() {
     formState: { isSubmitting },
   } = useForm<FormData>();
 
-  const onSubmit: SubmitHandler<FormData> = (data) => {
+  const onSubmit: SubmitHandler<FormData> = data => {
     forgotPassword.mutate(
       { email: data.email },
       {

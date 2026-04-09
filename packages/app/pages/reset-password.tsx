@@ -15,10 +15,10 @@ import {
 } from '@mantine/core';
 import { IconAt, IconLock } from '@tabler/icons-react';
 
-import { useBrandDisplayName } from '@/theme/ThemeProvider';
 import api from '@/api';
 import LandingHeader from '@/LandingHeader';
 import { CheckOrX, PasswordCheck } from '@/PasswordCheck';
+import { useBrandDisplayName } from '@/theme/ThemeProvider';
 
 type FormData = {
   email: string;
@@ -45,11 +45,19 @@ export default function ResetPasswordPage() {
     control,
   } = useForm<FormData>();
 
-  const currentPassword = useWatch({ control, name: 'password', defaultValue: '' });
-  const confirmPassword = useWatch({ control, name: 'confirmPassword', defaultValue: '' });
+  const currentPassword = useWatch({
+    control,
+    name: 'password',
+    defaultValue: '',
+  });
+  const confirmPassword = useWatch({
+    control,
+    name: 'confirmPassword',
+    defaultValue: '',
+  });
   const confirmPass = () => currentPassword === confirmPassword;
 
-  const onSubmit: SubmitHandler<FormData> = (data) => {
+  const onSubmit: SubmitHandler<FormData> = data => {
     setError(null);
     resetPassword.mutate(
       {
@@ -65,9 +73,13 @@ export default function ResetPasswordPage() {
           try {
             const body = await err.response?.json();
             if (body?.error === 'locked') {
-              setError(`Too many attempts. Wait ${Math.ceil((body.retryAfterSeconds || 900) / 60)} minutes.`);
+              setError(
+                `Too many attempts. Wait ${Math.ceil((body.retryAfterSeconds || 900) / 60)} minutes.`,
+              );
             } else if (body?.error === 'invalidCode') {
-              setError(`Invalid code. ${body.attemptsRemaining} attempts remaining.`);
+              setError(
+                `Invalid code. ${body.attemptsRemaining} attempts remaining.`,
+              );
             } else if (body?.error === 'otpExpired') {
               setError('Code expired. Please request a new one.');
             } else if (body?.error === 'passwordTooWeak') {
@@ -93,7 +105,9 @@ export default function ResetPasswordPage() {
             <Stack gap="xl">
               <Paper p={34} shadow="md" radius="md">
                 <Stack gap="md" align="center">
-                  <Text size="lg" fw={600}>Password reset successful</Text>
+                  <Text size="lg" fw={600}>
+                    Password reset successful
+                  </Text>
                   <Button
                     component={Link}
                     href="/login"
@@ -136,7 +150,9 @@ export default function ResetPasswordPage() {
                   />
                   {!hasMagicToken && (
                     <>
-                      <Text size="sm" fw={500}>Verification Code</Text>
+                      <Text size="sm" fw={500}>
+                        Verification Code
+                      </Text>
                       <PinInput
                         length={6}
                         size="md"
@@ -158,7 +174,10 @@ export default function ResetPasswordPage() {
                   />
                   <PasswordInput
                     label={
-                      <CheckOrX handler={confirmPass} password={currentPassword}>
+                      <CheckOrX
+                        handler={confirmPass}
+                        password={currentPassword}
+                      >
                         Confirm Password
                       </CheckOrX>
                     }

@@ -1,4 +1,7 @@
-import { TeamClickHouseSettings, TelegramConfigSchema } from '@hyperdx/common-utils/dist/types';
+import {
+  TeamClickHouseSettings,
+  TelegramConfigSchema,
+} from '@hyperdx/common-utils/dist/types';
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -44,7 +47,11 @@ export async function createTeam({
     throw new Error('Team already exists');
   }
 
-  const team = new Team({ name, collectorAuthenticationEnforced, allowedAuthMethods });
+  const team = new Team({
+    name,
+    collectorAuthenticationEnforced,
+    allowedAuthMethods,
+  });
 
   await team.save();
 

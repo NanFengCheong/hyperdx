@@ -21,7 +21,7 @@ export default mongoose.model<ITeam>(
         type: [String],
         validate: {
           validator: (v: string[]) =>
-            v.every((m) => ['password', 'oidc'].includes(m)),
+            v.every(m => ['password', 'oidc'].includes(m)),
           message: 'allowedAuthMethods must be "password" or "oidc"',
         },
       },

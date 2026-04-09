@@ -2,16 +2,18 @@ import { Strategy as OIDCStrategy } from 'passport-openidconnect';
 import { v4 as uuidv4 } from 'uuid';
 
 import * as config from '@/config';
-import User from '@/models/user';
-import Team from '@/models/team';
 import Role from '@/models/role';
+import Team from '@/models/team';
+import User from '@/models/user';
 import { promoteIfDefaultSuperAdmin } from '@/scripts/migrateGroupsToRoles';
 
 import logger from './logger';
 
 export function configureOIDCStrategy(passport: any) {
   if (!config.OIDC_ENABLED) {
-    logger.info('OIDC authentication is disabled (OIDC_ISSUER or OIDC_CLIENT_ID not set)');
+    logger.info(
+      'OIDC authentication is disabled (OIDC_ISSUER or OIDC_CLIENT_ID not set)',
+    );
     return;
   }
 
@@ -45,20 +47,21 @@ export function configureOIDCStrategy(passport: any) {
             profile._json?.email ||
             profile._json?.preferred_username;
           const name =
-            profile.displayName ||
-            profile._json?.name ||
-            email?.split('@')[0];
+            profile.displayName || profile._json?.name || email?.split('@')[0];
 
           if (!email) {
-            logger.error({ profile: profile._json }, 'OIDC profile missing email');
+            logger.error(
+              { profile: profile._json },
+              'OIDC profile missing email',
+            );
             return done(new Error('Email not found in OIDC profile'));
           }
 
           // Check allowed email domains
           if (config.OIDC_ALLOWED_DOMAINS) {
-            const allowedDomains = config.OIDC_ALLOWED_DOMAINS
-              .split(',')
-              .map((d) => d.trim().toLowerCase());
+            const allowedDomains = config.OIDC_ALLOWED_DOMAINS.split(',').map(
+              d => d.trim().toLowerCase(),
+            );
             const emailDomain = email.toLowerCase().split('@')[1];
             if (!allowedDomains.includes(emailDomain)) {
               logger.warn(
@@ -93,10 +96,17 @@ export function configureOIDCStrategy(passport: any) {
             const team = await Team.findOne({}).sort({ createdAt: 1 });
             if (!team) {
               logger.error('No team exists. First user must register locally.');
-              return done(new Error('No team exists. Please register the first user locally.'));
+              return done(
+                new Error(
+                  'No team exists. Please register the first user locally.',
+                ),
+              );
             }
 
-            const viewerRole = await Role.findOne({ name: 'Viewer', isSystem: true });
+            const viewerRole = await Role.findOne({
+              name: 'Viewer',
+              isSystem: true,
+            });
 
             user = new User({
               email: email.toLowerCase(),

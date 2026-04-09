@@ -39,7 +39,8 @@ const escapeMarkdownV2 = (text: string): string => {
 };
 
 const formatAlertMessage = (message: Message): string => {
-  const stateEmoji = message.state === AlertState.ALERT ? '\u{1F534}' : '\u{1F7E2}';
+  const stateEmoji =
+    message.state === AlertState.ALERT ? '\u{1F534}' : '\u{1F7E2}';
   const startDate = new Date(message.startTime).toISOString();
   const endDate = new Date(message.endTime).toISOString();
 

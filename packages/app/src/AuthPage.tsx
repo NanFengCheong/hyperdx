@@ -226,9 +226,15 @@ export default function AuthPage({ action }: { action: 'register' | 'login' }) {
                           margin: '4px 0',
                         }}
                       >
-                        <div style={{ flex: 1, height: 1, background: '#dee2e6' }} />
-                        <span style={{ color: '#868e96', fontSize: 14 }}>or</span>
-                        <div style={{ flex: 1, height: 1, background: '#dee2e6' }} />
+                        <div
+                          style={{ flex: 1, height: 1, background: '#dee2e6' }}
+                        />
+                        <span style={{ color: '#868e96', fontSize: 14 }}>
+                          or
+                        </span>
+                        <div
+                          style={{ flex: 1, height: 1, background: '#dee2e6' }}
+                        />
                       </div>
                       <Button
                         component="a"

@@ -1,7 +1,7 @@
-import { getAgent, getLoggedInAgent, getServer } from '@/fixtures';
-import User from '@/models/user';
 import { findUserByEmail } from '@/controllers/user';
 import { findUserByAccessKey } from '@/controllers/user';
+import { getAgent, getLoggedInAgent, getServer } from '@/fixtures';
+import User from '@/models/user';
 
 const MOCK_USER = {
   email: 'fake@deploysentinel.com',

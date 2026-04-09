@@ -1,5 +1,5 @@
-import { Checkbox, Group, Stack, Text } from '@mantine/core';
 import { PERMISSION_CATEGORIES } from '@hyperdx/common-utils/dist/permissions';
+import { Checkbox, Group, Stack, Text } from '@mantine/core';
 
 interface PermissionPickerProps {
   value: string[];
@@ -33,17 +33,18 @@ export default function PermissionPicker({
   return (
     <Stack gap="md">
       {PERMISSION_CATEGORIES.map(category => {
-        const allSelected = category.permissions.every(p =>
-          value.includes(p),
-        );
+        const allSelected = category.permissions.every(p => value.includes(p));
         const someSelected =
-          !allSelected &&
-          category.permissions.some(p => value.includes(p));
+          !allSelected && category.permissions.some(p => value.includes(p));
 
         return (
           <div key={category.label}>
             <Checkbox
-              label={<Text fw={600} size="sm">{category.label}</Text>}
+              label={
+                <Text fw={600} size="sm">
+                  {category.label}
+                </Text>
+              }
               checked={allSelected}
               indeterminate={someSelected}
               onChange={() => toggleCategory(category.permissions)}

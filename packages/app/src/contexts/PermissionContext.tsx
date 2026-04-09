@@ -1,5 +1,6 @@
 import { createContext, ReactNode, useContext, useMemo } from 'react';
 import { hasPermission } from '@hyperdx/common-utils/dist/permissions';
+
 import api from '../api';
 
 interface PermissionContextValue {

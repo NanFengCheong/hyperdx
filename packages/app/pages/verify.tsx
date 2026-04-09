@@ -10,9 +10,9 @@ import {
   Text,
 } from '@mantine/core';
 
-import { useBrandDisplayName } from '@/theme/ThemeProvider';
 import api from '@/api';
 import LandingHeader from '@/LandingHeader';
+import { useBrandDisplayName } from '@/theme/ThemeProvider';
 
 export default function VerifyPage() {
   const brandName = useBrandDisplayName();
@@ -23,7 +23,9 @@ export default function VerifyPage() {
   const resendOtp = api.useResendOtp();
 
   const [error, setError] = useState<string | null>(null);
-  const [attemptsRemaining, setAttemptsRemaining] = useState<number | null>(null);
+  const [attemptsRemaining, setAttemptsRemaining] = useState<number | null>(
+    null,
+  );
   const [resendCooldown, setResendCooldown] = useState(0);
   const [lockSeconds, setLockSeconds] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -39,7 +41,7 @@ export default function VerifyPage() {
   useEffect(() => {
     if (resendCooldown <= 0) return;
     timerRef.current = setInterval(() => {
-      setResendCooldown((c) => {
+      setResendCooldown(c => {
         if (c <= 1) {
           clearInterval(timerRef.current!);
           return 0;
@@ -54,7 +56,7 @@ export default function VerifyPage() {
   useEffect(() => {
     if (lockSeconds <= 0) return;
     const interval = setInterval(() => {
-      setLockSeconds((s) => (s <= 1 ? 0 : s - 1));
+      setLockSeconds(s => (s <= 1 ? 0 : s - 1));
     }, 1000);
     return () => clearInterval(interval);
   }, [lockSeconds]);
@@ -68,7 +70,8 @@ export default function VerifyPage() {
         {
           onSuccess: () => {
             const redirect =
-              window.sessionStorage.getItem('hdx-login-redirect-url') || '/search';
+              window.sessionStorage.getItem('hdx-login-redirect-url') ||
+              '/search';
             window.sessionStorage.removeItem('hdx-login-redirect-url');
             router.push(redirect);
           },
@@ -137,7 +140,8 @@ export default function VerifyPage() {
                 />
                 {lockSeconds > 0 && (
                   <Text size="sm" c="red">
-                    Locked for {Math.floor(lockSeconds / 60)}:{String(lockSeconds % 60).padStart(2, '0')}
+                    Locked for {Math.floor(lockSeconds / 60)}:
+                    {String(lockSeconds % 60).padStart(2, '0')}
                   </Text>
                 )}
                 <Button
@@ -159,7 +163,8 @@ export default function VerifyPage() {
                 {error}
                 {attemptsRemaining != null && attemptsRemaining > 0 && (
                   <Text size="xs" mt={4}>
-                    {attemptsRemaining} attempt{attemptsRemaining !== 1 ? 's' : ''} remaining
+                    {attemptsRemaining} attempt
+                    {attemptsRemaining !== 1 ? 's' : ''} remaining
                   </Text>
                 )}
               </Notification>

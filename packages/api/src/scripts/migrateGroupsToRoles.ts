@@ -9,9 +9,10 @@
 //   await connectDB();
 //   await seedSystemRoles();  // ← add this
 
-import mongoose from 'mongoose';
-import Role from '../models/role';
 import { SYSTEM_ROLES } from '@hyperdx/common-utils/dist/permissions';
+import mongoose from 'mongoose';
+
+import Role from '../models/role';
 
 async function seedSystemRoles() {
   for (const [key, def] of Object.entries(SYSTEM_ROLES)) {
@@ -51,14 +52,18 @@ async function migrateGroupsToRoles() {
   const groupToRoleMap = new Map<string, mongoose.Types.ObjectId>();
 
   for (const group of groups) {
-    let role = await Role.findOne({ teamId: (group as any).teamId, name: (group as any).name });
+    let role = await Role.findOne({
+      teamId: (group as any).teamId,
+      name: (group as any).name,
+    });
     if (!role) {
       role = await Role.create({
         name: (group as any).name,
         teamId: (group as any).teamId,
-        permissions: (group as any).accountAccess === 'read-write'
-          ? [...SYSTEM_ROLES.EDITOR.permissions]
-          : [...SYSTEM_ROLES.VIEWER.permissions],
+        permissions:
+          (group as any).accountAccess === 'read-write'
+            ? [...SYSTEM_ROLES.EDITOR.permissions]
+            : [...SYSTEM_ROLES.VIEWER.permissions],
         dataScopes: (group as any).dataScope ? [(group as any).dataScope] : [],
         isSystem: false,
       });
@@ -69,7 +74,9 @@ async function migrateGroupsToRoles() {
 
   // 4. Update users: groupId → roleId
   const User = mongoose.model('User');
-  const usersWithGroups = await User.find({ groupId: { $exists: true, $ne: null } });
+  const usersWithGroups = await User.find({
+    groupId: { $exists: true, $ne: null },
+  });
 
   for (const user of usersWithGroups) {
     const roleId = groupToRoleMap.get((user as any).groupId.toString());
@@ -110,7 +117,9 @@ async function ensureDefaultSuperAdmin() {
   const User = mongoose.model('User');
   const user = await User.findOne({ email: email.toLowerCase() });
   if (!user) {
-    console.log(`DEFAULT_SUPER_ADMIN_EMAIL: user "${email}" not found, skipping`);
+    console.log(
+      `DEFAULT_SUPER_ADMIN_EMAIL: user "${email}" not found, skipping`,
+    );
     return;
   }
 
@@ -139,12 +148,16 @@ async function promoteIfDefaultSuperAdmin(user: any): Promise<void> {
   if (user.email?.toLowerCase() !== email.toLowerCase()) return;
 
   const User = mongoose.model('User');
-  await User.updateOne(
-    { _id: user._id },
-    { $set: { isSuperAdmin: true } },
-  );
+  await User.updateOne({ _id: user._id }, { $set: { isSuperAdmin: true } });
   user.isSuperAdmin = true;
-  console.log(`DEFAULT_SUPER_ADMIN_EMAIL: promoted "${email}" to super admin (post-auth)`);
+  console.log(
+    `DEFAULT_SUPER_ADMIN_EMAIL: promoted "${email}" to super admin (post-auth)`,
+  );
 }
 
-export { migrateGroupsToRoles, seedSystemRoles, ensureDefaultSuperAdmin, promoteIfDefaultSuperAdmin };
+export {
+  ensureDefaultSuperAdmin,
+  migrateGroupsToRoles,
+  promoteIfDefaultSuperAdmin,
+  seedSystemRoles,
+};

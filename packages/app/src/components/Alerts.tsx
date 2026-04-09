@@ -8,7 +8,16 @@ import {
   type TeamMember,
   WebhookService,
 } from '@hyperdx/common-utils/dist/types';
-import { ActionIcon, Button, Checkbox, ComboboxData, Group, Modal, TextInput, Tooltip } from '@mantine/core';
+import {
+  ActionIcon,
+  Button,
+  Checkbox,
+  ComboboxData,
+  Group,
+  Modal,
+  TextInput,
+  Tooltip,
+} from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { IconBrandTelegram, IconSend } from '@tabler/icons-react';

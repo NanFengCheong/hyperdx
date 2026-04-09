@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
+
 import { clearDBCollections, closeDB, connectDB } from '@/fixtures';
-import AuditLog from '@/models/auditLog';
 import AlertHistory, { IAlertHistory } from '@/models/alertHistory';
+import AuditLog from '@/models/auditLog';
 import DataRetentionTask, { applyRetention } from '@/tasks/dataRetention';
 import { TaskName } from '@/tasks/types';
 

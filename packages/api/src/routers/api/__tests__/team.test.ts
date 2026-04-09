@@ -396,9 +396,7 @@ Array [
         disabledReason: 'Inactive for 90 days',
       });
 
-      await agent
-        .patch(`/team/member/${otherUser._id}/reactivate`)
-        .expect(403);
+      await agent.patch(`/team/member/${otherUser._id}/reactivate`).expect(403);
     });
 
     it('resets lastLoginAt after reactivation', async () => {

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { HTTPError } from 'ky';
+import { SYSTEM_ROLES } from '@hyperdx/common-utils/dist/permissions';
 import {
   Badge,
   Box,
@@ -21,7 +22,6 @@ import {
   IconTrash,
 } from '@tabler/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { SYSTEM_ROLES } from '@hyperdx/common-utils/dist/permissions';
 
 import api from '@/api';
 
@@ -42,10 +42,7 @@ const INITIAL_FORM_DATA: RoleFormData = {
 export default function RolesSection() {
   const queryClient = useQueryClient();
 
-  const {
-    data: roles,
-    isLoading: isLoadingRoles,
-  } = api.useTeamRoles();
+  const { data: roles, isLoading: isLoadingRoles } = api.useTeamRoles();
 
   const createRole = api.useCreateRole();
   const updateRole = api.useUpdateRole();
@@ -282,16 +279,15 @@ export default function RolesSection() {
                     </Table.Td>
                   </Table.Tr>
                 ))}
-              {!isLoadingRoles &&
-                (!roles?.data || roles.data.length === 0) && (
-                  <Table.Tr>
-                    <Table.Td colSpan={3}>
-                      <Text size="sm" c="dimmed" ta="center" py="md">
-                        No custom roles yet. Create one to get started.
-                      </Text>
-                    </Table.Td>
-                  </Table.Tr>
-                )}
+              {!isLoadingRoles && (!roles?.data || roles.data.length === 0) && (
+                <Table.Tr>
+                  <Table.Td colSpan={3}>
+                    <Text size="sm" c="dimmed" ta="center" py="md">
+                      No custom roles yet. Create one to get started.
+                    </Text>
+                  </Table.Td>
+                </Table.Tr>
+              )}
             </Table.Tbody>
           </Table>
         </Card.Section>

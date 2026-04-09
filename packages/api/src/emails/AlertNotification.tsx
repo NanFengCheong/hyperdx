@@ -1,8 +1,8 @@
-import { Button, Section, Text, Hr } from '@react-email/components';
-import * as React from 'react';
+import { Button, Hr, Section, Text } from '@react-email/components';
 import { render } from '@react-email/components';
-import { hyperdxTheme } from '../theme/hyperdxTheme';
+import * as React from 'react';
 
+import { hyperdxTheme } from '../theme/hyperdxTheme';
 import { Layout } from './components/Layout';
 
 interface AlertNotificationProps {

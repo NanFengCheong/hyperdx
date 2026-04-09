@@ -1,9 +1,9 @@
 import nodemailer from 'nodemailer';
 
+import * as config from '@/config';
+import { renderAlertNotification } from '@/emails/AlertNotification';
 import { renderLoginVerification } from '@/emails/LoginVerification';
 import { renderPasswordReset } from '@/emails/PasswordReset';
-import { renderAlertNotification } from '@/emails/AlertNotification';
-import * as config from '@/config';
 import logger from '@/utils/logger';
 
 let transporter: nodemailer.Transporter | null = null;
@@ -110,9 +110,7 @@ export async function sendAlertNotificationEmail(
     endTime: options.endTime,
   });
   const subject =
-    options.state === 'OK'
-      ? `Resolved: ${options.title}`
-      : options.title;
+    options.state === 'OK' ? `Resolved: ${options.title}` : options.title;
   return sendEmail({
     to: options.to,
     subject,

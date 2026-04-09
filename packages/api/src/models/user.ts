@@ -86,7 +86,7 @@ const UserSchema = new Schema(
 
 UserSchema.virtual('hasPasswordAuth').get(function (this: any) {
   // passport-local-mongoose sets 'hash' when a password is registered
-  return !!(this.hash);
+  return !!this.hash;
 });
 
 UserSchema.virtual('authMethod').get(function (this: any) {

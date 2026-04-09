@@ -10,18 +10,15 @@ import logger from '@/utils/logger';
  * `lastLoginAt` does not yet exist.
  */
 export async function backfillLastLoginAt(): Promise<number> {
-  const result = await User.updateMany(
-    { lastLoginAt: { $exists: false } },
-    [
-      {
-        $set: {
-          lastLoginAt: '$updatedAt',
-          disabledAt: null,
-          disabledReason: null,
-        },
+  const result = await User.updateMany({ lastLoginAt: { $exists: false } }, [
+    {
+      $set: {
+        lastLoginAt: '$updatedAt',
+        disabledAt: null,
+        disabledReason: null,
       },
-    ],
-  );
+    },
+  ]);
 
   logger.info(
     { modifiedCount: result.modifiedCount },

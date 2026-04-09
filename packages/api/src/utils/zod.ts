@@ -497,8 +497,13 @@ const zChannel = z.union([
       userIds: z.array(z.string().min(1)),
     })
     .refine(
-      data => data.entireTeam === true || (data.userIds && data.userIds.length > 0),
-      { message: 'At least one recipient is required when not notifying entire team', path: ['userIds'] },
+      data =>
+        data.entireTeam === true || (data.userIds && data.userIds.length > 0),
+      {
+        message:
+          'At least one recipient is required when not notifying entire team',
+        path: ['userIds'],
+      },
     ),
 ]);
 

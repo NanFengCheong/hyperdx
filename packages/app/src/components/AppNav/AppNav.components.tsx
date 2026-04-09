@@ -38,7 +38,6 @@ export const AppNavContext = React.createContext<{
   pathname: '/',
 });
 
-
 type AppNavUserMenuProps = {
   userName?: string;
   teamName?: string;

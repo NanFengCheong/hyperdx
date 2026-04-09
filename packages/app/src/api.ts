@@ -775,13 +775,21 @@ const api = {
       queryKey: ['team', 'telegram-config'],
       queryFn: () =>
         hdxServer('team/telegram-config', { method: 'GET' }).json<{
-          data: { botToken: string; webhookUrl: string; webhookSecret: string } | null;
+          data: {
+            botToken: string;
+            webhookUrl: string;
+            webhookSecret: string;
+          } | null;
         }>(),
     });
   },
   useUpdateTelegramConfig() {
     return useMutation({
-      mutationFn: (config: { botToken: string; webhookUrl: string; webhookSecret: string }) =>
+      mutationFn: (config: {
+        botToken: string;
+        webhookUrl: string;
+        webhookSecret: string;
+      }) =>
         hdxServer('team/telegram-config', {
           method: 'PUT',
           json: config,

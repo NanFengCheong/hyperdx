@@ -57,10 +57,7 @@ const OtpVerificationSchema = new Schema<IOtpVerification>(
 );
 
 // TTL index — MongoDB auto-deletes expired records
-OtpVerificationSchema.index(
-  { expiresAt: 1 },
-  { expireAfterSeconds: 0 },
-);
+OtpVerificationSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 // One active record per user+type
 OtpVerificationSchema.index({ userId: 1, type: 1 }, { unique: true });
@@ -81,7 +78,10 @@ export function generateOtpPair(): {
     code,
     magicToken,
     codeHash: crypto.createHash('sha256').update(code).digest('hex'),
-    magicTokenHash: crypto.createHash('sha256').update(magicToken).digest('hex'),
+    magicTokenHash: crypto
+      .createHash('sha256')
+      .update(magicToken)
+      .digest('hex'),
   };
 }
 

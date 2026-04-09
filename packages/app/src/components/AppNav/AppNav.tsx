@@ -599,13 +599,13 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
           <div style={{ width: navWidth }} className={styles.navLinks}>
             {/* Search */}
             {can('explorer:view') && (
-            <AppNavLink
-              label="Search"
-              icon={<IconTable size={16} />}
-              href="/search"
-              isExpanded={isSearchExpanded}
-              onToggle={() => setIsSearchExpanded(!isSearchExpanded)}
-            />
+              <AppNavLink
+                label="Search"
+                icon={<IconTable size={16} />}
+                href="/search"
+                isExpanded={isSearchExpanded}
+                onToggle={() => setIsSearchExpanded(!isSearchExpanded)}
+              />
             )}
 
             {!isCollapsed && can('explorer:view') && (

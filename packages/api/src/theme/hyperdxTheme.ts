@@ -1,6 +1,6 @@
 /**
  * HyperDX Theme Constants
- * 
+ *
  * Shared theme values for email templates and other non-UI components.
  * These values are synchronized with the Mantine theme in:
  * packages/app/src/theme/themes/hyperdx/mantineTheme.ts

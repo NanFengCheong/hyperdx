@@ -1,8 +1,8 @@
 import { Button, Section, Text } from '@react-email/components';
-import * as React from 'react';
 import { render } from '@react-email/components';
-import { hyperdxTheme } from '../theme/hyperdxTheme';
+import * as React from 'react';
 
+import { hyperdxTheme } from '../theme/hyperdxTheme';
 import { Layout } from './components/Layout';
 
 interface LoginVerificationProps {
@@ -11,7 +11,11 @@ interface LoginVerificationProps {
   magicLink: string;
 }
 
-function LoginVerificationEmail({ name, code, magicLink }: LoginVerificationProps) {
+function LoginVerificationEmail({
+  name,
+  code,
+  magicLink,
+}: LoginVerificationProps) {
   return (
     <Layout preview={`Your verification code is ${code}`}>
       <Section style={sectionStyle}>
@@ -23,7 +27,9 @@ function LoginVerificationEmail({ name, code, magicLink }: LoginVerificationProp
           <Text style={codeStyle}>{code}</Text>
         </Section>
         <Text style={textStyle}>This code expires in 5 minutes.</Text>
-        <Text style={textStyle}>Or click the button below to verify instantly:</Text>
+        <Text style={textStyle}>
+          Or click the button below to verify instantly:
+        </Text>
         <Button style={buttonStyle} href={magicLink}>
           Verify Login
         </Button>
