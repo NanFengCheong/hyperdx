@@ -20,7 +20,7 @@ import type {
   WebhookUpdateApiResponse,
 } from '@hyperdx/common-utils/dist/types';
 import type { UseQueryOptions } from '@tanstack/react-query';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { IS_LOCAL_MODE } from './config';
 import {
@@ -568,6 +568,58 @@ const api = {
         }>(),
     });
   },
+  useTeamNotificationLog(
+    page = 0,
+    limit = 50,
+    filters?: {
+      channel?: string;
+      status?: string;
+      recipient?: string;
+      triggerType?: string;
+      triggerId?: string;
+      fromDate?: string;
+      toDate?: string;
+      search?: string;
+    },
+  ) {
+    return useQuery({
+      queryKey: ['team/notification-log', page, limit, filters],
+      queryFn: () => {
+        const params = new URLSearchParams({
+          page: String(page),
+          limit: String(limit),
+        });
+        if (filters?.channel) params.set('channel', filters.channel);
+        if (filters?.status) params.set('status', filters.status);
+        if (filters?.recipient) params.set('recipient', filters.recipient);
+        if (filters?.triggerType) params.set('triggerType', filters.triggerType);
+        if (filters?.triggerId) params.set('triggerId', filters.triggerId);
+        if (filters?.fromDate) params.set('fromDate', filters.fromDate);
+        if (filters?.toDate) params.set('toDate', filters.toDate);
+        if (filters?.search) params.set('search', filters.search);
+        return hdxServer(`team/notification-log?${params}`).json<{
+          data: any[];
+          totalCount: number;
+          page: number;
+          limit: number;
+        }>();
+      },
+    });
+  },
+  useRetryNotification() {
+    const queryClient = useQueryClient();
+    return useMutation({
+      mutationFn: (id: string) =>
+        hdxServer(`team/notification-log/${id}/retry`, {
+          method: 'POST',
+        }).json<{ data: any }>(),
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: ['team/notification-log'],
+        });
+      },
+    });
+  },
   useSaveWebhook() {
     return useMutation<
       WebhookCreateApiResponse,
@@ -843,6 +895,79 @@ export const useAdminAuditLog = (
       return hdxServer(`admin/audit-log?${params}`).json();
     },
   });
+
+export const useAdminNotificationLog = (
+  page: number,
+  limit: number,
+  filters?: {
+    teamId?: string;
+    channel?: string;
+    status?: string;
+    recipient?: string;
+    triggerType?: string;
+    fromDate?: string;
+    toDate?: string;
+    search?: string;
+  },
+) =>
+  useQuery<{ data: any[]; totalCount: number; page: number; limit: number }>({
+    queryKey: ['admin', 'notification-log', page, limit, filters],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(limit),
+      });
+      if (filters?.teamId) params.set('teamId', filters.teamId);
+      if (filters?.channel) params.set('channel', filters.channel);
+      if (filters?.status) params.set('status', filters.status);
+      if (filters?.recipient) params.set('recipient', filters.recipient);
+      if (filters?.triggerType) params.set('triggerType', filters.triggerType);
+      if (filters?.fromDate) params.set('fromDate', filters.fromDate);
+      if (filters?.toDate) params.set('toDate', filters.toDate);
+      if (filters?.search) params.set('search', filters.search);
+      return hdxServer(`admin/notification-log?${params}`).json();
+    },
+  });
+
+export const useAdminRetryNotification() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      hdxServer(`admin/notification-log/${id}/retry`, {
+        method: 'POST',
+      }).json<{ data: any }>(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['admin', 'notification-log'],
+      });
+    },
+  });
+}
+
+export const useAdminNotificationLogRetention = () =>
+  useQuery<{ retentionDays: number }>({
+    queryKey: ['admin', 'notification-log', 'retention'],
+    queryFn: () =>
+      hdxServer('admin/notification-log/retention').json<{
+        retentionDays: number;
+      }>(),
+  });
+
+export const useUpdateAdminNotificationLogRetention = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (retentionDays: number) =>
+      hdxServer('admin/notification-log/retention', {
+        method: 'PUT',
+        json: { retentionDays },
+      }).json(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['admin', 'notification-log', 'retention'],
+      });
+    },
+  });
+};
 
 export const useRunDataRetention = () =>
   useMutation<
