@@ -6,9 +6,11 @@ import app from '@/api-app';
 import * as config from '@/config';
 import { LOCAL_APP_TEAM } from '@/controllers/team';
 import { connectDB, mongooseConnection } from '@/models';
+import Team from '@/models/team';
 import opampApp from '@/opamp/app';
 import { seedSystemRoles, ensureDefaultSuperAdmin } from '@/scripts/migrateGroupsToRoles';
 import { setupTeamDefaults } from '@/setupDefaults';
+import { registerWebhook } from '@/services/telegram';
 import logger from '@/utils/logger';
 
 export default class Server {
@@ -110,5 +112,36 @@ export default class Server {
         // Don't throw - allow server to start even if defaults setup fails
       }
     }
+
+    // Initialize Telegram webhooks for teams with configured bots
+    await initTelegramWebhooks();
+  }
+}
+
+async function initTelegramWebhooks() {
+  try {
+    const teams = await Team.find({
+      'telegramConfig.botToken': { $exists: true, $ne: '' },
+    }).select('telegramConfig');
+
+    for (const team of teams) {
+      const config = (team as any).telegramConfig;
+      if (config?.botToken && config?.webhookUrl) {
+        const result = await registerWebhook(config);
+        if (result.ok) {
+          logger.info({ teamId: team._id }, 'Telegram webhook registered');
+        } else {
+          logger.warn(
+            { teamId: team._id, error: result.error },
+            'Failed to register Telegram webhook',
+          );
+        }
+      }
+    }
+  } catch (e) {
+    logger.error(
+      { err: serializeError(e) },
+      'Failed to initialize Telegram webhooks',
+    );
   }
 }
