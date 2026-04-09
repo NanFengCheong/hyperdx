@@ -26,6 +26,7 @@ import {
   IconDeviceFloppy,
   IconDeviceLaptop,
   IconLayoutGrid,
+  IconRocket,
   IconSettings,
   IconShieldLock,
   IconSitemap,
@@ -496,6 +497,32 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
                 </Anchor>{' '}
                 page.
               </Text>
+            )}
+
+            {/* Integration Guide */}
+            {!IS_LOCAL_MODE && (
+              <button
+                type="button"
+                className={styles.navItem}
+                onClick={openInstallInstructions}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: 0,
+                  font: 'inherit',
+                  color: 'inherit',
+                }}
+              >
+                <span className={styles.navItemContent}>
+                  <span className={styles.navItemIcon}>
+                    <IconRocket size={16} />
+                  </span>
+                  {!isCollapsed && <span>Integration Guide</span>}
+                </span>
+              </button>
             )}
 
             {/* Help */}
