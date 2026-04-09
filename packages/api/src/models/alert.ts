@@ -35,6 +35,7 @@ export type AlertChannel =
   | {
       type: 'email';
       userIds: string[];
+      entireTeam?: boolean;
     }
   | {
       type: null;

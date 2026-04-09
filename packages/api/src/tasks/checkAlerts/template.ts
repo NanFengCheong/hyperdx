@@ -436,8 +436,13 @@ export const getDefaultExternalAction = (
   if (alert.channel.type === 'webhook' && alert.channel.webhookId != null) {
     return `@${alert.channel.type}-${alert.channel.webhookId}`;
   }
-  if (alert.channel.type === 'email' && alert.channel.userIds != null) {
-    return `@${alert.channel.type}-${alert.channel.userIds.join(',')}`;
+  if (alert.channel.type === 'email') {
+    if (alert.channel.entireTeam) {
+      return `@${alert.channel.type}-__entireTeam__`;
+    }
+    if (alert.channel.userIds != null) {
+      return `@${alert.channel.type}-${alert.channel.userIds.join(',')}`;
+    }
   }
   return null;
 };
@@ -490,6 +495,18 @@ const getPopulatedChannel = (
       const userIds = Array.isArray(channelIdOrUserIds)
         ? channelIdOrUserIds
         : [channelIdOrUserIds];
+
+      // When entireTeam flag is set and the special marker is present,
+      // resolve all team members instead of individual userIds
+      if (userIds.length === 1 && userIds[0] === '__entireTeam__') {
+        const users = [...teamUsersById.values()];
+        if (users.length === 0) {
+          logger.error('no users found for entire team email channel');
+          return undefined;
+        }
+        return { type: 'email', users };
+      }
+
       const users = userIds
         .map(id => teamUsersById.get(id))
         .filter((u): u is IUser => u != null);

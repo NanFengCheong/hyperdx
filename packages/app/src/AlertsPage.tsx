@@ -372,9 +372,13 @@ function AlertDetails({ alert }: { alert: AlertsPageItem }) {
   }, [alert]);
 
   const notificationMethod = React.useMemo(() => {
+    const isEntireTeam =
+      alert.channel.type === 'email' && alert.channel.entireTeam;
     return (
       <Group gap={5}>
-        Notify via {getWebhookChannelIcon(alert.channel.type)} Webhook
+        Notify via {getWebhookChannelIcon(alert.channel.type)}{' '}
+        {alert.channel.type}
+        {isEntireTeam ? ' (entire team)' : ''}
       </Group>
     );
   }, [alert]);

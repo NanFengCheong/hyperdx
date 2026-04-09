@@ -490,10 +490,16 @@ const zChannel = z.union([
     type: z.literal('webhook'),
     webhookId: z.string().min(1),
   }),
-  z.object({
-    type: z.literal('email'),
-    userIds: z.array(z.string().min(1)).min(1),
-  }),
+  z
+    .object({
+      type: z.literal('email'),
+      entireTeam: z.boolean().optional(),
+      userIds: z.array(z.string().min(1)),
+    })
+    .refine(
+      data => data.entireTeam === true || (data.userIds && data.userIds.length > 0),
+      { message: 'At least one recipient is required when not notifying entire team', path: ['userIds'] },
+    ),
 ]);
 
 const zSavedSearchAlert = z.object({

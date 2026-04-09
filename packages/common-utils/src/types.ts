@@ -326,12 +326,16 @@ export const zAlertChannel = z.union([
     type: z.literal('webhook'),
     webhookId: z.string().nonempty("Webhook ID can't be empty"),
   }),
-  z.object({
-    type: z.literal('email'),
-    userIds: z
-      .array(z.string().nonempty("User ID can't be empty"))
-      .min(1, 'At least one recipient is required'),
-  }),
+  z
+    .object({
+      type: z.literal('email'),
+      entireTeam: z.boolean().optional(),
+      userIds: z.array(z.string().nonempty("User ID can't be empty")),
+    })
+    .refine(
+      data => data.entireTeam === true || (data.userIds && data.userIds.length > 0),
+      { message: 'At least one recipient is required when not notifying entire team', path: ['userIds'] },
+    ),
 ]);
 
 export const zSavedSearchAlert = z.object({
@@ -1142,7 +1146,10 @@ export const AlertsPageItemSchema = z.object({
   scheduleStartAt: z.union([z.string(), z.date()]).nullish(),
   threshold: z.number(),
   thresholdType: z.nativeEnum(AlertThresholdType),
-  channel: z.object({ type: z.string().optional().nullable() }),
+  channel: z.object({
+    type: z.string().optional().nullable(),
+    entireTeam: z.boolean().optional(),
+  }),
   state: z.nativeEnum(AlertState).optional(),
   source: z.nativeEnum(AlertSource).optional(),
   dashboardId: z.string().optional(),

@@ -7,7 +7,7 @@ import {
   type TeamMember,
   WebhookService,
 } from '@hyperdx/common-utils/dist/types';
-import { Button, ComboboxData, Group, Modal } from '@mantine/core';
+import { Button, Checkbox, ComboboxData, Group, Modal } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 
 import api from '@/api';
@@ -117,6 +117,18 @@ const EmailChannelForm = ({
   const { data: teamMembers } = api.useTeamMembers();
   const members = (teamMembers?.data || []) as TeamMember[];
 
+  const { field: entireTeamField } = useController({
+    control,
+    name: `${namePrefix}channel.entireTeam`,
+    defaultValue: false,
+  });
+  const { field: userIdsField } = useController({
+    control,
+    name: `${namePrefix}channel.userIds`,
+    defaultValue: [],
+  });
+  const entireTeam = entireTeamField.value === true;
+
   const options = useMemo(
     () =>
       members.map((m: TeamMember) => ({
@@ -127,18 +139,35 @@ const EmailChannelForm = ({
   );
 
   return (
-    <MultiSelect
-      data-testid="select-email-recipients"
-      required
-      size="xs"
-      placeholder="Select team members to notify"
-      data={options}
-      name={`${namePrefix}channel.userIds`}
-      control={control}
-      comboboxProps={{
-        withinPortal: false,
-      }}
-    />
+    <div>
+      <Checkbox
+        data-testid="entire-team-checkbox"
+        size="xs"
+        label="Notify entire team"
+        checked={entireTeam}
+        onChange={e => {
+          entireTeamField.onChange(e.currentTarget.checked);
+          if (e.currentTarget.checked) {
+            userIdsField.onChange([]);
+          }
+        }}
+        mb="xs"
+      />
+      {!entireTeam && (
+        <MultiSelect
+          data-testid="select-email-recipients"
+          required
+          size="xs"
+          placeholder="Select team members to notify"
+          data={options}
+          name={`${namePrefix}channel.userIds`}
+          control={control}
+          comboboxProps={{
+            withinPortal: false,
+          }}
+        />
+      )}
+    </div>
   );
 };
 
