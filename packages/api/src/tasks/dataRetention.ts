@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 
 import { RETENTION_DAYS_ALERTHISTORY, RETENTION_DAYS_AUDITLOG } from '@/config';
 import AuditLog from '@/models/auditLog';
+import NotificationLog from '@/models/notificationLog';
 import PlatformSetting from '@/models/platformSetting';
 import { DataRetentionTaskArgs, HdxTask } from '@/tasks/types';
 import logger from '@/utils/logger';
@@ -13,6 +14,7 @@ import logger from '@/utils/logger';
 const DEFAULT_RETENTION_DAYS: Record<string, number> = {
   AuditLog: RETENTION_DAYS_AUDITLOG,
   AlertHistory: RETENTION_DAYS_ALERTHISTORY,
+  NotificationLog: 30, // default 30 days, overridden by PlatformSetting
 };
 
 /**
@@ -20,12 +22,31 @@ const DEFAULT_RETENTION_DAYS: Record<string, number> = {
  * Reads from PlatformSetting DB first, falls back to env vars in config.ts.
  */
 async function getRetentionDays(collectionName: string): Promise<number> {
+  // Special case: NotificationLog uses a separate PlatformSetting key
+  if (collectionName === 'NotificationLog') {
+    try {
+      const setting = await PlatformSetting.findOne({
+        key: 'notificationLogRetentionDays',
+      });
+      if (setting && typeof setting.value === 'number') {
+        return setting.value;
+      }
+    } catch (error) {
+      logger.warn(
+        { error },
+        'Failed to read notification log retention setting, using default',
+      );
+    }
+    return DEFAULT_RETENTION_DAYS[collectionName] ?? 0;
+  }
+
   try {
     const setting = await PlatformSetting.findOne({ key: 'dataRetention' });
     const value = setting?.value as Record<string, number> | undefined;
     const keyMap: Record<string, string> = {
       AuditLog: 'auditLog',
       AlertHistory: 'alertHistory',
+      NotificationLog: 'notificationLogRetentionDays',
     };
     const dbKey = keyMap[collectionName];
     if (dbKey && value?.[dbKey] != null) {
@@ -86,10 +107,13 @@ export async function applyRetention(
 ): Promise<number> {
   const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
-  let model: typeof AuditLog;
+  let model: typeof AuditLog | typeof NotificationLog;
   switch (collectionName) {
     case 'AuditLog':
       model = AuditLog;
+      break;
+    case 'NotificationLog':
+      model = NotificationLog;
       break;
     default:
       logger.warn(`Unknown collection: ${collectionName}, skipping`);
