@@ -38,7 +38,7 @@ import { PageHeader } from '@/components/PageHeader';
 
 import { useBrandDisplayName } from './theme/ThemeProvider';
 import { isAlertSilenceExpired } from './utils/alerts';
-import { getWebhookChannelIcon } from './utils/webhookIcons';
+import { getAlertChannelIcon } from './utils/webhookIcons';
 import api from './api';
 import { withAppNav } from './layout';
 import type { AlertsPageItem } from './types';
@@ -376,7 +376,7 @@ function AlertDetails({ alert }: { alert: AlertsPageItem }) {
       alert.channel.type === 'email' && alert.channel.entireTeam;
     return (
       <Group gap={5}>
-        Notify via {getWebhookChannelIcon(alert.channel.type)}{' '}
+        Notify via {getAlertChannelIcon(alert.channel.type)}{' '}
         {alert.channel.type}
         {isEntireTeam ? ' (entire team)' : ''}
       </Group>

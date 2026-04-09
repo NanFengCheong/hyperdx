@@ -1,3 +1,4 @@
+import React from 'react';
 import { useMemo } from 'react';
 import { Control, useController } from 'react-hook-form';
 import { MultiSelect, Select, SelectProps } from 'react-hook-form-mantine';
@@ -7,8 +8,10 @@ import {
   type TeamMember,
   WebhookService,
 } from '@hyperdx/common-utils/dist/types';
-import { Button, Checkbox, ComboboxData, Group, Modal } from '@mantine/core';
+import { ActionIcon, Button, Checkbox, ComboboxData, Group, Modal, TextInput, Tooltip } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
+import { notifications } from '@mantine/notifications';
+import { IconBrandTelegram, IconSend } from '@tabler/icons-react';
 
 import api from '@/api';
 
@@ -171,6 +174,84 @@ const EmailChannelForm = ({
   );
 };
 
+const TelegramChannelForm = ({
+  control,
+  namePrefix = '',
+}: {
+  control: Control<any>;
+  namePrefix?: string;
+}) => {
+  const { field } = useController({
+    control,
+    name: `${namePrefix}channel.chatId`,
+    defaultValue: '',
+  });
+
+  const [testing, setTesting] = React.useState(false);
+
+  const handleTest = async () => {
+    if (!field.value) return;
+    setTesting(true);
+    try {
+      const res = await fetch('/api/v1/telegram/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ chatId: field.value }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        notifications.show({
+          color: 'green',
+          message: 'Test message sent successfully!',
+        });
+      } else {
+        notifications.show({
+          color: 'red',
+          message: data.error || 'Failed to send test message',
+        });
+      }
+    } catch {
+      notifications.show({
+        color: 'red',
+        message: 'Failed to validate chat ID',
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div>
+      <Group gap="md" align="flex-end">
+        <TextInput
+          size="xs"
+          flex={1}
+          label="Chat ID"
+          description="Add the bot to your group, then use @RawDataBot or /chatid to get the group chat ID"
+          placeholder="-1001234567890"
+          value={field.value}
+          onChange={field.onChange}
+          onBlur={field.onBlur}
+          required
+        />
+        <Tooltip label="Send test message">
+          <ActionIcon
+            size="sm"
+            variant="subtle"
+            color="gray"
+            onClick={handleTest}
+            loading={testing}
+            disabled={!field.value}
+          >
+            <IconSend size={16} />
+          </ActionIcon>
+        </Tooltip>
+      </Group>
+    </div>
+  );
+};
+
 export const AlertChannelForm = ({
   control,
   type,
@@ -191,6 +272,10 @@ export const AlertChannelForm = ({
 
   if (type === 'email') {
     return <EmailChannelForm control={control} namePrefix={namePrefix} />;
+  }
+
+  if (type === 'telegram') {
+    return <TelegramChannelForm control={control} namePrefix={namePrefix} />;
   }
 
   return null;

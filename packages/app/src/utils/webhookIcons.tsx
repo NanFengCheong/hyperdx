@@ -3,7 +3,7 @@ import {
   WebhookApiData,
   WebhookService,
 } from '@hyperdx/common-utils/dist/types';
-import { IconBrandSlack, IconLink, IconMail } from '@tabler/icons-react';
+import { IconBrandSlack, IconBrandTelegram, IconLink, IconMail } from '@tabler/icons-react';
 
 import { IncidentIOIcon } from '@/SVGIcons';
 
@@ -97,4 +97,19 @@ export const groupWebhooksByService = (webhooks: WebhookApiData[]) => {
     const orderB = WEBHOOK_SERVICE_CONFIG[b as WebhookService]?.order || 999;
     return orderA - orderB;
   });
+};
+
+export const getAlertChannelIcon = (
+  channelType: string | null | undefined,
+): React.ReactElement => {
+  switch (channelType) {
+    case 'telegram':
+      return <IconBrandTelegram size={16} />;
+    case 'email':
+      return <IconMail size={16} />;
+    case 'webhook':
+      return <IconLink size={16} />;
+    default:
+      return <IconLink size={16} />;
+  }
 };
