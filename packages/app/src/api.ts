@@ -841,7 +841,7 @@ const api = {
       mutationFn: (config: {
         botToken: string;
         webhookUrl: string;
-        webhookSecret: string;
+        webhookSecret?: string;
       }) =>
         hdxServer('team/telegram-config', {
           method: 'PUT',
