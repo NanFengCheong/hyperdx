@@ -929,7 +929,7 @@ export const useAdminNotificationLog = (
     },
   });
 
-export const useAdminRetryNotification() {
+export const useAdminRetryNotification = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
