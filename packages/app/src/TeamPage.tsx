@@ -21,6 +21,7 @@ import ApiKeysSection from './components/TeamSettings/ApiKeysSection';
 import AuditLogSection from './components/TeamSettings/AuditLogSection';
 import ConnectionsSection from './components/TeamSettings/ConnectionsSection';
 import IntegrationsSection from './components/TeamSettings/IntegrationsSection';
+import NotificationLogSection from './components/TeamSettings/NotificationLogSection';
 import SourcesSection from './components/TeamSettings/SourcesSection';
 import TeamMembersSection from './components/TeamSettings/TeamMembersSection';
 import TeamQueryConfigSection from './components/TeamSettings/TeamQueryConfigSection';
@@ -131,6 +132,16 @@ export default function TeamPage() {
         {
           id: 'team-audit-log',
           content: <AuditLogSection />,
+        },
+      ],
+    },
+    {
+      value: 'notification-log',
+      label: 'Notification Log',
+      sections: [
+        {
+          id: 'team-notification-log',
+          content: <NotificationLogSection />,
         },
       ],
     },
