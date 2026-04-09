@@ -17,6 +17,7 @@ import {
 import { isValidSlackUrl } from '@hyperdx/common-utils/dist/validation';
 import Handlebars, { HelperOptions } from 'handlebars';
 import _ from 'lodash';
+import mongoose from 'mongoose';
 import PromisedHandlebars from 'promised-handlebars';
 import { serializeError } from 'serialize-error';
 import { z } from 'zod';
@@ -40,7 +41,15 @@ import {
 } from '@/tasks/checkAlerts/providers';
 import { escapeJsonString, unflattenObject } from '@/tasks/util';
 import { truncateString } from '@/utils/common';
-import { sendAlertNotificationEmail } from '@/utils/emailService';
+import {
+  sendAlertNotificationEmail,
+  NotificationContext,
+} from '@/utils/emailService';
+import {
+  createNotificationEntry,
+  markNotificationFailed,
+  markNotificationSuccess,
+} from '@/utils/notificationLogger';
 import logger from '@/utils/logger';
 import * as slack from '@/utils/slack';
 
@@ -125,9 +134,11 @@ export const formatValueToMatchThreshold = (
 const notifyChannel = async ({
   channel,
   message,
+  notificationContext,
 }: {
   channel: PopulatedAlertChannel;
   message: Message;
+  notificationContext?: NotificationContext;
 }) => {
   switch (channel.type) {
     case 'webhook': {
@@ -139,12 +150,12 @@ const notifyChannel = async ({
         webhook.service === WebhookService.Generic ||
         webhook.service === WebhookService.IncidentIO
       ) {
-        await handleSendGenericWebhook(webhook, message);
+        await handleSendGenericWebhook(webhook, message, notificationContext);
       }
       break;
     }
     case 'email': {
-      await handleSendEmail(channel.users, message);
+      await handleSendEmail(channel.users, message, notificationContext);
       break;
     }
     case 'telegram': {
@@ -245,6 +256,7 @@ export const handleSendSlackWebhook = async (
 export const handleSendGenericWebhook = async (
   webhook: IWebhook,
   message: Message,
+  notificationContext?: NotificationContext,
 ) => {
   validateWebhookUrl(webhook);
 
@@ -298,6 +310,25 @@ export const handleSendGenericWebhook = async (
     return;
   }
 
+  // Create notification log entry before sending
+  let logEntry: any = null;
+  if (notificationContext) {
+    try {
+      logEntry = await createNotificationEntry({
+        teamId: notificationContext.teamId as mongoose.Types.ObjectId,
+        channel: 'webhook',
+        recipient: url,
+        trigger: notificationContext.trigger,
+        subject: message.title,
+        payload: { body, headers: webhook.headers?.toJSON() },
+        actorId: notificationContext.actorId,
+        retryOf: notificationContext.retryOf,
+      });
+    } catch {
+      // logging failure should not block webhook send
+    }
+  }
+
   try {
     // TODO: retries/backoff etc -> switch to request-error-tolerant api client
     const response = await fetch(url, {
@@ -308,9 +339,29 @@ export const handleSendGenericWebhook = async (
 
     if (!response.ok) {
       const errorText = await response.text();
+      const errorMsg = `HTTP ${response.status}: ${response.statusText}${errorText ? ` - ${errorText.slice(0, 500)}` : ''}`;
+      if (logEntry) {
+        await markNotificationFailed(logEntry._id, errorMsg, {
+          status: response.status,
+          body: errorText.slice(0, 1000),
+        });
+      }
       throw new Error(errorText);
     }
+
+    if (logEntry) {
+      await markNotificationSuccess(logEntry._id, {
+        status: response.status,
+        statusText: response.statusText,
+      });
+    }
   } catch (e) {
+    if (logEntry && !(e instanceof Error && e.message.startsWith('HTTP '))) {
+      await markNotificationFailed(
+        logEntry._id,
+        e instanceof Error ? e.message : String(e),
+      );
+    }
     logger.error(
       {
         error: serializeError(e),
@@ -320,7 +371,11 @@ export const handleSendGenericWebhook = async (
   }
 };
 
-export const handleSendEmail = async (users: IUser[], message: Message) => {
+export const handleSendEmail = async (
+  users: IUser[],
+  message: Message,
+  notificationContext?: NotificationContext,
+) => {
   if (users.length === 0) {
     logger.warn('No recipients for email notification');
     return;
@@ -336,16 +391,19 @@ export const handleSendEmail = async (users: IUser[], message: Message) => {
 
   for (const user of users) {
     try {
-      await sendAlertNotificationEmail({
-        to: user.email,
-        name: user.name,
-        title: message.title,
-        body: message.body,
-        hdxLink: message.hdxLink,
-        state: message.state as 'ALERT' | 'OK',
-        startTime: startTimeStr,
-        endTime: endTimeStr,
-      });
+      await sendAlertNotificationEmail(
+        {
+          to: user.email,
+          name: user.name,
+          title: message.title,
+          body: message.body,
+          hdxLink: message.hdxLink,
+          state: message.state as 'ALERT' | 'OK',
+          startTime: startTimeStr,
+          endTime: endTimeStr,
+        },
+        notificationContext,
+      );
     } catch (e) {
       logger.error(
         {
@@ -565,6 +623,7 @@ export const renderAlertTemplate = async ({
   view,
   teamWebhooksById,
   teamUsersById,
+  notificationContext,
 }: {
   alertProvider: AlertProvider;
   clickhouseClient: ClickhouseClient;
@@ -576,6 +635,7 @@ export const renderAlertTemplate = async ({
   view: AlertMessageTemplateDefaultView;
   teamWebhooksById: Map<string, IWebhook>;
   teamUsersById: Map<string, IUser>;
+  notificationContext?: NotificationContext;
 }) => {
   const {
     alert,
@@ -674,6 +734,7 @@ export const renderAlertTemplate = async ({
             endTime,
             eventId,
           },
+          notificationContext,
         });
       }
     });
