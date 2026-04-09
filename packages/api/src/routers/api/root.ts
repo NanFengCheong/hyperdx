@@ -203,6 +203,14 @@ router.post('/login/password', (req, res, next) => {
         user.name || user.email,
         code,
         magicLink,
+        {
+          teamId: user.team,
+          trigger: {
+            type: 'login_verification',
+            id: user._id.toString(),
+            name: 'Login Verification',
+          },
+        },
       );
 
       req.session.save(() => {
@@ -341,6 +349,14 @@ router.post('/resend-otp', async (req, res) => {
     user.name || user.email,
     code,
     magicLink,
+    {
+      teamId: user.team,
+      trigger: {
+        type: 'login_verification',
+        id: user._id.toString(),
+        name: 'Login Verification',
+      },
+    },
   );
 
   return res.json({ status: 'sent' });
@@ -371,6 +387,14 @@ router.post('/forgot-password', async (req, res) => {
     user.name || user.email,
     code,
     magicLink,
+    {
+      teamId: user.team,
+      trigger: {
+        type: 'password_reset',
+        id: user._id.toString(),
+        name: 'Password Reset',
+      },
+    },
   );
 });
 

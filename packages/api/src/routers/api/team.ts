@@ -280,7 +280,15 @@ router.post(
       const joinUrl = `${config.FRONTEND_URL}/join-team?token=${teamInvite.token}`;
 
       // Send invite email (non-blocking, don't fail the request if email fails)
-      void sendTeamInviteEmail(normalizedEmail, fromEmail, joinUrl);
+      void sendTeamInviteEmail(normalizedEmail, fromEmail, joinUrl, {
+        teamId,
+        trigger: {
+          type: 'team_invite',
+          id: teamInvite._id.toString(),
+          name: 'Team Invitation',
+        },
+        actorId: req.user?._id,
+      });
 
       res.json({
         url: joinUrl,
