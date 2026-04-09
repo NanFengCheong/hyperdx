@@ -35,7 +35,7 @@ function AlertNotificationEmail({
               : '#e03e3e',
           }}
         >
-          {isResolved ? '✅ RESOLVED' : '🚨 ALERT'}
+          {isResolved ? 'RESOLVED' : 'ALERT'}
         </Text>
       </Section>
 
@@ -70,8 +70,8 @@ export async function renderAlertNotification(props: AlertNotificationProps) {
   return { html, text };
 }
 
-const sectionStyle = { padding: '0 48px' };
-const headerSectionStyle = { padding: '20px 48px 0' };
+const sectionStyle = { padding: '0 24px' };
+const headerSectionStyle = { padding: '20px 24px 0' };
 
 const stateBadgeStyle = {
   display: 'inline-block',
@@ -138,7 +138,8 @@ const bodyTextStyle = {
   color: hyperdxTheme.colors.dark[0],
   fontFamily: 'monospace',
   whiteSpace: 'pre-wrap' as const,
-  wordBreak: 'break-word' as const,
+  wordBreak: 'break-all' as const,
+  overflowWrap: 'break-word' as const,
 };
 
 const buttonStyle = {

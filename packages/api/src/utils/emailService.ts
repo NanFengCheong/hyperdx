@@ -111,8 +111,8 @@ export async function sendAlertNotificationEmail(
   });
   const subject =
     options.state === 'OK'
-      ? `✅ Resolved: ${options.title}`
-      : `🚨 ${options.title}`;
+      ? `Resolved: ${options.title}`
+      : options.title;
   return sendEmail({
     to: options.to,
     subject,

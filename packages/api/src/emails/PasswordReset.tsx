@@ -38,7 +38,7 @@ export async function renderPasswordReset(props: PasswordResetProps) {
   return { html, text };
 }
 
-const sectionStyle = { padding: '0 48px' };
+const sectionStyle = { padding: '0 24px' };
 const textStyle = {
   fontSize: hyperdxTheme.fontSizes.md,
   color: hyperdxTheme.colors.dark[0],

@@ -391,8 +391,7 @@ export const buildAlertMessageTemplateTitle = ({
   const { alert, dashboard, savedSearch, value } = view;
   const handlebars = createHandlebarsWithHelpers();
 
-  // Add emoji prefix based on alert state
-  const emoji = isAlertResolved(state) ? '✅ ' : '🚨 ';
+  const statePrefix = isAlertResolved(state) ? 'Resolved: ' : '';
 
   if (alert.source === AlertSource.SAVED_SEARCH) {
     if (savedSearch == null) {
@@ -402,7 +401,7 @@ export const buildAlertMessageTemplateTitle = ({
     const baseTitle = template
       ? handlebars.compile(template)(view)
       : `Alert for "${savedSearch.name}" - ${value} lines found`;
-    return `${emoji}${baseTitle}`;
+    return `${statePrefix}${baseTitle}`;
   } else if (alert.source === AlertSource.TILE) {
     if (dashboard == null) {
       throw new Error(`Source is ${alert.source} but dashboard is null`);
@@ -425,7 +424,7 @@ export const buildAlertMessageTemplateTitle = ({
               ? 'falls below'
               : 'exceeds'
         } ${alert.threshold}`;
-    return `${emoji}${baseTitle}`;
+    return `${statePrefix}${baseTitle}`;
   }
 
   throw new Error(`Unsupported alert source: ${(alert as any).source}`);

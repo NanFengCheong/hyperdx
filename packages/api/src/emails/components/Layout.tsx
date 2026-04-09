@@ -48,11 +48,12 @@ const containerStyle = {
   margin: '0 auto',
   padding: '20px 0 48px',
   marginBottom: '64px',
+  width: '100%',
   maxWidth: '560px',
 };
 
 const headerStyle = {
-  padding: '20px 48px 0',
+  padding: '20px 24px 0',
 };
 
 const logoStyle = {
@@ -64,12 +65,12 @@ const logoStyle = {
 
 const hrStyle = {
   borderColor: hyperdxTheme.colors.gray[8],
-  margin: '20px 48px',
+  margin: '20px 24px',
 };
 
 const footerStyle = {
   color: hyperdxTheme.colors.gray[5],
   fontSize: '12px',
-  padding: '0 48px',
+  padding: '0 24px',
   lineHeight: '18px',
 };
