@@ -40,6 +40,7 @@ import Group from '@/models/group';
 import Role from '@/models/role';
 import TeamInvite from '@/models/teamInvite';
 import User from '@/models/user';
+import { registerWebhook, validateBotToken } from '@/services/telegram';
 import { sendJson } from '@/utils/serialization';
 import { objectIdSchema } from '@/utils/zod';
 
@@ -186,8 +187,24 @@ router.put(
   async (req, res, next) => {
     try {
       const { teamId } = getNonNullUserWithTeam(req);
+
+      // Validate bot token before saving
+      const tokenValidation = await validateBotToken(req.body.botToken);
+      if (!tokenValidation.ok) {
+        return res.status(400).json({ error: `Invalid bot token: ${tokenValidation.error}` });
+      }
+
       await updateTeamTelegramConfig(teamId, req.body);
-      res.json({ data: { success: true } });
+
+      // Register webhook with Telegram
+      const webhookResult = await registerWebhook(req.body);
+      if (!webhookResult.ok) {
+        return res.status(400).json({
+          error: `Config saved but webhook registration failed: ${webhookResult.error}`,
+        });
+      }
+
+      res.json({ data: { success: true, botName: tokenValidation.botName } });
     } catch (e) {
       next(e);
     }
