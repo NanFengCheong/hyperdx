@@ -10,6 +10,7 @@ import {
   Button,
   Modal,
   Paper,
+  ScrollArea,
   Stack,
   Tabs,
   Text,
@@ -281,6 +282,7 @@ const SourceSchemaPreview = ({
           onClose={() => setIsModalOpen(false)}
           size="auto"
           title={tables.length > 1 ? `Table Schemas` : `Table Schema`}
+          scrollAreaComponent={ScrollArea.Autosize}
         >
           <Tabs
             defaultValue={`${tables[0]?.databaseName}.${tables[0]?.tableName}.${tables[0]?.title}`}
