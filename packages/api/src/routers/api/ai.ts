@@ -2,7 +2,12 @@ import {
   AssistantLineTableConfigSchema,
   SourceKind,
 } from '@hyperdx/common-utils/dist/types';
-import { APICallError, generateText, Output } from 'ai';
+import {
+  APICallError,
+  generateText,
+  NoObjectGeneratedError,
+  Output,
+} from 'ai';
 import express from 'express';
 import { z } from 'zod';
 import { validateRequest } from 'zod-express-middleware';
@@ -88,6 +93,8 @@ ${JSON.stringify(keyValues)}
 
 There may be additional properties that you can use as well:
 ${JSON.stringify(allFieldsWithKeys.slice(0, 200).map(f => ({ field: f.key, type: f.type })))}
+
+IMPORTANT: You MUST respond with ONLY a valid JSON object matching the required schema. Do NOT wrap it in markdown code blocks. Do NOT include any explanation or text before or after the JSON. Output raw JSON only.
 `;
 
       logger.info(prompt);
@@ -112,6 +119,38 @@ ${JSON.stringify(allFieldsWithKeys.slice(0, 200).map(f => ({ field: f.key, type:
         if (err instanceof APICallError) {
           throw new Api500Error(
             `AI Provider Error. Status: ${err.statusCode}. Message: ${err.message}`,
+          );
+        }
+        if (NoObjectGeneratedError.isInstance(err)) {
+          // Some models (e.g. Qwen via DashScope) wrap JSON in markdown
+          // code blocks. Try to extract and parse the JSON before giving up.
+          const rawText = err.text;
+          if (rawText) {
+            const jsonMatch = rawText.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+            if (jsonMatch) {
+              try {
+                const parsed = AssistantLineTableConfigSchema.parse(
+                  JSON.parse(jsonMatch[1]),
+                );
+                const chartConfig = getChartConfigFromResolvedConfig(
+                  parsed,
+                  source,
+                );
+                return res.json(chartConfig);
+              } catch (parseErr) {
+                logger.warn({
+                  message:
+                    'AI returned markdown-wrapped JSON but it failed schema validation',
+                  cause:
+                    parseErr instanceof Error
+                      ? parseErr.message
+                      : String(parseErr),
+                });
+              }
+            }
+          }
+          throw new Api500Error(
+            'The AI was unable to generate a valid chart configuration. Please try rephrasing your request.',
           );
         }
         throw err;
