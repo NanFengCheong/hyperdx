@@ -312,6 +312,7 @@ const fireChannelEvent = async ({
     clickhouseClient,
     metadata,
     state,
+    teamId: team.toString(),
     title: buildAlertMessageTemplateTitle({
       template: alert.name,
       view: templateView,

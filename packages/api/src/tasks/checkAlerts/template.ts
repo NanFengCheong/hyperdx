@@ -42,6 +42,7 @@ import { truncateString } from '@/utils/common';
 import { sendAlertNotificationEmail } from '@/utils/emailService';
 import logger from '@/utils/logger';
 import * as slack from '@/utils/slack';
+import { sendAlertMessage } from '@/services/telegram';
 
 const MAX_MESSAGE_LENGTH = 500;
 const NOTIFY_FN_NAME = '__hdx_notify_channel__';
@@ -144,6 +145,15 @@ const notifyChannel = async ({
     }
     case 'email': {
       await handleSendEmail(channel.users, message);
+      break;
+    }
+    case 'telegram': {
+      await sendAlertMessage(
+        channel.teamId,
+        channel.chatId,
+        message.eventId,
+        message,
+      );
       break;
     }
     default:
@@ -474,6 +484,7 @@ const getPopulatedChannel = (
   channelIdOrUserIds: string | string[],
   teamWebhooksById: Map<string, IWebhook>,
   teamUsersById: Map<string, IUser>,
+  teamId: string,
 ): PopulatedAlertChannel | undefined => {
   switch (channelType) {
     case 'webhook': {
@@ -518,6 +529,19 @@ const getPopulatedChannel = (
       }
       return { type: 'email', users };
     }
+    case 'telegram': {
+      const chatId = Array.isArray(channelIdOrUserIds)
+        ? channelIdOrUserIds[0]
+        : channelIdOrUserIds;
+      if (!chatId || !teamId) {
+        logger.error(
+          { chatId, teamId },
+          'missing chatId or teamId for telegram channel',
+        );
+        return undefined;
+      }
+      return { type: 'telegram', chatId, teamId };
+    }
     default: {
       logger.error({ channelType }, 'Unsupported alert channel type');
       return undefined;
@@ -531,6 +555,7 @@ export const renderAlertTemplate = async ({
   clickhouseClient,
   metadata,
   state,
+  teamId,
   template,
   title,
   view,
@@ -541,6 +566,7 @@ export const renderAlertTemplate = async ({
   clickhouseClient: ClickhouseClient;
   metadata: Metadata;
   state: AlertState;
+  teamId: string;
   template?: string | null;
   title: string;
   view: AlertMessageTemplateDefaultView;
@@ -609,6 +635,7 @@ export const renderAlertTemplate = async ({
           : renderedIdOrNamePrefix,
         teamWebhooksById,
         teamUsersById,
+        teamId,
       );
 
       if (channel) {
@@ -623,7 +650,9 @@ export const renderAlertTemplate = async ({
             id:
               channel.type === 'email'
                 ? channel.users.map(u => u._id.toString()).join(',')
-                : channel.channel._id.toString(),
+                : channel.type === 'telegram'
+                  ? channel.chatId
+                  : channel.channel._id.toString(),
           },
           // Explicitly track if this is a grouped alert
           isGrouped: view.isGroupedAlert,

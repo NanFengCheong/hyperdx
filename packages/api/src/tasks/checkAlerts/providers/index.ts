@@ -24,7 +24,8 @@ export enum AlertTaskType {
 // Discriminated union of possible alert channel types with populated channel data
 export type PopulatedAlertChannel =
   | ({ type: 'webhook' } & { channel: IWebhook })
-  | ({ type: 'email' } & { users: IUser[] });
+  | ({ type: 'email' } & { users: IUser[] })
+  | ({ type: 'telegram' } & { chatId: string; teamId: string });
 
 // Details about the alert and the source for the alert. Depending on
 // the taskType either:

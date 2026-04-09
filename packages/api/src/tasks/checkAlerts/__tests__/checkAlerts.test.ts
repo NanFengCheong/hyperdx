@@ -707,6 +707,7 @@ describe('checkAlerts', () => {
           },
         },
         title: 'Alert for "My Search" - 10 lines found',
+        teamId: team._id.toString(),
         teamWebhooksById: new Map<string, typeof webhook>([
           [webhook._id.toString(), webhook],
         ]),
@@ -742,6 +743,7 @@ describe('checkAlerts', () => {
           },
         },
         title: '🚨 Alert for "My Search" - 10 lines found',
+        teamId: team._id.toString(),
         teamWebhooksById: new Map<string, typeof webhook>([
           [webhook._id.toString(), webhook],
         ]),
@@ -803,6 +805,7 @@ describe('checkAlerts', () => {
           },
         },
         title: '🚨 Alert for "My Search" - 10 lines found',
+        teamId: team._id.toString(),
         teamWebhooksById: new Map<string, typeof webhook>([
           [webhook._id.toString(), webhook],
         ]),
@@ -890,6 +893,7 @@ describe('checkAlerts', () => {
           },
         },
         title: '🚨 Alert for "My Search" - 10 lines found',
+        teamId: team._id.toString(),
         teamWebhooksById,
         teamUsersById,
       });
@@ -915,6 +919,7 @@ describe('checkAlerts', () => {
           },
         },
         title: '🚨 Alert for "My Search" - 10 lines found',
+        teamId: team._id.toString(),
         teamWebhooksById,
         teamUsersById,
       });
@@ -1005,6 +1010,7 @@ describe('checkAlerts', () => {
           },
         },
         title: '✅ Alert for "My Search" - 10 lines found',
+        teamId: team._id.toString(),
         teamWebhooksById: new Map<string, typeof webhook>([
           [webhook._id.toString(), webhook],
         ]),
@@ -1032,7 +1038,7 @@ describe('checkAlerts', () => {
       const callArgs = (slack.postMessageToWebhook as any).mock.calls[0][1];
       const messageText = callArgs.blocks[0].text.text;
       expect(messageText).toContain('The alert has been resolved');
-      expect(messageText).toContain('Time Range (UTC):');
+      expect(messageText).toContain('Time Range (MYT):');
       expect(messageText).toContain('Group: "http"');
       // Should NOT contain detailed log data
       expect(messageText).not.toContain('lines found, expected');
@@ -1651,7 +1657,7 @@ describe('checkAlerts', () => {
                   `*<http://app:8080/dashboards/${dashboard._id}?from=1700170200000&granularity=5+minute&to=1700174700000 | 🚨 Alert for "Logs Count" in "My Dashboard" - 3 exceeds 1>*`,
                   '',
                   '3 exceeds 1',
-                  'Time Range (UTC): [Nov 16 10:05:00 PM - Nov 16 10:10:00 PM)',
+                  'Time Range (MYT): [Nov 17 6:05:00 AM - Nov 17 6:10:00 AM)',
                   '',
                 ].join('\n'),
                 type: 'mrkdwn',
@@ -2665,7 +2671,7 @@ describe('checkAlerts', () => {
                   `*<http://app:8080/dashboards/${dashboard._id}?from=1700170200000&granularity=5+minute&to=1700174700000 | 🚨 Alert for "CPU" in "My Dashboard" - 6 exceeds 1>*`,
                   '',
                   '6 exceeds 1',
-                  'Time Range (UTC): [Nov 16 10:05:00 PM - Nov 16 10:10:00 PM)',
+                  'Time Range (MYT): [Nov 17 6:05:00 AM - Nov 17 6:10:00 AM)',
                   '',
                 ].join('\n'),
                 type: 'mrkdwn',

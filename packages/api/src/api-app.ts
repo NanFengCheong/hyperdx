@@ -14,6 +14,8 @@ import connectionsRouter from './routers/api/connections';
 import savedSearchRouter from './routers/api/savedSearch';
 import sourcesRouter from './routers/api/sources';
 import externalRoutersV2 from './routers/external-api/v2';
+import { handleCallback } from './services/telegram';
+import Team from './models/team';
 import usageStats from './tasks/usageStats';
 import logger, { expressLogger } from './utils/logger';
 import passport from './utils/passport';
@@ -121,6 +123,37 @@ app.use(
   savedSearchRouter,
 );
 app.use('/clickhouse-proxy', isUserAuthenticated, clickhouseProxyRouter);
+
+// Telegram: callback is public (called by Telegram servers), validate requires auth
+app.post('/telegram/callback', async (req, res, next) => {
+  try {
+    const secretToken = req.headers[
+      'x-telegram-bot-api-secret-token'
+    ] as string;
+    if (!secretToken) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const team = await Team.findOne({
+      'telegramConfig.webhookSecret': secretToken,
+    }).select('_id telegramConfig');
+
+    if (!team) {
+      return res.status(403).json({ error: 'Invalid secret token' });
+    }
+
+    const update = req.body;
+    if (update.callback_query) {
+      await handleCallback(team._id.toString(), update.callback_query);
+    }
+
+    res.sendStatus(200);
+  } catch (e) {
+    logger.error(e, 'Telegram callback error');
+    res.sendStatus(200);
+  }
+});
+app.use('/telegram', isUserAuthenticated, routers.telegramRouter);
 // ---------------------------------------------------------------------
 
 // TODO: Separate external API routers from internal routers

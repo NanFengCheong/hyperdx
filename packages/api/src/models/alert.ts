@@ -38,6 +38,10 @@ export type AlertChannel =
       entireTeam?: boolean;
     }
   | {
+      type: 'telegram';
+      chatId: string;
+    }
+  | {
       type: null;
     };
 
