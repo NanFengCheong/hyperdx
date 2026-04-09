@@ -10,6 +10,7 @@ import defaultCors from './middleware/cors';
 import { appErrorHandler } from './middleware/error';
 import Team from './models/team';
 import routers from './routers/api';
+import investigationsRouter from './routers/api/investigations';
 import clickhouseProxyRouter from './routers/api/clickhouseProxy';
 import connectionsRouter from './routers/api/connections';
 import favoritesRouter from './routers/api/favorites';
@@ -130,6 +131,12 @@ app.use(
 );
 app.use('/favorites', isUserAuthenticated, requireWriteAccess, favoritesRouter);
 app.use('/clickhouse-proxy', isUserAuthenticated, clickhouseProxyRouter);
+app.use(
+  '/investigations',
+  isUserAuthenticated,
+  requireWriteAccess,
+  investigationsRouter,
+);
 
 // Telegram: callback is public (called by Telegram servers), validate requires auth
 app.post('/telegram/callback', async (req, res, next) => {
