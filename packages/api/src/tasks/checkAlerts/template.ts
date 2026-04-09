@@ -316,8 +316,9 @@ export const handleSendEmail = async (users: IUser[], message: Message) => {
     return;
   }
 
-  const startTimeStr = formatDate(new Date(message.startTime), { isUTC: true });
-  const endTimeStr = formatDate(new Date(message.endTime), { isUTC: true });
+  // Use MYT (Malaysia Time, UTC+8) for all datetime formatting
+  const startTimeStr = formatDate(new Date(message.startTime), { timezone: 'Asia/Kuala_Lumpur' });
+  const endTimeStr = formatDate(new Date(message.endTime), { timezone: 'Asia/Kuala_Lumpur' });
 
   for (const user of users) {
     try {
@@ -645,10 +646,10 @@ export const renderAlertTemplate = async ({
     });
   };
 
-  const timeRangeMessage = `Time Range (UTC): [${formatDate(view.startTime, {
-    isUTC: true,
+  const timeRangeMessage = `Time Range (MYT): [${formatDate(view.startTime, {
+    timezone: 'Asia/Kuala_Lumpur',
   })} - ${formatDate(view.endTime, {
-    isUTC: true,
+    timezone: 'Asia/Kuala_Lumpur',
   })})`;
   let rawTemplateBody;
 

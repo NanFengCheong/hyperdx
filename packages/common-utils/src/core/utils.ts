@@ -439,16 +439,23 @@ export const formatDate = (
   date: Date,
   {
     isUTC = false,
+    timezone,
     format = 'normal',
     clock = '12h',
   }: {
     isUTC?: boolean;
+    timezone?: string;
     format?: 'normal' | 'short' | 'withMs' | 'time' | 'withYear';
     clock?: '12h' | '24h';
   },
 ) => {
   const formatStr = TIME_TOKENS[format][clock];
 
+  // Use custom timezone if provided, otherwise fallback to isUTC behavior
+  if (timezone) {
+    return formatInTimeZone(date, timezone, formatStr);
+  }
+  
   return isUTC
     ? formatInTimeZone(date, 'Etc/UTC', formatStr)
     : fnsFormat(date, formatStr);

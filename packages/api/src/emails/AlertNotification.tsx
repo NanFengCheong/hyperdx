@@ -43,7 +43,7 @@ function AlertNotificationEmail({
         <Text style={titleStyle}>{title}</Text>
 
         <Section style={timeRangeContainerStyle}>
-          <Text style={timeRangeLabelStyle}>Time Range (UTC)</Text>
+          <Text style={timeRangeLabelStyle}>Time Range (MYT)</Text>
           <Text style={timeRangeValueStyle}>
             {startTime} — {endTime}
           </Text>
@@ -66,7 +66,7 @@ function AlertNotificationEmail({
 
 export async function renderAlertNotification(props: AlertNotificationProps) {
   const html = await render(<AlertNotificationEmail {...props} />);
-  const text = `${props.title}\n\nTime Range (UTC): ${props.startTime} — ${props.endTime}\n\n${props.body}\n\nView in HyperDX: ${props.hdxLink}`;
+  const text = `${props.title}\n\nTime Range (MYT): ${props.startTime} — ${props.endTime}\n\n${props.body}\n\nView in HyperDX: ${props.hdxLink}`;
   return { html, text };
 }
 
