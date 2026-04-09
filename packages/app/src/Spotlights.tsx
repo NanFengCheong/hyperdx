@@ -22,8 +22,8 @@ import '@mantine/spotlight/styles.css';
 
 export const useSpotlightActions = () => {
   const router = useRouter();
-  const brandName = useBrandDisplayName();
-  const logomark = useLogomark({ size: 16 });
+  const _brandName = useBrandDisplayName();
+  const _logomark = useLogomark({ size: 16 });
 
   const { data: logViewsData } = useSavedSearches();
   const { data: dashboardsData } = api.useDashboards();
@@ -152,7 +152,7 @@ export const useSpotlightActions = () => {
     );
 
     return logViewActions;
-  }, [brandName, logomark, logViewsData, dashboardsData, router]);
+  }, [logViewsData, dashboardsData, router]);
 
   return { actions };
 };

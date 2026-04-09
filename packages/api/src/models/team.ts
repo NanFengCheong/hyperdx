@@ -48,6 +48,7 @@ export default mongoose.model<ITeam>(
       queryTimeout: Number,
       fieldMetadataDisabled: Boolean,
       parallelizeWhenPossible: Boolean,
+      filterKeysFetchLimit: Number,
       telegramConfig: {
         type: {
           botToken: { type: String },

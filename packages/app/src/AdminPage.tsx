@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { Fragment, useCallback, useState } from 'react';
 import Head from 'next/head';
 import {
   ActionIcon,
@@ -674,9 +674,8 @@ function NotificationLogPanel() {
             </Table.Thead>
             <Table.Tbody>
               {logs.map((entry: any) => (
-                <>
+                <Fragment key={entry._id}>
                   <Table.Tr
-                    key={entry._id}
                     onClick={() =>
                       setExpandedId(expandedId === entry._id ? null : entry._id)
                     }
@@ -775,7 +774,7 @@ function NotificationLogPanel() {
                       </Table.Td>
                     </Table.Tr>
                   )}
-                </>
+                </Fragment>
               ))}
             </Table.Tbody>
           </Table>

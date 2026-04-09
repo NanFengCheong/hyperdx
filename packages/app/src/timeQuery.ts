@@ -34,7 +34,7 @@ import { usePrevious } from './utils';
 const LIVE_TAIL_TIME_QUERY = 'Live Tail';
 const LIVE_TAIL_REFRESH_INTERVAL_MS = 1000;
 
-export const dateRangeToString = (range: [Date, Date], isUTC: boolean) => {
+const dateRangeToString = (range: [Date, Date], isUTC: boolean) => {
   return `${formatDate(range[0], {
     isUTC,
     format: 'normal',
@@ -243,13 +243,12 @@ export function useTimeQuery({
       liveTailTimeRange == null &&
       tempLiveTailTimeRange == null &&
       !isInputTimeQueryLive(inputTimeQuery) &&
-      // eslint-disable-next-line react-hooks/refs
       inputTimeQueryDerivedTimeQueryRef.current != null
     ) {
       // Use the input time query, allows users to specify relative time ranges
       // via url ex. /logs?tq=Last+30+minutes
       // return inputTimeQueryDerivedTimeQuery as [Date, Date];
-      // eslint-disable-next-line react-hooks/refs
+
       return inputTimeQueryDerivedTimeQueryRef.current;
     } else if (
       isReady &&
@@ -345,7 +344,6 @@ export function useTimeQuery({
     ],
   );
 
-  // eslint-disable-next-line react-hooks/refs
   return {
     isReady, // Don't search until we know what we want to do
     isLive,

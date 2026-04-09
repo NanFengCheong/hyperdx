@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
+  ActionIcon,
   Box,
   Code,
   CopyButton,
@@ -9,7 +10,6 @@ import {
   SegmentedControl,
   Stack,
   Text,
-  ActionIcon,
   Tooltip,
 } from '@mantine/core';
 import {
@@ -75,13 +75,7 @@ function CodeBlock({ code }: { code: string }) {
   );
 }
 
-function CopyableField({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function CopyableField({ label, value }: { label: string; value: string }) {
   return (
     <Box>
       <Text size="xs" c="dimmed" mb={2}>
@@ -109,7 +103,10 @@ function CopyableField({
             <Tooltip label={copied ? 'Copied!' : 'Copy'}>
               <ActionIcon variant="subtle" size="sm">
                 {copied ? (
-                  <IconClipboardCheck size={14} color="var(--mantine-color-green-6)" />
+                  <IconClipboardCheck
+                    size={14}
+                    color="var(--mantine-color-green-6)"
+                  />
                 ) : (
                   <IconClipboard size={14} />
                 )}
@@ -184,7 +181,8 @@ registerInstrumentations({
         },
         {
           title: 'Initialize',
-          description: 'Import the tracing config at the entry point of your app:',
+          description:
+            'Import the tracing config at the entry point of your app:',
           code: `// main.ts or index.ts
 import './tracing';
 
@@ -194,8 +192,7 @@ import './tracing';
     },
     'react-native': {
       label: 'React Native',
-      docsUrl:
-        'https://opentelemetry.io/docs/languages/js/getting-started/',
+      docsUrl: 'https://opentelemetry.io/docs/languages/js/getting-started/',
       docsLabel: 'OpenTelemetry JS SDK Docs',
       steps: [
         {
@@ -386,9 +383,10 @@ export default function IntegrationGuideDrawer({
   const { data: team } = api.useTeam();
 
   const apiKey = team?.apiKey ?? '<YOUR_API_KEY>';
-  const otelEndpoint = typeof window !== 'undefined'
-    ? `${window.location.protocol}//${window.location.hostname}:4318`
-    : 'http://localhost:4318';
+  const otelEndpoint =
+    typeof window !== 'undefined'
+      ? `${window.location.protocol}//${window.location.hostname}:4318`
+      : 'http://localhost:4318';
 
   const platforms = useMemo(
     () => getPlatformConfig(apiKey, otelEndpoint),
@@ -489,7 +487,10 @@ export default function IntegrationGuideDrawer({
                 <Text size="sm" c="blue">
                   {current.docsLabel}
                 </Text>
-                <IconExternalLink size={14} color="var(--mantine-color-blue-5)" />
+                <IconExternalLink
+                  size={14}
+                  color="var(--mantine-color-blue-5)"
+                />
               </Group>
             </a>
           </Box>

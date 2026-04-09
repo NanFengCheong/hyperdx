@@ -1,26 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import Router, { useRouter } from 'next/router';
 import cx from 'classnames';
-import Fuse from 'fuse.js';
-import {
-  NumberParam,
-  StringParam,
-  useQueryParam,
-  useQueryParams,
-  withDefault,
-} from 'use-query-params';
 import HyperDX from '@hyperdx/browser';
-import { AlertState } from '@hyperdx/common-utils/dist/types';
+import { isBuilderSavedChartConfig } from '@hyperdx/common-utils/dist/guards';
+import {
+  AlertState,
+  SavedSearchListApiResponse,
+} from '@hyperdx/common-utils/dist/types';
 import {
   ActionIcon,
   Anchor,
   Badge,
-  CloseButton,
   Collapse,
+  Flex,
   Group,
-  Input,
-  Loader,
   ScrollArea,
   Text,
 } from '@mantine/core';
@@ -28,14 +22,10 @@ import { useDisclosure, useLocalStorage } from '@mantine/hooks';
 import {
   IconArrowBarToLeft,
   IconBell,
-  IconBellFilled,
   IconChartDots,
-  IconChevronDown,
-  IconChevronRight,
-  IconCommand,
+  IconDeviceFloppy,
   IconDeviceLaptop,
   IconLayoutGrid,
-  IconSearch,
   IconSettings,
   IconShieldLock,
   IconSitemap,
@@ -43,14 +33,16 @@ import {
 } from '@tabler/icons-react';
 
 import api from '@/api';
+import { AlertStatusIcon } from '@/components/AlertStatusIcon';
 import { IS_LOCAL_MODE } from '@/config';
 import { usePermissions } from '@/contexts/PermissionContext';
+import { Dashboard, useDashboards } from '@/dashboard';
+import { useFavorites } from '@/favorites';
 import { useIsSuperAdmin } from '@/hooks/usePermission';
 import IntegrationGuideDrawer from '@/IntegrationGuideDrawer';
 import OnboardingChecklist from '@/OnboardingChecklist';
-import { useSavedSearches, useUpdateSavedSearch } from '@/savedSearch';
+import { useSavedSearches } from '@/savedSearch';
 import { useLogomark, useWordmark } from '@/theme/ThemeProvider';
-import type { SavedSearch } from '@/types';
 import { UserPreferencesModal } from '@/UserPreferencesModal';
 import { useUserPreferences } from '@/useUserPreferences';
 import { useWindowSize } from '@/utils';
@@ -69,8 +61,6 @@ import styles from './AppNav.module.scss';
 // Expose the same value Next injected at build time; fall back to package.json for dev tooling
 const APP_VERSION =
   process.env.NEXT_PUBLIC_APP_VERSION ?? packageJson.version ?? 'dev';
-
-const UNTAGGED_SEARCHES_GROUP_NAME = 'Saved Searches';
 
 // Navigation link configuration
 type NavLinkConfig = {
@@ -116,234 +106,6 @@ const NAV_LINKS: NavLinkConfig[] = [
   },
 ];
 
-function SearchInput({
-  placeholder,
-  value,
-  onChange,
-  onEnterDown,
-}: {
-  placeholder: string;
-  value: string;
-  onChange: (arg0: string) => void;
-  onEnterDown?: () => void;
-}) {
-  const kbdShortcut = useMemo(() => {
-    return (
-      <div className={styles.shortcutHint}>
-        {window.navigator.platform?.toUpperCase().includes('MAC') ? (
-          <IconCommand size={8} />
-        ) : (
-          <span className={styles.shortcutHintCtrl}>Ctrl</span>
-        )}
-        &nbsp;K
-      </div>
-    );
-  }, []);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === 'Enter') {
-        onEnterDown?.();
-      }
-    },
-    [onEnterDown],
-  );
-
-  return (
-    <Input
-      data-testid="nav-search-input"
-      placeholder={placeholder}
-      value={value}
-      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-        onChange(e.currentTarget.value)
-      }
-      leftSection={<IconSearch size={16} className="ps-1" />}
-      onKeyDown={handleKeyDown}
-      rightSection={
-        value ? (
-          <CloseButton
-            data-testid="nav-search-clear"
-            tabIndex={-1}
-            size="xs"
-            radius="xl"
-            onClick={() => onChange('')}
-          />
-        ) : (
-          kbdShortcut
-        )
-      }
-      mt={8}
-      mb="sm"
-      size="xs"
-      variant="filled"
-      radius="xl"
-      className={styles.searchInput}
-    />
-  );
-}
-
-interface AppNavLinkItem {
-  id: string;
-  name: string;
-  tags?: string[];
-}
-
-type AppNavLinkGroup<T extends AppNavLinkItem> = {
-  name: string;
-  items: T[];
-};
-
-const AppNavGroupLabel = ({
-  name,
-  collapsed,
-  onClick,
-}: {
-  name: string;
-  collapsed: boolean;
-  onClick: () => void;
-}) => {
-  return (
-    <div className={styles.groupLabel} onClick={onClick}>
-      {collapsed ? (
-        <IconChevronRight size={14} />
-      ) : (
-        <IconChevronDown size={14} />
-      )}
-      <div>{name}</div>
-    </div>
-  );
-};
-
-const AppNavLinkGroups = <T extends AppNavLinkItem>({
-  name,
-  groups,
-  renderLink,
-  onDragEnd,
-  forceExpandGroups = false,
-}: {
-  name: string;
-  groups: AppNavLinkGroup<T>[];
-  renderLink: (item: T) => React.ReactNode;
-  onDragEnd?: (target: HTMLElement | null, newGroup: string | null) => void;
-  forceExpandGroups?: boolean;
-}) => {
-  const [collapsedGroups, setCollapsedGroups] = useLocalStorage<
-    Record<string, boolean>
-  >({
-    key: `collapsedGroups-${name}`,
-    defaultValue: {},
-  });
-
-  const handleToggleGroup = useCallback(
-    (groupName: string) => {
-      setCollapsedGroups({
-        ...collapsedGroups,
-        [groupName]: !collapsedGroups[groupName],
-      });
-    },
-    [collapsedGroups, setCollapsedGroups],
-  );
-
-  const [draggingOver, setDraggingOver] = useState<string | null>(null);
-
-  return (
-    <>
-      {groups.map(group => (
-        <div
-          key={group.name}
-          className={cx(draggingOver === group.name && styles.groupDragOver)}
-          onDragOver={e => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            setDraggingOver(group.name);
-          }}
-          onDragEnd={e => {
-            e.preventDefault();
-            onDragEnd?.(e.target as HTMLElement, draggingOver);
-            setDraggingOver(null);
-          }}
-        >
-          <AppNavGroupLabel
-            onClick={() => handleToggleGroup(group.name)}
-            name={group.name}
-            collapsed={collapsedGroups[group.name]}
-          />
-          <Collapse in={!collapsedGroups[group.name] || forceExpandGroups}>
-            {group.items.map(item => renderLink(item))}
-          </Collapse>
-        </div>
-      ))}
-    </>
-  );
-};
-
-function useSearchableList<T extends AppNavLinkItem>({
-  items,
-  untaggedGroupName = 'Other',
-}: {
-  items: T[];
-  untaggedGroupName?: string;
-}) {
-  const fuse = useMemo(
-    () =>
-      new Fuse(items, {
-        keys: ['name'],
-        threshold: 0.2,
-        ignoreLocation: true,
-      }),
-    [items],
-  );
-
-  const [q, setQ] = useState('');
-
-  const filteredList = useMemo(() => {
-    if (q === '') {
-      return items;
-    }
-    return fuse.search(q).map(result => result.item);
-  }, [fuse, items, q]);
-
-  const groupedFilteredList = useMemo<AppNavLinkGroup<T>[]>(() => {
-    // group by tags
-    const groupedItems: Record<string, T[]> = {};
-    const untaggedItems: T[] = [];
-    filteredList.forEach(item => {
-      if (item.tags?.length) {
-        item.tags.forEach(tag => {
-          groupedItems[tag] = groupedItems[tag] ?? [];
-          groupedItems[tag].push(item);
-        });
-      } else {
-        untaggedItems.push(item);
-      }
-    });
-    if (untaggedItems.length) {
-      groupedItems[untaggedGroupName] = untaggedItems;
-    }
-    return Object.entries(groupedItems)
-      .map(([name, items]) => ({
-        name,
-        items,
-      }))
-      .sort((a, b) => {
-        if (a.name === untaggedGroupName) {
-          return 1;
-        }
-        if (b.name === untaggedGroupName) {
-          return -1;
-        }
-        return a.name.localeCompare(b.name);
-      });
-  }, [filteredList, untaggedGroupName]);
-
-  return {
-    filteredList,
-    groupedFilteredList,
-    q,
-    setQ,
-  };
-}
-
 export default function AppNav({ fixed = false }: { fixed?: boolean }) {
   const wordmark = useWordmark();
   const logomark = useLogomark({ size: 22 });
@@ -367,33 +129,62 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
     }
   }, []);
 
-  const {
-    data: logViewsData,
-    isLoading: isLogViewsLoading,
-    refetch: refetchLogViews,
-  } = useSavedSearches();
-  const logViews = useMemo(() => logViewsData ?? [], [logViewsData]);
+  const { data: savedSearches } = useSavedSearches();
+  const { data: dashboards } = useDashboards();
+  const { data: favorites } = useFavorites();
 
-  const updateLogView = useUpdateSavedSearch();
+  const favoritedSavedSearchIds = useMemo(() => {
+    if (!favorites) return new Set<string>();
+
+    return new Set(
+      favorites
+        .filter(f => f.resourceType === 'savedSearch')
+        .map(f => f.resourceId),
+    );
+  }, [favorites]);
+
+  const favoritedSavedSearches = useMemo(() => {
+    if (!savedSearches) return [];
+
+    return savedSearches
+      .filter(s => favoritedSavedSearchIds.has(s.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [favoritedSavedSearchIds, savedSearches]);
+
+  const favoritedDashboardIds = useMemo(() => {
+    if (!favorites) return new Set<string>();
+
+    return new Set(
+      favorites
+        .filter(f => f.resourceType === 'dashboard')
+        .map(f => f.resourceId),
+    );
+  }, [favorites]);
+
+  const favoritedDashboards = useMemo(() => {
+    if (!dashboards) return [];
+
+    return dashboards
+      .filter(d => favoritedDashboardIds.has(d.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [dashboards, favoritedDashboardIds]);
+
+  const [isSavedSearchExpanded, setIsSavedSearchExpanded] =
+    useLocalStorage<boolean>({
+      key: 'isSavedSearchExpanded',
+      defaultValue: true,
+    });
+  const [isDashboardsExpanded, setIsDashboardsExpanded] =
+    useLocalStorage<boolean>({
+      key: 'isDashboardsExpanded',
+      defaultValue: true,
+    });
 
   const router = useRouter();
   const { pathname, query } = router;
 
-  const [timeRangeQuery] = useQueryParams({
-    from: withDefault(NumberParam, -1),
-    to: withDefault(NumberParam, -1),
-  });
-  const [inputTimeQuery] = useQueryParam('tq', withDefault(StringParam, ''), {
-    updateType: 'pushIn',
-    enableBatching: true,
-  });
-
   const { data: meData } = api.useMe();
 
-  const [isSearchExpanded, setIsSearchExpanded] = useLocalStorage<boolean>({
-    key: 'isSearchExpanded',
-    defaultValue: true,
-  });
   const { width } = useWindowSize();
 
   const [isPreferCollapsed, setIsPreferCollapsed] = useLocalStorage<boolean>({
@@ -424,30 +215,10 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
     }
   }, [meData]);
 
-  const {
-    q: searchesListQ,
-    setQ: setSearchesListQ,
-    filteredList: filteredSearchesList,
-    groupedFilteredList: groupedFilteredSearchesList,
-  } = useSearchableList({
-    items: logViews,
-    untaggedGroupName: UNTAGGED_SEARCHES_GROUP_NAME,
-  });
-
-  const savedSearchesResultsRef = useRef<HTMLDivElement>(null);
-
-  const renderLogViewLink = useCallback(
-    (savedSearch: SavedSearch) => (
+  const renderSavedSearchLink = useCallback(
+    (savedSearch: SavedSearchListApiResponse) => (
       <Link
-        href={`/search/${savedSearch.id}?${new URLSearchParams(
-          timeRangeQuery.from != -1 && timeRangeQuery.to != -1
-            ? {
-                from: timeRangeQuery.from.toString(),
-                to: timeRangeQuery.to.toString(),
-                tq: inputTimeQuery,
-              }
-            : {},
-        ).toString()}`}
+        href={`/search/${savedSearch.id}`}
         key={savedSearch.id}
         tabIndex={0}
         className={cx(
@@ -455,62 +226,45 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
           savedSearch.id === query.savedSearchId && styles.subMenuItemActive,
         )}
         title={savedSearch.name}
-        draggable
-        data-savedsearchid={savedSearch.id}
       >
-        <Group gap={2}>
-          <div className="d-inline-block text-truncate">{savedSearch.name}</div>
-          {Array.isArray(savedSearch.alerts) &&
-          savedSearch.alerts.length > 0 ? (
-            savedSearch.alerts.some(a => a.state === AlertState.ALERT) ? (
-              <IconBellFilled
-                size={14}
-                className="float-end text-danger ms-1"
-                aria-label="Has Alerts and is in ALERT state"
-              />
-            ) : (
-              <IconBell
-                size={14}
-                className="float-end ms-1"
-                aria-label="Has Alerts and is in OK state"
-              />
-            )
-          ) : null}
+        <Group gap={2} wrap="nowrap" align="center">
+          <div className="text-truncate">{savedSearch.name}</div>
+          <Flex flex={0}>
+            <AlertStatusIcon alerts={savedSearch.alerts} />
+          </Flex>
         </Group>
       </Link>
     ),
-    [
-      inputTimeQuery,
-      query.savedSearchId,
-      timeRangeQuery.from,
-      timeRangeQuery.to,
-    ],
+    [query.savedSearchId],
   );
 
-  const handleLogViewDragEnd = useCallback(
-    (target: HTMLElement | null, name: string | null) => {
-      if (!target?.dataset.savedsearchid || name == null) {
-        return;
-      }
-      const logView = logViews.find(
-        lv => lv.id === target.dataset.savedsearchid,
-      );
-      if (logView?.tags?.includes(name)) {
-        return;
-      }
-      updateLogView.mutate(
-        {
-          id: target.dataset.savedsearchid,
-          tags: name === UNTAGGED_SEARCHES_GROUP_NAME ? [] : [name],
-        },
-        {
-          onSuccess: () => {
-            refetchLogViews();
-          },
-        },
+  const renderDashboardLink = useCallback(
+    (dashboard: Dashboard) => {
+      const alerts = dashboard.tiles
+        .map(t =>
+          isBuilderSavedChartConfig(t.config) ? t.config.alert : undefined,
+        )
+        .filter(a => a != null);
+      return (
+        <Link
+          href={`/dashboards/${dashboard.id}`}
+          key={dashboard.id}
+          tabIndex={0}
+          className={cx(styles.subMenuItem, {
+            [styles.subMenuItemActive]: dashboard.id === query.dashboardId,
+          })}
+          title={dashboard.name}
+        >
+          <Group gap={2} wrap="nowrap" align="center">
+            <div className="text-truncate">{dashboard.name}</div>
+            <Flex flex={0}>
+              <AlertStatusIcon alerts={alerts} />
+            </Flex>
+          </Group>
+        </Link>
       );
     },
-    [logViews, refetchLogViews, updateLogView],
+    [query.dashboardId],
   );
 
   const [
@@ -526,6 +280,48 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
     showInstallInstructions,
     { open: openInstallInstructions, close: closeInstallInstructions },
   ] = useDisclosure(false);
+
+  const isSavedSearchActive = useMemo(() => {
+    if (!pathname?.startsWith('/search/')) return false;
+
+    if (
+      typeof query.savedSearchId === 'string' &&
+      favoritedSavedSearchIds.has(query.savedSearchId)
+    ) {
+      return !isSavedSearchExpanded;
+    }
+
+    return true;
+  }, [
+    favoritedSavedSearchIds,
+    isSavedSearchExpanded,
+    pathname,
+    query.savedSearchId,
+  ]);
+
+  const isDashboardsActive = useMemo(() => {
+    const isDashboardsPathname =
+      pathname?.startsWith('/dashboards/') ||
+      pathname === '/services' ||
+      pathname === '/clickhouse' ||
+      pathname === '/kubernetes';
+
+    if (!isDashboardsPathname) return false;
+
+    if (
+      typeof query.dashboardId === 'string' &&
+      favoritedDashboardIds.has(query.dashboardId)
+    ) {
+      return !isDashboardsExpanded;
+    }
+
+    return true;
+  }, [
+    pathname,
+    query.dashboardId,
+    favoritedDashboardIds,
+    isDashboardsExpanded,
+  ]);
 
   return (
     <AppNavContext.Provider value={{ isCollapsed, pathname }}>
@@ -543,6 +339,7 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
         onClose={closeInstallInstructions}
       />
       <div
+        data-testid="app-nav"
         className={cx(styles.nav, {
           [styles.navFixed]: fixed,
           [styles.navCollapsed]: isCollapsed,
@@ -603,52 +400,38 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
                 label="Search"
                 icon={<IconTable size={16} />}
                 href="/search"
-                isExpanded={isSearchExpanded}
-                onToggle={() => setIsSearchExpanded(!isSearchExpanded)}
+                isActive={pathname === '/search'}
+              />
+            )}
+
+            {/* Saved Searches */}
+            {can('explorer:view') && (
+              <AppNavLink
+                label="Saved Searches"
+                href="/search/list"
+                icon={<IconDeviceFloppy size={16} />}
+                isActive={isSavedSearchActive}
+                isExpanded={isSavedSearchExpanded}
+                onToggle={() =>
+                  setIsSavedSearchExpanded(!isSavedSearchExpanded)
+                }
               />
             )}
 
             {!isCollapsed && can('explorer:view') && (
-              <Collapse in={isSearchExpanded}>
+              <Collapse in={isSavedSearchExpanded}>
                 <div className={styles.subMenu}>
-                  {isLogViewsLoading ? (
-                    <Loader variant="dots" mx="md" my="xs" size="sm" />
-                  ) : (
-                    <>
-                      <SearchInput
-                        placeholder="Saved Searches"
-                        value={searchesListQ}
-                        onChange={setSearchesListQ}
-                        onEnterDown={() => {
-                          (
-                            savedSearchesResultsRef?.current
-                              ?.firstChild as HTMLAnchorElement
-                          )?.focus?.();
-                        }}
-                      />
-
-                      {logViews.length === 0 && (
-                        <div className={styles.emptyMessage}>
-                          No saved searches
-                        </div>
-                      )}
-                      <div ref={savedSearchesResultsRef}>
-                        <AppNavLinkGroups
-                          name="saved-searches"
-                          groups={groupedFilteredSearchesList}
-                          renderLink={renderLogViewLink}
-                          forceExpandGroups={!!searchesListQ}
-                          onDragEnd={handleLogViewDragEnd}
-                        />
-                      </div>
-
-                      {searchesListQ && filteredSearchesList.length === 0 ? (
-                        <div className={styles.emptyMessage}>
-                          No results matching <i>{searchesListQ}</i>
-                        </div>
-                      ) : null}
-                    </>
-                  )}
+                  {favoritedSavedSearches.length > 0 ? (
+                    favoritedSavedSearches.map(renderSavedSearchLink)
+                  ) : favorites != null && savedSearches != null ? (
+                    <Text size="xs" c="dimmed" pl="lg" pr="xs" py={4} lh={1.4}>
+                      No favorites. Star on{' '}
+                      <Anchor component={Link} href="/search/list" size="xs">
+                        Saved Searches
+                      </Anchor>
+                      .
+                    </Text>
+                  ) : null}
                 </div>
               </Collapse>
             )}
@@ -673,8 +456,50 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
                 label="Dashboards"
                 href="/dashboards/list"
                 icon={<IconLayoutGrid size={16} />}
+                isActive={isDashboardsActive}
+                isExpanded={isDashboardsExpanded}
+                onToggle={() => setIsDashboardsExpanded(!isDashboardsExpanded)}
               />
             )}
+
+            {!isCollapsed && can('dashboards:view') && (
+              <Collapse in={isDashboardsExpanded}>
+                <div className={styles.subMenu}>
+                  {favoritedDashboards.length > 0 ? (
+                    favoritedDashboards.map(renderDashboardLink)
+                  ) : favorites != null && dashboards != null ? (
+                    <Text size="xs" c="dimmed" pl="lg" pr="xs" py={4} lh={1.4}>
+                      No favorites. Star on{' '}
+                      <Anchor
+                        component={Link}
+                        href="/dashboards/list"
+                        size="xs"
+                      >
+                        Dashboards
+                      </Anchor>
+                      .
+                    </Text>
+                  ) : null}
+                </div>
+              </Collapse>
+            )}
+
+            {!isCollapsed && (
+              <Text size="xs" px="lg" py="xs" fw="lighter" fs="italic">
+                Saved searches and dashboards have moved! Try the{' '}
+                <Anchor component={Link} href="/search/list">
+                  Saved Searches
+                </Anchor>{' '}
+                or{' '}
+                <Anchor component={Link} href="/dashboards/list">
+                  Dashboards
+                </Anchor>{' '}
+                page.
+              </Text>
+            )}
+
+            {/* Help */}
+            <AppNavHelpMenu version={APP_VERSION} />
 
             {/* Team Settings (Cloud only) */}
             {!IS_LOCAL_MODE && (
@@ -706,7 +531,6 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
         </ScrollArea>
 
         <div className={styles.footer} style={{ width: navWidth }}>
-          <AppNavHelpMenu version={APP_VERSION} />
           {IS_LOCAL_MODE && !isCollapsed && (
             <Link
               href="/careers"

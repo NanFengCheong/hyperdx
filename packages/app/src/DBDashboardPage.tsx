@@ -11,7 +11,7 @@ import dynamic from 'next/dynamic';
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { formatRelative } from 'date-fns';
+import { formatDistanceToNow, formatRelative } from 'date-fns';
 import produce from 'immer';
 import { pick } from 'lodash';
 import { parseAsArrayOf, parseAsString, useQueryState } from 'nuqs';
@@ -33,6 +33,7 @@ import {
   DashboardFilter,
   DisplayType,
   Filter,
+  getSampleWeightExpression,
   isLogSource,
   isTraceSource,
   SearchCondition,
@@ -49,15 +50,14 @@ import {
   Flex,
   Group,
   Indicator,
-  Input,
   Menu,
   Modal,
   Paper,
+  Stack,
   Text,
-  Title,
   Tooltip,
 } from '@mantine/core';
-import { useHotkeys, useHover } from '@mantine/hooks';
+import { useHotkeys } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import {
   IconArrowsMaximize,
@@ -85,6 +85,7 @@ import EditTimeChartForm from '@/components/DBEditTimeChartForm';
 import DBNumberChart from '@/components/DBNumberChart';
 import DBTableChart from '@/components/DBTableChart';
 import { DBTimeChart } from '@/components/DBTimeChart';
+import { FavoriteButton } from '@/components/FavoriteButton';
 import FullscreenPanelModal from '@/components/FullscreenPanelModal';
 import SectionHeader from '@/components/SectionHeader';
 import { TimePicker } from '@/components/TimePicker';
@@ -112,6 +113,7 @@ import { useConnections } from './connection';
 import { useDashboard } from './dashboard';
 import DashboardFilters from './DashboardFilters';
 import DashboardFiltersModal from './DashboardFiltersModal';
+import { EditablePageName } from './EditablePageName';
 import { GranularityPickerControlled } from './GranularityPicker';
 import HDXMarkdownChart from './HDXMarkdownChart';
 import { withAppNav } from './layout';
@@ -122,6 +124,7 @@ import {
 } from './source';
 import { parseTimeQuery, useNewTimeQuery } from './timeQuery';
 import { useConfirm } from './useConfirm';
+import { FormatTime } from './useFormatTime';
 import { getMetricTableName } from './utils';
 import { useZIndex, ZIndexContext } from './zIndex';
 
@@ -216,9 +219,16 @@ const Tile = forwardRef(
       ChartConfigWithDateRange | undefined
     >(undefined);
 
-    const { data: source } = useSource({
+    const { data: source, isFetched: isSourceFetched } = useSource({
       id: chart.config.source,
     });
+
+    const isSourceMissing =
+      !!chart.config.source && isSourceFetched && source == null;
+    const isSourceUnset =
+      !!chart.config &&
+      isBuilderSavedChartConfig(chart.config) &&
+      !chart.config.source;
 
     useEffect(() => {
       if (isRawSqlSavedChartConfig(chart.config)) {
@@ -233,8 +243,13 @@ const Tile = forwardRef(
         } else if (source != null) {
           setQueriedConfig({
             ...chart.config,
-            // Populate these two columns from the source to support Lucene-based filters
-            ...pick(source, ['implicitColumnExpression', 'from']),
+            // Populate these columns from the source to support Lucene-based filters and metric table macros
+            ...pick(source, [
+              'implicitColumnExpression',
+              'from',
+              'metricTables',
+            ]),
+            sampleWeightExpression: getSampleWeightExpression(source),
             dateRange,
             granularity,
             filters,
@@ -269,6 +284,7 @@ const Tile = forwardRef(
               isLogSource(source) || isTraceSource(source)
                 ? source.implicitColumnExpression
                 : undefined,
+            sampleWeightExpression: getSampleWeightExpression(source),
             filters,
             metricTables: isMetricSource ? source.metricTables : undefined,
           });
@@ -311,6 +327,9 @@ const Tile = forwardRef(
       const doFiltersExist = !!filters?.filter(
         f => (f.type === 'lucene' || f.type === 'sql') && f.condition.trim(),
       )?.length;
+      const doLuceneFiltersExist = !!filters?.filter(
+        f => f.type === 'lucene' && f.condition.trim(),
+      )?.length;
 
       if (
         !doFiltersExist ||
@@ -322,19 +341,28 @@ const Tile = forwardRef(
       const isMissingSourceForFiltering = !queriedConfig.source;
       const isMissingFiltersMacro =
         !queriedConfig.sqlTemplate.includes('$__filters');
+      const isMetricsSourceWithLuceneFilter =
+        source?.kind === SourceKind.Metric && doLuceneFiltersExist;
 
-      if (!isMissingSourceForFiltering && !isMissingFiltersMacro) return null;
+      if (
+        !isMissingSourceForFiltering &&
+        !isMissingFiltersMacro &&
+        !isMetricsSourceWithLuceneFilter
+      )
+        return null;
 
       const message = isMissingFiltersMacro
         ? 'Filters are not applied because the SQL does not include the required $__filters macro'
-        : 'Filters are not applied because no Source is set for this chart';
+        : isMetricsSourceWithLuceneFilter
+          ? 'Lucene filters are not applied because they are not supported for metrics sources.'
+          : 'Filters are not applied because no Source is set for this chart';
 
       return (
         <Tooltip multiline maw={500} label={message} key="filter-warning">
           <IconZoomExclamation size={16} color="var(--color-text-danger)" />
         </Tooltip>
       );
-    }, [filters, queriedConfig]);
+    }, [filters, queriedConfig, source]);
 
     const hoverToolbar = useMemo(() => {
       return (
@@ -342,31 +370,33 @@ const Tile = forwardRef(
           gap="0px"
           onMouseDown={e => e.stopPropagation()}
           key="hover-toolbar"
+          my={4} // Margin to ensure that the Alert Indicator doesn't clip on non-Line/Bar display types
           style={{ visibility: hovered ? 'visible' : 'hidden' }}
         >
           {(chart.config.displayType === DisplayType.Line ||
             chart.config.displayType === DisplayType.StackedBar ||
-            chart.config.displayType === DisplayType.Number) && (
-            <Indicator
-              size={alert?.state === AlertState.OK ? 6 : 8}
-              zIndex={1}
-              color={alertIndicatorColor}
-              processing={alert?.state === AlertState.ALERT}
-              label={!alert && <span className="fs-8">+</span>}
-              mr={4}
-            >
-              <Tooltip label={alertTooltip} withArrow>
-                <ActionIcon
-                  data-testid={`tile-alerts-button-${chart.id}`}
-                  variant="subtle"
-                  size="sm"
-                  onClick={onEditClick}
-                >
-                  <IconBell size={16} />
-                </ActionIcon>
-              </Tooltip>
-            </Indicator>
-          )}
+            chart.config.displayType === DisplayType.Number) &&
+            !isRawSqlSavedChartConfig(chart.config) && (
+              <Indicator
+                size={alert?.state === AlertState.OK ? 6 : 8}
+                zIndex={1}
+                color={alertIndicatorColor}
+                processing={alert?.state === AlertState.ALERT}
+                label={!alert && <span className="fs-8">+</span>}
+                mr={4}
+              >
+                <Tooltip label={alertTooltip} withArrow>
+                  <ActionIcon
+                    data-testid={`tile-alerts-button-${chart.id}`}
+                    variant="subtle"
+                    size="sm"
+                    onClick={onEditClick}
+                  >
+                    <IconBell size={16} />
+                  </ActionIcon>
+                </Tooltip>
+              </Indicator>
+            )}
 
           <ActionIcon
             data-testid={`tile-duplicate-button-${chart.id}`}
@@ -448,7 +478,7 @@ const Tile = forwardRef(
       alertIndicatorColor,
       alertTooltip,
       availableSections,
-      chart.config.displayType,
+      chart.config,
       chart.id,
       chart.containerId,
       hovered,
@@ -487,113 +517,136 @@ const Tile = forwardRef(
               </div>
             }
           >
-            {(queriedConfig?.displayType === DisplayType.Line ||
-              queriedConfig?.displayType === DisplayType.StackedBar) && (
-              <DBTimeChart
-                key={`${keyPrefix}-${chart.id}`}
-                title={title}
-                toolbarPrefix={toolbar}
-                sourceId={chart.config.source}
-                showDisplaySwitcher={true}
-                config={queriedConfig}
-                onTimeRangeSelect={onTimeRangeSelect}
-                setDisplayType={displayType => {
-                  onUpdateChart?.({
-                    ...chart,
-                    config: {
-                      ...chart.config,
-                      displayType,
-                    },
-                  });
-                }}
-              />
-            )}
-            {queriedConfig?.displayType === DisplayType.Table && (
-              <Box p="xs" h="100%">
-                <DBTableChart
-                  key={`${keyPrefix}-${chart.id}`}
-                  title={title}
-                  toolbarPrefix={toolbar}
-                  config={queriedConfig}
-                  variant="muted"
-                  getRowSearchLink={
-                    isBuilderChartConfig(queriedConfig)
-                      ? row =>
-                          buildTableRowSearchUrl({
-                            row,
-                            source,
-                            config: queriedConfig,
-                            dateRange: dateRange,
-                          })
-                      : undefined
-                  }
-                />
-              </Box>
-            )}
-            {queriedConfig?.displayType === DisplayType.Number && (
-              <DBNumberChart
-                key={`${keyPrefix}-${chart.id}`}
-                title={title}
-                toolbarPrefix={toolbar}
-                config={queriedConfig}
-              />
-            )}
-            {queriedConfig?.displayType === DisplayType.Pie && (
-              <DBPieChart
-                key={`${keyPrefix}-${chart.id}`}
-                title={title}
-                toolbarPrefix={toolbar}
-                config={queriedConfig}
-              />
-            )}
-            {effectiveMarkdownConfig?.displayType === DisplayType.Markdown &&
-              'markdown' in effectiveMarkdownConfig && (
-                <HDXMarkdownChart
-                  key={`${keyPrefix}-${chart.id}`}
-                  title={title}
-                  toolbarItems={toolbar}
-                  config={effectiveMarkdownConfig}
-                />
-              )}
-            {queriedConfig?.displayType === DisplayType.Search &&
-              isBuilderChartConfig(queriedConfig) &&
-              isBuilderSavedChartConfig(chart.config) && (
-                <ChartContainer
-                  title={title}
-                  toolbarItems={toolbar}
-                  disableReactiveContainer
-                >
-                  <DBSqlRowTableWithSideBar
+            {isSourceMissing ? (
+              <ChartContainer title={title} toolbarItems={toolbar}>
+                <Stack align="center" justify="center" h="100%" p="md">
+                  <Text size="sm" c="dimmed" ta="center">
+                    The data source for this tile no longer exists. Edit the
+                    tile to select a new source.
+                  </Text>
+                </Stack>
+              </ChartContainer>
+            ) : isSourceUnset ? (
+              <ChartContainer title={title} toolbarItems={toolbar}>
+                <Stack align="center" justify="center" h="100%" p="md">
+                  <Text size="sm" c="dimmed" ta="center">
+                    The data source for this tile is not set. Edit the tile to
+                    select a data source.
+                  </Text>
+                </Stack>
+              </ChartContainer>
+            ) : (
+              <>
+                {(queriedConfig?.displayType === DisplayType.Line ||
+                  queriedConfig?.displayType === DisplayType.StackedBar) && (
+                  <DBTimeChart
                     key={`${keyPrefix}-${chart.id}`}
-                    enabled
+                    title={title}
+                    toolbarPrefix={toolbar}
                     sourceId={chart.config.source}
-                    config={{
-                      ...queriedConfig,
-                      orderBy: [
-                        {
-                          ordering: 'DESC',
-                          valueExpression: getFirstTimestampValueExpression(
-                            queriedConfig.timestampValueExpression,
-                          ),
+                    showDisplaySwitcher={true}
+                    config={queriedConfig}
+                    onTimeRangeSelect={onTimeRangeSelect}
+                    setDisplayType={displayType => {
+                      onUpdateChart?.({
+                        ...chart,
+                        config: {
+                          ...chart.config,
+                          displayType,
                         },
-                      ],
-                      dateRange,
-                      select:
-                        queriedConfig.select ||
-                        (source?.kind === SourceKind.Log ||
-                        source?.kind === SourceKind.Trace
-                          ? source.defaultTableSelectExpression
-                          : '') ||
-                        '',
-                      groupBy: undefined,
-                      granularity: undefined,
+                      });
                     }}
-                    isLive={false}
-                    queryKeyPrefix={'search'}
-                    variant="muted"
                   />
-                </ChartContainer>
-              )}
+                )}
+                {queriedConfig?.displayType === DisplayType.Table && (
+                  <Box p="xs" h="100%">
+                    <DBTableChart
+                      key={`${keyPrefix}-${chart.id}`}
+                      title={title}
+                      toolbarPrefix={toolbar}
+                      config={queriedConfig}
+                      variant="muted"
+                      getRowSearchLink={
+                        isBuilderChartConfig(queriedConfig)
+                          ? row =>
+                              buildTableRowSearchUrl({
+                                row,
+                                source,
+                                config: queriedConfig,
+                                dateRange: dateRange,
+                              })
+                          : undefined
+                      }
+                    />
+                  </Box>
+                )}
+                {queriedConfig?.displayType === DisplayType.Number && (
+                  <DBNumberChart
+                    key={`${keyPrefix}-${chart.id}`}
+                    title={title}
+                    toolbarPrefix={toolbar}
+                    config={queriedConfig}
+                  />
+                )}
+                {queriedConfig?.displayType === DisplayType.Pie && (
+                  <DBPieChart
+                    key={`${keyPrefix}-${chart.id}`}
+                    title={title}
+                    toolbarPrefix={toolbar}
+                    config={queriedConfig}
+                  />
+                )}
+                {effectiveMarkdownConfig?.displayType ===
+                  DisplayType.Markdown &&
+                  'markdown' in effectiveMarkdownConfig && (
+                    <HDXMarkdownChart
+                      key={`${keyPrefix}-${chart.id}`}
+                      title={title}
+                      toolbarItems={toolbar}
+                      config={effectiveMarkdownConfig}
+                    />
+                  )}
+                {queriedConfig?.displayType === DisplayType.Search &&
+                  isBuilderChartConfig(queriedConfig) &&
+                  isBuilderSavedChartConfig(chart.config) && (
+                    <ChartContainer
+                      title={title}
+                      toolbarItems={toolbar}
+                      disableReactiveContainer
+                    >
+                      <DBSqlRowTableWithSideBar
+                        key={`${keyPrefix}-${chart.id}`}
+                        enabled
+                        sourceId={chart.config.source}
+                        config={{
+                          ...queriedConfig,
+                          orderBy: [
+                            {
+                              ordering: 'DESC',
+                              valueExpression: getFirstTimestampValueExpression(
+                                queriedConfig.timestampValueExpression,
+                              ),
+                            },
+                          ],
+                          dateRange,
+                          select:
+                            queriedConfig.select ||
+                            (source?.kind === SourceKind.Log ||
+                            source?.kind === SourceKind.Trace
+                              ? source.defaultTableSelectExpression
+                              : '') ||
+                            '',
+                          groupBy: undefined,
+                          granularity: undefined,
+                        }}
+                        isLive={false}
+                        queryKeyPrefix={'search'}
+                        variant="muted"
+                      />
+                    </ChartContainer>
+                  )}
+              </>
+            )}
           </ErrorBoundary>
         );
       },
@@ -607,6 +660,8 @@ const Tile = forwardRef(
         source,
         dateRange,
         filterWarning,
+        isSourceMissing,
+        isSourceUnset,
       ],
     );
 
@@ -751,68 +806,6 @@ const updateLayout = (newLayout: RGL.Layout[]) => {
     }
   };
 };
-
-function DashboardName({
-  name,
-  onSave,
-}: {
-  name: string;
-  onSave: (name: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [editedName, setEditedName] = useState(name);
-
-  const { hovered, ref } = useHover();
-
-  return (
-    <Box
-      ref={ref}
-      pe="md"
-      onDoubleClick={() => setEditing(true)}
-      className="cursor-pointer"
-      title="Double click to edit"
-    >
-      {editing ? (
-        <form
-          className="d-flex align-items-center"
-          onSubmit={e => {
-            e.preventDefault();
-            onSave(editedName);
-            setEditing(false);
-          }}
-        >
-          <Input
-            type="text"
-            value={editedName}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              setEditedName(e.target.value)
-            }
-            placeholder="Dashboard Name"
-          />
-          <Button ms="sm" variant="primary" type="submit">
-            Save Name
-          </Button>
-        </form>
-      ) : (
-        <div className="d-flex align-items-center" style={{ minWidth: 100 }}>
-          <Title fw={400} order={3}>
-            {name}
-          </Title>
-          {hovered && (
-            <Button
-              ms="xs"
-              variant="subtle"
-              size="xs"
-              onClick={() => setEditing(true)}
-            >
-              <IconPencil size={14} />
-            </Button>
-          )}
-        </div>
-      )}
-    </Box>
-  );
-}
 
 // Download an object to users computer as JSON using specified name
 function downloadObjectAsJson(object: object, fileName = 'output') {
@@ -1597,17 +1590,43 @@ function DBDashboardPage({ presetConfig }: { presetConfig?: Dashboard }) {
           </Paper>
         </>
       ) : (
-        <Breadcrumbs mb="xs" mt="xs" fz="sm">
-          <Anchor component={Link} href="/dashboards/list" fz="sm" c="dimmed">
-            Dashboards
-          </Anchor>
-          <Text fz="sm" c="dimmed">
-            {dashboard?.name ?? 'Untitled'}
-          </Text>
-        </Breadcrumbs>
+        <Group align="flex-start" mb="xs" mt="xs" justify="space-between">
+          <Breadcrumbs fz="sm">
+            <Anchor component={Link} href="/dashboards/list" fz="sm" c="dimmed">
+              Dashboards
+            </Anchor>
+            <Text fz="sm" c="dimmed" maw={500} truncate="end" lh={1}>
+              {dashboard?.name ?? 'Untitled'}
+            </Text>
+          </Breadcrumbs>
+          {!isLocalDashboard && dashboard && (
+            <Text size="xs" c="dimmed">
+              {dashboard.createdBy && (
+                <span>
+                  Created by{' '}
+                  {dashboard.createdBy.name || dashboard.createdBy.email}.{' '}
+                </span>
+              )}
+              {dashboard.updatedAt && (
+                <Tooltip
+                  label={
+                    <>
+                      <FormatTime value={dashboard.updatedAt} format="short" />
+                      {dashboard.updatedBy
+                        ? ` by ${dashboard.updatedBy.name || dashboard.updatedBy.email}`
+                        : ''}
+                    </>
+                  }
+                >
+                  <span>{`Updated ${formatDistanceToNow(new Date(dashboard.updatedAt), { addSuffix: true })}.`}</span>
+                </Tooltip>
+              )}
+            </Text>
+          )}
+        </Group>
       )}
-      <Flex mt="xs" mb="md" justify="space-between" align="center">
-        <DashboardName
+      <Flex mt="xs" mb="md" justify="space-between" align="flex-start">
+        <EditablePageName
           key={`${dashboardHash}`}
           name={dashboard?.name ?? ''}
           onSave={editedName => {
@@ -1620,6 +1639,12 @@ function DBDashboardPage({ presetConfig }: { presetConfig?: Dashboard }) {
           }}
         />
         <Group gap="xs">
+          {!isLocalDashboard && dashboard?.id && (
+            <FavoriteButton
+              resourceType="dashboard"
+              resourceId={dashboard.id}
+            />
+          )}
           {!isLocalDashboard && dashboard?.id && (
             <Tags
               allowCreate

@@ -240,7 +240,7 @@ export default function AuthPage({ action }: { action: 'register' | 'login' }) {
                         component="a"
                         href="/api/auth/oidc"
                         size="md"
-                        variant="outline"
+                        variant="primary"
                         fullWidth
                         data-test-id="oidc-login"
                       >

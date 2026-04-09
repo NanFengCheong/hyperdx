@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import {
   Badge,
   Box,
@@ -198,9 +198,8 @@ export default function NotificationLogSection() {
               {!isLoading &&
                 Array.isArray(notifLog?.data) &&
                 notifLog.data.map((entry: any) => (
-                  <>
+                  <Fragment key={entry._id}>
                     <Table.Tr
-                      key={entry._id}
                       onClick={() =>
                         setExpandedId(
                           expandedId === entry._id ? null : entry._id,
@@ -301,7 +300,7 @@ export default function NotificationLogSection() {
                         </Table.Td>
                       </Table.Tr>
                     )}
-                  </>
+                  </Fragment>
                 ))}
               {!isLoading &&
                 (!notifLog?.data || notifLog.data.length === 0) && (

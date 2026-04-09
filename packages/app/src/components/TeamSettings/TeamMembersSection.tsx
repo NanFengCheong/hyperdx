@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { HTTPError } from 'ky';
 import CopyToClipboard from 'react-copy-to-clipboard';
 import {
@@ -21,11 +21,14 @@ import { IconLock, IconUserPlus } from '@tabler/icons-react';
 import api from '@/api';
 import { useBrandDisplayName } from '@/theme/ThemeProvider';
 
-function getDaysUntilDisable(lastLoginAt: string | undefined): number | null {
+function getDaysUntilDisable(
+  lastLoginAt: string | undefined,
+  now: number,
+): number | null {
   if (!lastLoginAt) return null;
   const msPerDay = 24 * 60 * 60 * 1000;
   const daysSinceLogin = Math.floor(
-    (Date.now() - new Date(lastLoginAt).getTime()) / msPerDay,
+    (now - new Date(lastLoginAt).getTime()) / msPerDay,
   );
   return Math.max(0, 90 - daysSinceLogin);
 }
@@ -39,6 +42,8 @@ function getDaysLeftColor(daysLeft: number): string {
 export default function TeamMembersSection() {
   const brandName = useBrandDisplayName();
   const hasAdminAccess = true;
+  // eslint-disable-next-line no-restricted-syntax
+  const now = useMemo(() => Date.now(), []);
 
   const { data: team } = api.useTeam();
   const {
@@ -301,7 +306,7 @@ export default function TeamMembersSection() {
                           </Badge>
                           <Button
                             size="compact-xs"
-                            variant="light"
+                            variant="primary"
                             color="green"
                             loading={reactivateTeamMember.isPending}
                             onClick={() =>
@@ -329,25 +334,22 @@ export default function TeamMembersSection() {
                             Reactivate
                           </Button>
                         </Group>
+                      ) : getDaysUntilDisable(member.lastLoginAt, now) !=
+                        null ? (
+                        <Badge
+                          variant="light"
+                          color={getDaysLeftColor(
+                            getDaysUntilDisable(member.lastLoginAt, now)!,
+                          )}
+                          tt="none"
+                        >
+                          {getDaysUntilDisable(member.lastLoginAt, now)} days
+                          left
+                        </Badge>
                       ) : (
-                        (() => {
-                          const daysLeft = getDaysUntilDisable(
-                            member.lastLoginAt,
-                          );
-                          return daysLeft != null ? (
-                            <Badge
-                              variant="light"
-                              color={getDaysLeftColor(daysLeft)}
-                              tt="none"
-                            >
-                              {daysLeft} days left
-                            </Badge>
-                          ) : (
-                            <Badge variant="light" color="gray" tt="none">
-                              No login recorded
-                            </Badge>
-                          );
-                        })()
+                        <Badge variant="light" color="gray" tt="none">
+                          No login recorded
+                        </Badge>
                       )}
                     </Table.Td>
                     <Table.Td>

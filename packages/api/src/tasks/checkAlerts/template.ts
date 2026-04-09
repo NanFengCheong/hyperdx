@@ -10,6 +10,7 @@ import {
   AlertChannelType,
   ChartConfigWithOptDateRange,
   DisplayType,
+  pickSampleWeightExpressionProps,
   SourceKind,
   WebhookService,
   zAlertChannelType,
@@ -779,6 +780,7 @@ ${targetTemplate}`;
       where: savedSearch.where,
       whereLanguage: savedSearch.whereLanguage,
       implicitColumnExpression: source.implicitColumnExpression,
+      ...pickSampleWeightExpressionProps(source),
       timestampValueExpression: source.timestampValueExpression,
       orderBy: savedSearch.orderBy,
       limit: {

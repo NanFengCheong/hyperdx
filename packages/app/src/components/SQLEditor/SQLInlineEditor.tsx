@@ -9,7 +9,6 @@ import {
   Completion,
   startCompletion,
 } from '@codemirror/autocomplete';
-import { sql } from '@codemirror/lang-sql';
 import {
   Field,
   TableConnectionChoice,
@@ -34,6 +33,7 @@ import CodeMirror, {
 import InputLanguageSwitch from '@/components/SearchInput/InputLanguageSwitch';
 import { useMultipleAllFields } from '@/hooks/useMetadata';
 import { useQueryHistory } from '@/utils';
+import { clickhouseSql } from '@/utils/codeMirror';
 
 import { KEYWORDS_FOR_WHERE_OR_ORDER_BY } from './constants';
 import {
@@ -242,9 +242,8 @@ export default function SQLInlineEditor({
       // Enable line wrapping when multiline is allowed (regardless of focus)
       ...(allowMultiline ? [EditorView.lineWrapping] : []),
 
-      // eslint-disable-next-line react-hooks/refs
       compartmentRef.current.of(
-        sql({
+        clickhouseSql({
           upperCaseKeywords: true,
         }),
       ),

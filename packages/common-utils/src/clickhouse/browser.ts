@@ -54,6 +54,7 @@ const standardModeFetch: typeof fetch = async (
     const bytes = new TextEncoder().encode(bodyStr);
     init.body = btoa(Array.from(bytes, b => String.fromCodePoint(b)).join(''));
     if (!init.headers) init.headers = {};
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- headers narrowed above
     (init.headers as Record<string, string>)['x-hdx-body-encoding'] = 'base64';
   }
 

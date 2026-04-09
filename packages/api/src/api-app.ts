@@ -12,6 +12,7 @@ import Team from './models/team';
 import routers from './routers/api';
 import clickhouseProxyRouter from './routers/api/clickhouseProxy';
 import connectionsRouter from './routers/api/connections';
+import favoritesRouter from './routers/api/favorites';
 import savedSearchRouter from './routers/api/savedSearch';
 import sourcesRouter from './routers/api/sources';
 import externalRoutersV2 from './routers/external-api/v2';
@@ -23,6 +24,11 @@ import passport from './utils/passport';
 const app: express.Application = express();
 
 const sess: session.SessionOptions & { cookie: session.CookieOptions } = {
+  // Use a slot-specific cookie name in dev so multiple worktrees on localhost
+  // don't overwrite each other's session cookies.
+  ...(config.IS_DEV && process.env.HDX_DEV_SLOT
+    ? { name: `connect.sid.${process.env.HDX_DEV_SLOT}` }
+    : {}),
   resave: false,
   saveUninitialized: false,
   secret: config.EXPRESS_SESSION_SECRET,
@@ -122,6 +128,7 @@ app.use(
   requireWriteAccess,
   savedSearchRouter,
 );
+app.use('/favorites', isUserAuthenticated, requireWriteAccess, favoritesRouter);
 app.use('/clickhouse-proxy', isUserAuthenticated, clickhouseProxyRouter);
 
 // Telegram: callback is public (called by Telegram servers), validate requires auth

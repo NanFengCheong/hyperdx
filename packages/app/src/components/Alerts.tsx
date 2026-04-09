@@ -127,7 +127,6 @@ const EmailChannelForm = ({
   namePrefix?: string;
 }) => {
   const { data: teamMembers } = api.useTeamMembers();
-  const members = (teamMembers?.data || []) as TeamMember[];
 
   const { field: entireTeamField } = useController({
     control,
@@ -143,11 +142,11 @@ const EmailChannelForm = ({
 
   const options = useMemo(
     () =>
-      members.map((m: TeamMember) => ({
+      ((teamMembers?.data || []) as TeamMember[]).map((m: TeamMember) => ({
         value: m._id,
         label: `${m.name || m.email} (${m.email})`,
       })),
-    [members],
+    [teamMembers?.data],
   );
 
   return (
