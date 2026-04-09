@@ -27,6 +27,7 @@ import {
   IconDeviceLaptop,
   IconLayoutGrid,
   IconRocket,
+  IconSearch,
   IconSettings,
   IconShieldLock,
   IconSitemap,
@@ -88,6 +89,13 @@ const NAV_LINKS: NavLinkConfig[] = [
     icon: <IconBell size={16} />,
     cloudOnly: true,
     permission: 'alerts:view',
+  },
+  {
+    id: 'investigations',
+    label: 'Investigations',
+    href: '/investigations',
+    icon: <IconSearch size={16} />,
+    permission: 'explorer:view',
   },
   {
     id: 'sessions',
