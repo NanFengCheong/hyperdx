@@ -17,8 +17,9 @@ import {
   Stack,
   Text,
 } from '@mantine/core';
-import { IconPencil } from '@tabler/icons-react';
+import { IconPencil, IconSparkles } from '@tabler/icons-react';
 
+import { InvestigationSidePanel } from '@/components/Investigation';
 import { DBTraceWaterfallChartContainer } from '@/components/DBTraceWaterfallChart';
 import { SQLInlineEditorControlled } from '@/components/SQLEditor/SQLInlineEditor';
 import { WithClause } from '@/hooks/useRowWhere';
@@ -135,6 +136,7 @@ export default function DBTracePanel({
   }, [parentSourceData, traceIdSetValue]);
 
   const [showTraceIdInput, setShowTraceIdInput] = useState(false);
+  const [investigationOpened, setInvestigationOpened] = useState(false);
 
   // Reset highlighted row when trace ID changes
   // otherwise we'll show stale span details
@@ -182,6 +184,16 @@ export default function DBTracePanel({
             size="xs"
             sourceSchemaPreview={sourceSchemaPreview}
           />
+          {traceId && (
+            <Button
+              variant="light"
+              size="xs"
+              leftSection={<IconSparkles size={14} />}
+              onClick={() => setInvestigationOpened(true)}
+            >
+              Investigate
+            </Button>
+          )}
         </Group>
       </Flex>
       {(showTraceIdInput || !traceId) && parentSourceId != null && (
@@ -292,6 +304,19 @@ export default function DBTracePanel({
           </Center>
         </Paper>
       )}
+      <InvestigationSidePanel
+        opened={investigationOpened}
+        onClose={() => setInvestigationOpened(false)}
+        traceId={traceId}
+        sourceId={
+          traceSourceData?.id ??
+          (parentSourceData != null && isTraceSource(parentSourceData)
+            ? parentSourceId ?? ''
+            : childSourceData != null && isTraceSource(childSourceData)
+              ? sourceId ?? ''
+              : '')
+        }
+      />
     </div>
   );
 }
