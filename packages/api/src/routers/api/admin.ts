@@ -191,7 +191,7 @@ router.get('/notification-log/retention', async (req, res, next) => {
     const setting = await PlatformSetting.findOne({
       key: 'notificationLogRetentionDays',
     });
-    res.json({ retentionDays: (setting?.value as number) ?? 30 });
+    res.json({ retentionDays: (setting?.value as unknown as number) ?? 30 });
   } catch (e) {
     next(e);
   }

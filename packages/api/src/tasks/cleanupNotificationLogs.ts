@@ -9,7 +9,7 @@ export async function cleanupNotificationLogs(): Promise<void> {
     const setting = await PlatformSetting.findOne({
       key: 'notificationLogRetentionDays',
     });
-    const retentionDays = (setting?.value as number) ?? DEFAULT_RETENTION_DAYS;
+    const retentionDays = (setting?.value as unknown as number) ?? DEFAULT_RETENTION_DAYS;
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - retentionDays);
 

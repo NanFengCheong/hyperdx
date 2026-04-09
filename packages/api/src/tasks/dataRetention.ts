@@ -120,7 +120,7 @@ export async function applyRetention(
       return 0;
   }
 
-  const count = await model.countDocuments({
+  const count = await (model as any).countDocuments({
     createdAt: { $lt: cutoffDate },
   });
 
@@ -138,7 +138,7 @@ export async function applyRetention(
     return count;
   }
 
-  const result = await model.deleteMany({
+  const result = await (model as any).deleteMany({
     createdAt: { $lt: cutoffDate },
   });
 
