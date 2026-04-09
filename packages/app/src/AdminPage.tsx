@@ -3,8 +3,10 @@ import Head from 'next/head';
 import {
   ActionIcon,
   Badge,
+  Box,
   Button,
   Center,
+  Code,
   Collapse,
   Container,
   Group,
@@ -12,6 +14,7 @@ import {
   Modal,
   NumberInput,
   Pagination,
+  Select,
   Stack,
   Switch,
   Table,
@@ -24,8 +27,12 @@ import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import {
   IconChevronDown,
+  IconChevronLeft,
   IconChevronRight,
+  IconChevronUp,
   IconPlayerPlay,
+  IconRefresh,
+  IconSearch,
   IconShieldLock,
   IconTrash,
 } from '@tabler/icons-react';
@@ -36,6 +43,10 @@ import { useIsSuperAdmin } from './hooks/usePermission';
 import { useBrandDisplayName } from './theme/ThemeProvider';
 import {
   useAdminAuditLog,
+  useAdminNotificationLog,
+  useAdminRetryNotification,
+  useAdminNotificationLogRetention,
+  useUpdateAdminNotificationLogRetention,
   useAdminTeamMembers,
   useAdminTeams,
   useDataRetentionSettings,
@@ -456,6 +467,332 @@ function AuditLogPanel() {
 }
 
 // ---------------------------------------------------------------------------
+// Notification Log Tab
+// ---------------------------------------------------------------------------
+const NOTIF_LOG_PAGE_SIZE = 50;
+
+const NOTIF_STATUS_COLORS: Record<string, string> = {
+  pending: 'yellow',
+  success: 'green',
+  failed: 'red',
+};
+
+const NOTIF_CHANNEL_OPTIONS = [
+  { value: '', label: 'All Channels' },
+  { value: 'email', label: 'Email' },
+  { value: 'webhook', label: 'Webhook' },
+];
+
+const NOTIF_STATUS_OPTIONS = [
+  { value: '', label: 'All Statuses' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'success', label: 'Success' },
+  { value: 'failed', label: 'Failed' },
+];
+
+function NotificationLogPanel() {
+  const [page, setPage] = useState(0);
+  const [channel, setChannel] = useState('');
+  const [status, setStatus] = useState('');
+  const [recipient, setRecipient] = useState('');
+  const [search, setSearch] = useState('');
+  const [fromDate, setFromDate] = useState<Date | null>(null);
+  const [toDate, setToDate] = useState<Date | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const filters = {
+    channel: channel || undefined,
+    status: status || undefined,
+    recipient: recipient || undefined,
+    fromDate: fromDate?.toISOString(),
+    toDate: toDate?.toISOString(),
+    search: search || undefined,
+  };
+
+  const { data, isLoading } = useAdminNotificationLog(
+    page,
+    NOTIF_LOG_PAGE_SIZE,
+    filters,
+  );
+  const retryMutation = useAdminRetryNotification();
+  const { data: retention } = useAdminNotificationLogRetention();
+  const updateRetention = useUpdateAdminNotificationLogRetention();
+
+  const logs = data?.data ?? [];
+  const totalCount = data?.totalCount ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / NOTIF_LOG_PAGE_SIZE));
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return '\u2014';
+    return new Date(dateStr).toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const handleRetry = (id: string) => {
+    retryMutation.mutate(id);
+  };
+
+  const resetFilters = () => {
+    setChannel('');
+    setStatus('');
+    setRecipient('');
+    setSearch('');
+    setFromDate(null);
+    setToDate(null);
+    setPage(0);
+  };
+
+  const handleSaveRetention = (days: number) => {
+    if (days >= 1) {
+      updateRetention.mutate(days);
+    }
+  };
+
+  return (
+    <Stack gap="md">
+      {/* Retention Settings */}
+      <Group grow>
+        <NumberInput
+          label="Retention (days)"
+          value={(retention as any)?.retentionDays ?? 30}
+          onChange={v => handleSaveRetention(Number(v))}
+          min={1}
+          size="sm"
+        />
+      </Group>
+
+      {/* Filters */}
+      <Group grow>
+        <Select
+          label="Channel"
+          placeholder="All Channels"
+          data={NOTIF_CHANNEL_OPTIONS}
+          value={channel}
+          onChange={v => {
+            setChannel(v ?? '');
+            setPage(0);
+          }}
+          clearable
+          size="sm"
+        />
+        <Select
+          label="Status"
+          placeholder="All Statuses"
+          data={NOTIF_STATUS_OPTIONS}
+          value={status}
+          onChange={v => {
+            setStatus(v ?? '');
+            setPage(0);
+          }}
+          clearable
+          size="sm"
+        />
+        <TextInput
+          label="Recipient"
+          placeholder="Filter by recipient..."
+          value={recipient}
+          onChange={e => {
+            setRecipient(e.currentTarget.value);
+            setPage(0);
+          }}
+          size="sm"
+        />
+        <TextInput
+          label="Search"
+          placeholder="Search subject/recipient..."
+          leftSection={<IconSearch size={14} />}
+          value={search}
+          onChange={e => {
+            setSearch(e.currentTarget.value);
+            setPage(0);
+          }}
+          size="sm"
+        />
+      </Group>
+      <Group>
+        <DatePickerInput
+          label="From Date"
+          placeholder="Select start date"
+          value={fromDate}
+          onChange={v => {
+            setFromDate(v);
+            setPage(0);
+          }}
+          clearable
+          size="sm"
+        />
+        <DatePickerInput
+          label="To Date"
+          placeholder="Select end date"
+          value={toDate}
+          onChange={v => {
+            setToDate(v);
+            setPage(0);
+          }}
+          clearable
+          size="sm"
+        />
+        {(channel || status || recipient || search || fromDate || toDate) && (
+          <Button
+            variant="subtle"
+            size="xs"
+            onClick={resetFilters}
+            style={{ alignSelf: 'flex-end' }}
+          >
+            Clear Filters
+          </Button>
+        )}
+      </Group>
+
+      {isLoading ? (
+        <Center py="xl">
+          <Loader />
+        </Center>
+      ) : logs.length === 0 ? (
+        <Text c="dimmed" py="xl" ta="center">
+          No notification log entries found.
+        </Text>
+      ) : (
+        <>
+          <Table highlightOnHover withTableBorder withColumnBorders={false}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th w={30} />
+                <Table.Th>Date</Table.Th>
+                <Table.Th>Channel</Table.Th>
+                <Table.Th>Status</Table.Th>
+                <Table.Th>Recipient</Table.Th>
+                <Table.Th>Subject</Table.Th>
+                <Table.Th>Trigger</Table.Th>
+                <Table.Th>Actions</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {logs.map((entry: any) => (
+                <>
+                  <Table.Tr
+                    key={entry._id}
+                    onClick={() =>
+                      setExpandedId(expandedId === entry._id ? null : entry._id)
+                    }
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <Table.Td>
+                      {expandedId === entry._id ? (
+                        <IconChevronUp size={14} />
+                      ) : (
+                        <IconChevronDown size={14} />
+                      )}
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm">{formatDate(entry.createdAt)}</Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Badge size="sm" variant="light">
+                        {entry.channel}
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <Badge
+                        size="sm"
+                        color={NOTIF_STATUS_COLORS[entry.status] ?? 'gray'}
+                      >
+                        {entry.status}
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm" truncate maw={200}>
+                        {entry.recipient}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm" truncate maw={200}>
+                        {entry.subject ?? '\u2014'}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm">{entry.trigger?.name ?? '\u2014'}</Text>
+                    </Table.Td>
+                    <Table.Td>
+                      {entry.status === 'failed' && (
+                        <Button
+                          size="compact-xs"
+                          variant="subtle"
+                          leftSection={<IconRefresh size={14} />}
+                          loading={retryMutation.isPending}
+                          onClick={e => {
+                            e.stopPropagation();
+                            handleRetry(entry._id);
+                          }}
+                        >
+                          Retry
+                        </Button>
+                      )}
+                    </Table.Td>
+                  </Table.Tr>
+                  {expandedId === entry._id && (
+                    <Table.Tr key={`${entry._id}-detail`}>
+                      <Table.Td colSpan={8}>
+                        <Collapse in={expandedId === entry._id}>
+                          <Box p="sm">
+                            {entry.error && (
+                              <Box mb="xs">
+                                <Text size="sm" fw={600} c="red">
+                                  Error:
+                                </Text>
+                                <Code block>{entry.error}</Code>
+                              </Box>
+                            )}
+                            <Text size="sm" fw={600} mb={4}>
+                              Payload:
+                            </Text>
+                            <Code block>
+                              {JSON.stringify(entry.payload, null, 2)}
+                            </Code>
+                            {entry.response &&
+                              Object.keys(entry.response).length > 0 && (
+                                <Box mt="xs">
+                                  <Text size="sm" fw={600} mb={4}>
+                                    Response:
+                                  </Text>
+                                  <Code block>
+                                    {JSON.stringify(entry.response, null, 2)}
+                                  </Code>
+                                </Box>
+                              )}
+                            {entry.retryOf && (
+                              <Text size="sm" c="dimmed" mt="xs">
+                                Retry of: {entry.retryOf}
+                              </Text>
+                            )}
+                          </Box>
+                        </Collapse>
+                      </Table.Td>
+                    </Table.Tr>
+                  )}
+                </>
+              ))}
+            </Table.Tbody>
+          </Table>
+          <Group justify="center">
+            <Pagination
+              total={totalPages}
+              value={page + 1}
+              onChange={v => setPage(v - 1)}
+            />
+          </Group>
+        </>
+      )}
+    </Stack>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Data Retention Tab
 // ---------------------------------------------------------------------------
 function DataRetentionPanel() {
@@ -687,6 +1024,7 @@ export default function AdminPage() {
             <Tabs.Tab value="teams">Teams</Tabs.Tab>
             <Tabs.Tab value="roles">Roles</Tabs.Tab>
             <Tabs.Tab value="audit-log">Global Audit Log</Tabs.Tab>
+            <Tabs.Tab value="notification-log">Notification Log</Tabs.Tab>
             <Tabs.Tab value="data-retention">Data Retention</Tabs.Tab>
           </Tabs.List>
 
@@ -700,6 +1038,10 @@ export default function AdminPage() {
 
           <Tabs.Panel value="audit-log">
             <AuditLogPanel />
+          </Tabs.Panel>
+
+          <Tabs.Panel value="notification-log">
+            <NotificationLogPanel />
           </Tabs.Panel>
 
           <Tabs.Panel value="data-retention">
