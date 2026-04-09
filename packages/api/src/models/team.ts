@@ -48,6 +48,14 @@ export default mongoose.model<ITeam>(
       queryTimeout: Number,
       fieldMetadataDisabled: Boolean,
       parallelizeWhenPossible: Boolean,
+      telegramConfig: {
+        type: {
+          botToken: { type: String },
+          webhookUrl: { type: String },
+          webhookSecret: { type: String },
+        },
+        required: false,
+      },
     },
     {
       timestamps: true,

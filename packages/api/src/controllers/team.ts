@@ -1,4 +1,4 @@
-import { TeamClickHouseSettings } from '@hyperdx/common-utils/dist/types';
+import { TeamClickHouseSettings, TelegramConfigSchema } from '@hyperdx/common-utils/dist/types';
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -122,3 +122,19 @@ export async function getTags(teamId: ObjectId) {
     ]),
   ];
 }
+
+export const getTeamTelegramConfig = async (teamId: ObjectId) => {
+  const team = await Team.findById(teamId).select('telegramConfig');
+  return team?.telegramConfig || null;
+};
+
+export const updateTeamTelegramConfig = async (
+  teamId: ObjectId,
+  config: { botToken: string; webhookUrl: string; webhookSecret: string },
+) => {
+  return Team.findByIdAndUpdate(
+    teamId,
+    { $set: { telegramConfig: config } },
+    { new: true },
+  ).select('telegramConfig');
+};

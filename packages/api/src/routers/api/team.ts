@@ -6,7 +6,7 @@ import type {
   TeamTagsApiResponse,
   UpdateClickHouseSettingsApiResponse,
 } from '@hyperdx/common-utils/dist/types';
-import { TeamClickHouseSettingsSchema } from '@hyperdx/common-utils/dist/types';
+import { TeamClickHouseSettingsSchema, TelegramConfigSchema } from '@hyperdx/common-utils/dist/types';
 import {
   ALL_PERMISSIONS,
   resolvePermissions,
@@ -22,9 +22,11 @@ import * as config from '@/config';
 import {
   getTags,
   getTeam,
+  getTeamTelegramConfig,
   rotateTeamApiKey,
   setTeamName,
   updateTeamClickhouseSettings,
+  updateTeamTelegramConfig,
 } from '@/controllers/team';
 import {
   deleteTeamMember,
@@ -147,6 +149,45 @@ router.patch(
       const team = await updateTeamClickhouseSettings(teamId, req.body);
 
       res.json(pick(team, Object.keys(req.body)));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// GET /team/telegram-config
+router.get('/telegram-config', async (req, res, next) => {
+  try {
+    const { teamId } = getNonNullUserWithTeam(req);
+    const config = await getTeamTelegramConfig(teamId);
+    // Never expose the full bot token to frontend — mask it
+    if (config) {
+      res.json({
+        data: {
+          botToken: config.botToken ? `${config.botToken.slice(0, 8)}...` : '',
+          webhookUrl: config.webhookUrl,
+          webhookSecret: '••••••••',
+        },
+      });
+    } else {
+      res.json({ data: null });
+    }
+  } catch (e) {
+    next(e);
+  }
+});
+
+// PUT /team/telegram-config
+router.put(
+  '/telegram-config',
+  processRequest({
+    body: TelegramConfigSchema,
+  }),
+  async (req, res, next) => {
+    try {
+      const { teamId } = getNonNullUserWithTeam(req);
+      await updateTeamTelegramConfig(teamId, req.body);
+      res.json({ data: { success: true } });
     } catch (e) {
       next(e);
     }
