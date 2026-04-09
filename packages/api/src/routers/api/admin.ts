@@ -1,4 +1,5 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import { z } from 'zod';
 
 import {
@@ -7,10 +8,18 @@ import {
 } from '../../config';
 import { isUserAuthenticated, requireSuperAdmin } from '../../middleware/auth';
 import AuditLog from '../../models/auditLog';
+import NotificationLog from '../../models/notificationLog';
 import PlatformSetting from '../../models/platformSetting';
 import Team from '../../models/team';
 import User from '../../models/user';
 import DataRetentionTask from '../../tasks/dataRetention';
+import {
+  createNotificationEntry,
+  markNotificationFailed,
+  markNotificationSuccess,
+} from '../../utils/notificationLogger';
+import { getTransporter } from '../../utils/emailService';
+import * as config from '../../config';
 
 const router = express.Router();
 
@@ -117,6 +126,206 @@ router.get('/audit-log', async (req, res, next) => {
     ]);
 
     res.json({ data, totalCount, page, limit });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// GET /admin/notification-log — global notification log (all teams) with optional filters
+router.get('/notification-log', async (req, res, next) => {
+  try {
+    const page = parseInt(req.query.page as string) || 0;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+
+    const filter: Record<string, any> = {};
+
+    if (req.query.teamId) {
+      filter.teamId = req.query.teamId;
+    }
+    if (req.query.channel) {
+      filter.channel = req.query.channel;
+    }
+    if (req.query.status) {
+      filter.status = req.query.status;
+    }
+    if (req.query.recipient) {
+      filter.recipient = { $regex: req.query.recipient, $options: 'i' };
+    }
+    if (req.query.triggerType) {
+      filter['trigger.type'] = req.query.triggerType;
+    }
+    if (req.query.fromDate || req.query.toDate) {
+      filter.createdAt = {};
+      if (req.query.fromDate) {
+        filter.createdAt.$gte = new Date(req.query.fromDate as string);
+      }
+      if (req.query.toDate) {
+        filter.createdAt.$lte = new Date(req.query.toDate as string);
+      }
+    }
+    if (req.query.search) {
+      const search = req.query.search as string;
+      filter.$or = [
+        { recipient: { $regex: search, $options: 'i' } },
+        { subject: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    const [data, totalCount] = await Promise.all([
+      NotificationLog.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(page * limit)
+        .limit(limit),
+      NotificationLog.countDocuments(filter),
+    ]);
+
+    res.json({ data, totalCount, page, limit });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// GET /admin/notification-log/retention
+router.get('/notification-log/retention', async (req, res, next) => {
+  try {
+    const setting = await PlatformSetting.findOne({
+      key: 'notificationLogRetentionDays',
+    });
+    res.json({ retentionDays: (setting?.value as number) ?? 30 });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// PUT /admin/notification-log/retention
+router.put('/notification-log/retention', async (req, res, next) => {
+  try {
+    const { retentionDays } = req.body;
+    if (typeof retentionDays !== 'number' || retentionDays < 1) {
+      return res
+        .status(400)
+        .json({ message: 'retentionDays must be a positive number' });
+    }
+    const actor = req.user as any;
+    await PlatformSetting.findOneAndUpdate(
+      { key: 'notificationLogRetentionDays' },
+      { key: 'notificationLogRetentionDays', value: retentionDays },
+      { upsert: true },
+    );
+    await AuditLog.create({
+      teamId: actor._id,
+      actorId: actor._id,
+      actorEmail: actor.email,
+      action: 'notification_log.retention_updated',
+      targetType: 'PlatformSetting',
+      targetId: 'notificationLogRetentionDays',
+      details: { retentionDays },
+    });
+    res.json({ retentionDays });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// POST /admin/notification-log/:id/retry
+router.post('/notification-log/:id/retry', async (req, res, next) => {
+  try {
+    const original = await NotificationLog.findOne({
+      _id: req.params.id,
+      status: 'failed',
+    });
+
+    if (!original) {
+      return res
+        .status(404)
+        .json({ message: 'Notification not found or not failed' });
+    }
+
+    if (original.channel === 'email') {
+      const logEntry = await createNotificationEntry({
+        teamId: original.teamId,
+        channel: 'email',
+        recipient: original.recipient,
+        trigger: original.trigger,
+        subject: original.subject,
+        payload: original.payload as Record<string, unknown>,
+        retryOf: original._id,
+      });
+
+      try {
+        const transport = getTransporter();
+        if (!transport) {
+          await markNotificationFailed(logEntry._id, 'SMTP not configured');
+          const updated = await NotificationLog.findById(logEntry._id);
+          return res.json({ data: updated });
+        }
+        const info = await transport.sendMail({
+          from: `"${config.SMTP_FROM_NAME}" <${config.SMTP_FROM}>`,
+          to: original.recipient,
+          subject: original.subject,
+          html: (original.payload as any)?.html ?? '',
+          text: (original.payload as any)?.text ?? '',
+        });
+        await markNotificationSuccess(logEntry._id, {
+          messageId: info.messageId,
+          response: info.response,
+        });
+        const updated = await NotificationLog.findById(logEntry._id);
+        return res.json({ data: updated });
+      } catch (error) {
+        await markNotificationFailed(
+          logEntry._id,
+          error instanceof Error ? error.message : String(error),
+        );
+        const updated = await NotificationLog.findById(logEntry._id);
+        return res.json({ data: updated });
+      }
+    }
+
+    if (original.channel === 'webhook') {
+      const logEntry = await createNotificationEntry({
+        teamId: original.teamId,
+        channel: 'webhook',
+        recipient: original.recipient,
+        trigger: original.trigger,
+        subject: original.subject,
+        payload: original.payload as Record<string, unknown>,
+        retryOf: original._id,
+      });
+
+      try {
+        const resp = await fetch(original.recipient, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify((original.payload as any)?.body ?? {}),
+        });
+        if (resp.ok) {
+          await markNotificationSuccess(logEntry._id, {
+            status: resp.status,
+            statusText: resp.statusText,
+          });
+        } else {
+          const body = await resp.text().catch(() => '');
+          await markNotificationFailed(logEntry._id, `HTTP ${resp.status}`, {
+            status: resp.status,
+            body: body.slice(0, 1000),
+          });
+        }
+        const updated = await NotificationLog.findById(logEntry._id);
+        return res.json({ data: updated });
+      } catch (error) {
+        await markNotificationFailed(
+          logEntry._id,
+          error instanceof Error ? error.message : String(error),
+        );
+        const updated = await NotificationLog.findById(logEntry._id);
+        return res.json({ data: updated });
+      }
+    }
+
+    return res
+      .status(400)
+      .json({ message: `Unsupported channel: ${original.channel}` });
   } catch (e) {
     next(e);
   }
