@@ -770,6 +770,24 @@ const api = {
         }).json<{ success: boolean; error?: string }>(),
     });
   },
+  useTelegramConfig() {
+    return useQuery({
+      queryKey: ['team', 'telegram-config'],
+      queryFn: () =>
+        hdxServer('team/telegram-config', { method: 'GET' }).json<{
+          data: { botToken: string; webhookUrl: string; webhookSecret: string } | null;
+        }>(),
+    });
+  },
+  useUpdateTelegramConfig() {
+    return useMutation({
+      mutationFn: (config: { botToken: string; webhookUrl: string; webhookSecret: string }) =>
+        hdxServer('team/telegram-config', {
+          method: 'PUT',
+          json: config,
+        }).json(),
+    });
+  },
 };
 export default api;
 

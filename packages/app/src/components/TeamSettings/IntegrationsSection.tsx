@@ -1,5 +1,6 @@
 import { Box, Card, Divider, Stack, Text } from '@mantine/core';
 
+import TelegramSection from './TelegramSection';
 import WebhooksSection from './WebhooksSection';
 
 export default function IntegrationsSection() {
@@ -10,6 +11,8 @@ export default function IntegrationsSection() {
       <Card>
         <Stack gap="md">
           <WebhooksSection />
+          <Divider />
+          <TelegramSection />
         </Stack>
       </Card>
     </Box>
