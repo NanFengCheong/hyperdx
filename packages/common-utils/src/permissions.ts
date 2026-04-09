@@ -176,7 +176,10 @@ export const PERMISSION_CATEGORIES = [
   },
   {
     label: 'Integrations',
-    permissions: [PERMISSIONS.INTEGRATIONS_VIEW, PERMISSIONS.INTEGRATIONS_MANAGE],
+    permissions: [
+      PERMISSIONS.INTEGRATIONS_VIEW,
+      PERMISSIONS.INTEGRATIONS_MANAGE,
+    ],
   },
 ] as const;
 

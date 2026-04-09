@@ -592,7 +592,8 @@ const api = {
         if (filters?.channel) params.set('channel', filters.channel);
         if (filters?.status) params.set('status', filters.status);
         if (filters?.recipient) params.set('recipient', filters.recipient);
-        if (filters?.triggerType) params.set('triggerType', filters.triggerType);
+        if (filters?.triggerType)
+          params.set('triggerType', filters.triggerType);
         if (filters?.triggerId) params.set('triggerId', filters.triggerId);
         if (filters?.fromDate) params.set('fromDate', filters.fromDate);
         if (filters?.toDate) params.set('toDate', filters.toDate);
@@ -942,7 +943,7 @@ export const useAdminRetryNotification = () => {
       });
     },
   });
-}
+};
 
 export const useAdminNotificationLogRetention = () =>
   useQuery<{ retentionDays: number }>({

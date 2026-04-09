@@ -44,14 +44,14 @@ import { useBrandDisplayName } from './theme/ThemeProvider';
 import {
   useAdminAuditLog,
   useAdminNotificationLog,
-  useAdminRetryNotification,
   useAdminNotificationLogRetention,
-  useUpdateAdminNotificationLogRetention,
+  useAdminRetryNotification,
   useAdminTeamMembers,
   useAdminTeams,
   useDataRetentionSettings,
   useRunDataRetention,
   useToggleSuperAdmin,
+  useUpdateAdminNotificationLogRetention,
   useUpdateDataRetentionSettings,
 } from './api';
 import { withAppNav } from './layout';

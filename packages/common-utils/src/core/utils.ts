@@ -455,7 +455,7 @@ export const formatDate = (
   if (timezone) {
     return formatInTimeZone(date, timezone, formatStr);
   }
-  
+
   return isUTC
     ? formatInTimeZone(date, 'Etc/UTC', formatStr)
     : fnsFormat(date, formatStr);

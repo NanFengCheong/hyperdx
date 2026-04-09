@@ -43,17 +43,14 @@ import Group from '@/models/group';
 import NotificationLog from '@/models/notificationLog';
 import Role from '@/models/role';
 import TeamInvite from '@/models/teamInvite';
-import {
-  getTransporter,
-  sendTeamInviteEmail,
-} from '@/utils/emailService';
+import User from '@/models/user';
+import { registerWebhook, validateBotToken } from '@/services/telegram';
+import { getTransporter, sendTeamInviteEmail } from '@/utils/emailService';
 import {
   createNotificationEntry,
   markNotificationFailed,
   markNotificationSuccess,
 } from '@/utils/notificationLogger';
-import User from '@/models/user';
-import { registerWebhook, validateBotToken } from '@/services/telegram';
 import { sendJson } from '@/utils/serialization';
 import { objectIdSchema } from '@/utils/zod';
 
@@ -283,7 +280,7 @@ router.post(
       const joinUrl = `${config.FRONTEND_URL}/join-team?token=${teamInvite.token}`;
 
       // Send invite email (non-blocking, don't fail the request if email fails)
-      sendTeamInviteEmail(normalizedEmail, fromEmail, joinUrl);
+      void sendTeamInviteEmail(normalizedEmail, fromEmail, joinUrl);
 
       res.json({
         url: joinUrl,

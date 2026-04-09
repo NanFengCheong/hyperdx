@@ -323,10 +323,15 @@ const fireChannelEvent = async ({
     teamWebhooksById,
     teamUsersById,
     notificationContext: {
-      teamId: (typeof alert.team === 'object' && '_id' in alert.team)
-        ? alert.team._id
-        : alert.team as mongoose.Types.ObjectId,
-      trigger: { type: 'alert', id: alert.id, name: alert.name ?? 'Unnamed Alert' },
+      teamId:
+        typeof alert.team === 'object' && '_id' in alert.team
+          ? alert.team._id
+          : (alert.team as mongoose.Types.ObjectId),
+      trigger: {
+        type: 'alert',
+        id: alert.id,
+        name: alert.name ?? 'Unnamed Alert',
+      },
     },
   });
 };

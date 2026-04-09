@@ -42,15 +42,15 @@ import {
 import { escapeJsonString, unflattenObject } from '@/tasks/util';
 import { truncateString } from '@/utils/common';
 import {
-  sendAlertNotificationEmail,
   NotificationContext,
+  sendAlertNotificationEmail,
 } from '@/utils/emailService';
+import logger from '@/utils/logger';
 import {
   createNotificationEntry,
   markNotificationFailed,
   markNotificationSuccess,
 } from '@/utils/notificationLogger';
-import logger from '@/utils/logger';
 import * as slack from '@/utils/slack';
 
 const MAX_MESSAGE_LENGTH = 500;

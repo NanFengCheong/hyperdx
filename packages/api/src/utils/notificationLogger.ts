@@ -1,8 +1,6 @@
 import mongoose from 'mongoose';
 
-import NotificationLog, {
-  INotificationLog,
-} from '@/models/notificationLog';
+import NotificationLog, { INotificationLog } from '@/models/notificationLog';
 import logger from '@/utils/logger';
 
 interface LogNotificationParams {

@@ -6,12 +6,12 @@ import { renderAlertNotification } from '@/emails/AlertNotification';
 import { renderLoginVerification } from '@/emails/LoginVerification';
 import { renderPasswordReset } from '@/emails/PasswordReset';
 import { renderTeamInvite } from '@/emails/TeamInvite';
+import logger from '@/utils/logger';
 import {
   createNotificationEntry,
   markNotificationFailed,
   markNotificationSuccess,
 } from '@/utils/notificationLogger';
-import logger from '@/utils/logger';
 
 let transporter: nodemailer.Transporter | null = null;
 

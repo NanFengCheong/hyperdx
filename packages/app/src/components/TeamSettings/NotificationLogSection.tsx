@@ -202,7 +202,9 @@ export default function NotificationLogSection() {
                     <Table.Tr
                       key={entry._id}
                       onClick={() =>
-                        setExpandedId(expandedId === entry._id ? null : entry._id)
+                        setExpandedId(
+                          expandedId === entry._id ? null : entry._id,
+                        )
                       }
                       style={{ cursor: 'pointer' }}
                     >
@@ -240,9 +242,7 @@ export default function NotificationLogSection() {
                         </Text>
                       </Table.Td>
                       <Table.Td>
-                        <Text size="xs">
-                          {entry.trigger?.name ?? '\u2014'}
-                        </Text>
+                        <Text size="xs">{entry.trigger?.name ?? '\u2014'}</Text>
                       </Table.Td>
                       <Table.Td>
                         {entry.status === 'failed' && (

@@ -12,11 +12,13 @@ interface TeamInviteProps {
 
 function TeamInviteEmail({ invitedByEmail, joinUrl }: TeamInviteProps) {
   return (
-    <Layout preview={`${invitedByEmail} invited you to join their team on HyperDX`}>
+    <Layout
+      preview={`${invitedByEmail} invited you to join their team on HyperDX`}
+    >
       <Section style={sectionStyle}>
         <Text style={textStyle}>
-          <strong>{invitedByEmail}</strong> has invited you to join their team on
-          HyperDX.
+          <strong>{invitedByEmail}</strong> has invited you to join their team
+          on HyperDX.
         </Text>
         <Text style={textStyle}>
           Click the button below to accept the invitation and create your

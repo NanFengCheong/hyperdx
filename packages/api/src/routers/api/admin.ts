@@ -6,6 +6,7 @@ import {
   RETENTION_DAYS_ALERTHISTORY,
   RETENTION_DAYS_AUDITLOG,
 } from '../../config';
+import * as config from '../../config';
 import { isUserAuthenticated, requireSuperAdmin } from '../../middleware/auth';
 import AuditLog from '../../models/auditLog';
 import NotificationLog from '../../models/notificationLog';
@@ -13,13 +14,12 @@ import PlatformSetting from '../../models/platformSetting';
 import Team from '../../models/team';
 import User from '../../models/user';
 import DataRetentionTask from '../../tasks/dataRetention';
+import { getTransporter } from '../../utils/emailService';
 import {
   createNotificationEntry,
   markNotificationFailed,
   markNotificationSuccess,
 } from '../../utils/notificationLogger';
-import { getTransporter } from '../../utils/emailService';
-import * as config from '../../config';
 
 const router = express.Router();
 

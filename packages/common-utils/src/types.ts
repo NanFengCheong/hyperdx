@@ -334,8 +334,13 @@ export const zAlertChannel = z.union([
       userIds: z.array(z.string().nonempty("User ID can't be empty")),
     })
     .refine(
-      data => data.entireTeam === true || (data.userIds && data.userIds.length > 0),
-      { message: 'At least one recipient is required when not notifying entire team', path: ['userIds'] },
+      data =>
+        data.entireTeam === true || (data.userIds && data.userIds.length > 0),
+      {
+        message:
+          'At least one recipient is required when not notifying entire team',
+        path: ['userIds'],
+      },
     ),
   z.object({
     type: z.literal('telegram'),
