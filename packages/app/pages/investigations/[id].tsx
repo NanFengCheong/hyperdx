@@ -9,8 +9,9 @@ import {
   Text,
   Title,
 } from '@mantine/core';
+import { useState } from 'react';
 
-import { InvestigationChat } from '@/components/Investigation';
+import { InvestigationChat, InvestigationExport } from '@/components/Investigation';
 import {
   useDeleteInvestigation,
   useExportInvestigation,
@@ -21,10 +22,22 @@ import {
 function InvestigationDetailContent() {
   const router = useRouter();
   const id = router.query.id as string;
-  const { data: investigation, isLoading } = useInvestigation(id);
+  const { data: investigation, isLoading, refetch } = useInvestigation(id);
   const updateInvestigation = useUpdateInvestigation();
   const deleteInvestigation = useDeleteInvestigation();
   const exportInvestigation = useExportInvestigation();
+  const [exportModalOpened, setExportModalOpened] = useState(false);
+
+  const handleExport = (format: 'markdown' | 'json') => {
+    exportInvestigation.mutate(
+      { id, format, sourceId: '' },
+      {
+        onSuccess: () => {
+          refetch();
+        },
+      },
+    );
+  };
 
   if (isLoading || !investigation) {
     return (
@@ -71,24 +84,18 @@ function InvestigationDetailContent() {
                   Mark Resolved
                 </Menu.Item>
                 <Menu.Item
-                  onClick={() =>
-                    exportInvestigation.mutate({
-                      id: investigation._id,
-                      format: 'markdown',
-                      sourceId,
-                    })
-                  }
+                  onClick={() => {
+                    setExportModalOpened(true);
+                    handleExport('markdown');
+                  }}
                 >
                   Export as Markdown
                 </Menu.Item>
                 <Menu.Item
-                  onClick={() =>
-                    exportInvestigation.mutate({
-                      id: investigation._id,
-                      format: 'json',
-                      sourceId,
-                    })
-                  }
+                  onClick={() => {
+                    setExportModalOpened(true);
+                    handleExport('json');
+                  }}
                 >
                   Export as JSON
                 </Menu.Item>
@@ -112,6 +119,14 @@ function InvestigationDetailContent() {
       <Box style={{ flex: 1, overflow: 'hidden' }}>
         <InvestigationChat investigationId={id} sourceId={sourceId} />
       </Box>
+
+      <InvestigationExport
+        opened={exportModalOpened}
+        onClose={() => setExportModalOpened(false)}
+        exports={investigation.exports ?? []}
+        onExport={handleExport}
+        isExporting={exportInvestigation.isPending}
+      />
     </Box>
   );
 }
