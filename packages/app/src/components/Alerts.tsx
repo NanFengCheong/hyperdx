@@ -1,13 +1,13 @@
 import { useMemo } from 'react';
 import { Control, useController } from 'react-hook-form';
-import { Select, SelectProps } from 'react-hook-form-mantine';
+import { MultiSelect, Select, SelectProps } from 'react-hook-form-mantine';
 import { Label, ReferenceArea, ReferenceLine } from 'recharts';
 import {
   type AlertChannelType,
   type TeamMember,
   WebhookService,
 } from '@hyperdx/common-utils/dist/types';
-import { Button, ComboboxData, Group, Modal, MultiSelect } from '@mantine/core';
+import { Button, ComboboxData, Group, Modal } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 
 import api from '@/api';
@@ -107,11 +107,11 @@ const WebhookChannelForm = <T extends object>(
   );
 };
 
-const EmailChannelForm = <T extends object>({
+const EmailChannelForm = ({
   control,
   namePrefix = '',
 }: {
-  control: Control<T>;
+  control: Control<any>;
   namePrefix?: string;
 }) => {
   const { data: teamMembers } = api.useTeamMembers();
@@ -133,10 +133,8 @@ const EmailChannelForm = <T extends object>({
       size="xs"
       placeholder="Select team members to notify"
       data={options}
-      {...({
-        name: `${namePrefix}channel.userIds`,
-        control,
-      } as any)}
+      name={`${namePrefix}channel.userIds`}
+      control={control}
       comboboxProps={{
         withinPortal: false,
       }}
