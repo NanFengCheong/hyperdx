@@ -40,7 +40,6 @@ import { usePermissions } from '@/contexts/PermissionContext';
 import { Dashboard, useDashboards } from '@/dashboard';
 import { useFavorites } from '@/favorites';
 import { useIsSuperAdmin } from '@/hooks/usePermission';
-import IntegrationGuideDrawer from '@/IntegrationGuideDrawer';
 import OnboardingChecklist from '@/OnboardingChecklist';
 import { useSavedSearches } from '@/savedSearch';
 import { useLogomark, useWordmark } from '@/theme/ThemeProvider';
@@ -277,10 +276,9 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
     userPreferences: { isUTC },
   } = useUserPreferences();
 
-  const [
-    showInstallInstructions,
-    { open: openInstallInstructions, close: closeInstallInstructions },
-  ] = useDisclosure(false);
+  const navigateToIntegrationGuide = useCallback(() => {
+    Router.push('/integration-guide');
+  }, []);
 
   const isSavedSearchActive = useMemo(() => {
     if (!pathname?.startsWith('/search/')) return false;
@@ -335,10 +333,6 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
           }}
         ></div>
       )}
-      <IntegrationGuideDrawer
-        opened={showInstallInstructions}
-        onClose={closeInstallInstructions}
-      />
       <div
         data-testid="app-nav"
         className={cx(styles.nav, {
@@ -485,36 +479,12 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
               </Collapse>
             )}
 
-            {!isCollapsed && (
-              <Text size="xs" px="lg" py="xs" fw="lighter" fs="italic">
-                Saved searches and dashboards have moved! Try the{' '}
-                <Anchor component={Link} href="/search/list">
-                  Saved Searches
-                </Anchor>{' '}
-                or{' '}
-                <Anchor component={Link} href="/dashboards/list">
-                  Dashboards
-                </Anchor>{' '}
-                page.
-              </Text>
-            )}
-
             {/* Integration Guide */}
             {!IS_LOCAL_MODE && (
-              <button
-                type="button"
+              <Link
+                href="/integration-guide"
                 className={styles.navItem}
-                onClick={openInstallInstructions}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  width: '100%',
-                  textAlign: 'left',
-                  padding: 0,
-                  font: 'inherit',
-                  color: 'inherit',
-                }}
+                style={{ textDecoration: 'none', color: 'inherit' }}
               >
                 <span className={styles.navItemContent}>
                   <span className={styles.navItemIcon}>
@@ -522,7 +492,7 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
                   </span>
                   {!isCollapsed && <span>Integration Guide</span>}
                 </span>
-              </button>
+              </Link>
             )}
 
             {/* Help */}
@@ -552,7 +522,7 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
               style={{ width: navWidth }}
               className={styles.onboardingSection}
             >
-              <OnboardingChecklist onAddDataClick={openInstallInstructions} />
+              <OnboardingChecklist onAddDataClick={navigateToIntegrationGuide} />
             </div>
           )}
         </ScrollArea>
