@@ -1,6 +1,7 @@
 import * as React from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import cx from 'classnames';
 import type { Duration } from 'date-fns';
 import { add, formatRelative } from 'date-fns';
@@ -29,8 +30,8 @@ import {
   IconChevronRight,
   IconHelpCircle,
   IconInfoCircleFilled,
-  IconTableRow,
   IconSearch,
+  IconTableRow,
 } from '@tabler/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -45,7 +46,6 @@ import api from './api';
 import { withAppNav } from './layout';
 import type { AlertsPageItem } from './types';
 import { FormatTime } from './useFormatTime';
-import { useRouter } from 'next/router';
 
 import styles from '../styles/AlertsPage.module.scss';
 

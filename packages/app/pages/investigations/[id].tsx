@@ -1,23 +1,19 @@
+import { useState } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import {
-  Badge,
-  Box,
-  Button,
-  Group,
-  Menu,
-  Text,
-  Title,
-} from '@mantine/core';
-import { useState } from 'react';
+import { Badge, Box, Button, Group, Menu, Text, Title } from '@mantine/core';
 
-import { InvestigationChat, InvestigationExport } from '@/components/Investigation';
+import {
+  InvestigationChat,
+  InvestigationExport,
+} from '@/components/Investigation';
 import {
   useDeleteInvestigation,
   useExportInvestigation,
   useInvestigation,
   useUpdateInvestigation,
 } from '@/hooks/useInvestigations';
+import { withAppNav } from '@/layout';
 
 function InvestigationDetailContent() {
   const router = useRouter();
@@ -68,7 +64,7 @@ function InvestigationDetailContent() {
           <Group gap="xs">
             <Menu>
               <Menu.Target>
-                <Button variant="outline" size="sm">
+                <Button variant="secondary" size="sm">
                   Actions
                 </Button>
               </Menu.Target>
@@ -149,6 +145,4 @@ export default function InvestigationDetailPage() {
   );
 }
 
-InvestigationDetailPage.getLayout = function getLayout(page: React.ReactNode) {
-  return require('@/layout').withAppNav(page);
-};
+InvestigationDetailPage.getLayout = withAppNav;

@@ -19,8 +19,8 @@ import {
 } from '@mantine/core';
 import { IconPencil, IconSparkles } from '@tabler/icons-react';
 
-import { InvestigationSidePanel } from '@/components/Investigation';
 import { DBTraceWaterfallChartContainer } from '@/components/DBTraceWaterfallChart';
+import { InvestigationSidePanel } from '@/components/Investigation';
 import { SQLInlineEditorControlled } from '@/components/SQLEditor/SQLInlineEditor';
 import { WithClause } from '@/hooks/useRowWhere';
 import { useSource, useUpdateSource } from '@/source';
@@ -186,7 +186,7 @@ export default function DBTracePanel({
           />
           {traceId && (
             <Button
-              variant="light"
+              variant="secondary"
               size="xs"
               leftSection={<IconSparkles size={14} />}
               onClick={() => setInvestigationOpened(true)}
@@ -311,9 +311,9 @@ export default function DBTracePanel({
         sourceId={
           traceSourceData?.id ??
           (parentSourceData != null && isTraceSource(parentSourceData)
-            ? parentSourceId ?? ''
+            ? (parentSourceId ?? '')
             : childSourceData != null && isTraceSource(childSourceData)
-              ? sourceId ?? ''
+              ? (sourceId ?? '')
               : '')
         }
       />

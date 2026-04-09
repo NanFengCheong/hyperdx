@@ -57,8 +57,8 @@ export function convertMessagesToAIFormat(
   messages: IInvestigationMessage[],
 ): Array<{ role: 'user' | 'assistant'; content: string }> {
   return messages
-    .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .map((m) => ({
+    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .map(m => ({
       role: m.role as 'user' | 'assistant',
       content: m.content,
     }));

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Box,
   Button,
@@ -9,7 +10,6 @@ import {
   Text,
   Textarea,
 } from '@mantine/core';
-import { useState } from 'react';
 
 interface InvestigationExportProps {
   opened: boolean;
@@ -51,10 +51,10 @@ export default function InvestigationExport({
                 { label: 'JSON', value: 'json' },
               ]}
               value={selectedFormat}
-              onChange={(v) => setSelectedFormat(v as 'markdown' | 'json')}
+              onChange={v => setSelectedFormat(v as 'markdown' | 'json')}
             />
             <Button
-              variant="filled"
+              variant="primary"
               onClick={() => onExport(selectedFormat)}
               loading={isExporting}
             >
@@ -65,12 +65,11 @@ export default function InvestigationExport({
           <>
             <Group justify="space-between">
               <Text size="sm" fw={500}>
-                Generated{' '}
-                {new Date(latestExport.createdAt).toLocaleString()}
+                Generated {new Date(latestExport.createdAt).toLocaleString()}
               </Text>
               <CopyButton value={latestExport.content}>
                 {({ copied, copy }) => (
-                  <Button variant="outline" size="xs" onClick={copy}>
+                  <Button variant="secondary" size="xs" onClick={copy}>
                     {copied ? 'Copied!' : 'Copy'}
                   </Button>
                 )}
@@ -83,7 +82,10 @@ export default function InvestigationExport({
               minRows={10}
               maxRows={20}
             />
-            <Button variant="outline" onClick={() => onExport(selectedFormat)}>
+            <Button
+              variant="secondary"
+              onClick={() => onExport(selectedFormat)}
+            >
               Regenerate
             </Button>
           </>

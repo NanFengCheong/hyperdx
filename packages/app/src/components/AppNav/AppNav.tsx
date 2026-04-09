@@ -530,7 +530,9 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
               style={{ width: navWidth }}
               className={styles.onboardingSection}
             >
-              <OnboardingChecklist onAddDataClick={navigateToIntegrationGuide} />
+              <OnboardingChecklist
+                onAddDataClick={navigateToIntegrationGuide}
+              />
             </div>
           )}
         </ScrollArea>

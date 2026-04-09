@@ -1,6 +1,6 @@
+import { useState } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import { useState } from 'react';
 import {
   Badge,
   Box,
@@ -13,10 +13,11 @@ import {
 } from '@mantine/core';
 
 import {
+  type Investigation,
   useCreateInvestigation,
   useInvestigations,
-  type Investigation,
 } from '@/hooks/useInvestigations';
+import { withAppNav } from '@/layout';
 
 const STATUS_COLORS: Record<string, string> = {
   active: 'blue',
@@ -43,7 +44,7 @@ function InvestigationsContent() {
       <Group justify="space-between" mb="lg">
         <Title order={3}>Investigations</Title>
         <Button
-          variant="filled"
+          variant="primary"
           onClick={handleNew}
           loading={createInvestigation.isPending}
         >
@@ -101,7 +102,7 @@ function InvestigationsContent() {
           <Button
             variant="subtle"
             disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
+            onClick={() => setPage(p => p - 1)}
           >
             Previous
           </Button>
@@ -111,7 +112,7 @@ function InvestigationsContent() {
           <Button
             variant="subtle"
             disabled={page * 20 >= data.total}
-            onClick={() => setPage((p) => p + 1)}
+            onClick={() => setPage(p => p + 1)}
           >
             Next
           </Button>
@@ -132,6 +133,4 @@ export default function InvestigationsPage() {
   );
 }
 
-InvestigationsPage.getLayout = function getLayout(page: React.ReactNode) {
-  return require('@/layout').withAppNav(page);
-};
+InvestigationsPage.getLayout = withAppNav;

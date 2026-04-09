@@ -17,7 +17,12 @@ import {
   TextProps,
   Tooltip,
 } from '@mantine/core';
-import { IconCheck, IconCode, IconCopy, IconRefresh } from '@tabler/icons-react';
+import {
+  IconCheck,
+  IconCode,
+  IconCopy,
+  IconRefresh,
+} from '@tabler/icons-react';
 
 import { useTableMetadata } from '@/hooks/useMetadata';
 

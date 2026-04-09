@@ -1,5 +1,9 @@
-import { buildSystemPrompt, convertMessagesToAIFormat } from '../investigation-agent';
 import type { IInvestigationMessage } from '@/models/investigation';
+
+import {
+  buildSystemPrompt,
+  convertMessagesToAIFormat,
+} from '../investigation-agent';
 
 describe('Investigation agent', () => {
   it('builds system prompt with schema and entry point context', () => {

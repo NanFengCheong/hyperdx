@@ -366,8 +366,7 @@ function OptionsTable() {
     },
     {
       name: 'service',
-      description:
-        'The service name events will show up as in the UI.',
+      description: 'The service name events will show up as in the UI.',
     },
     {
       name: 'tracePropagationTargets',
@@ -390,13 +389,11 @@ function OptionsTable() {
     },
     {
       name: 'maskAllInputs',
-      description:
-        'Mask all input fields in session replay (default: false).',
+      description: 'Mask all input fields in session replay (default: false).',
     },
     {
       name: 'maskAllText',
-      description:
-        'Mask all text in session replay (default: false).',
+      description: 'Mask all text in session replay (default: false).',
     },
     {
       name: 'disableReplay',
@@ -647,10 +644,7 @@ export default function IntegrationGuidePage() {
               <Text size="sm" c="blue">
                 {current.docsLabel}
               </Text>
-              <IconExternalLink
-                size={14}
-                color="var(--mantine-color-blue-5)"
-              />
+              <IconExternalLink size={14} color="var(--mantine-color-blue-5)" />
             </Group>
           </Anchor>
         </Box>

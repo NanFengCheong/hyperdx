@@ -3,6 +3,8 @@ import express from 'express';
 import { z } from 'zod';
 import { validateRequest } from 'zod-express-middleware';
 
+import { getAIModel } from '@/controllers/ai';
+import { getConnectionById } from '@/controllers/connection';
 import {
   addExport,
   appendMessage,
@@ -22,12 +24,10 @@ import {
   buildSchemaPrompt,
   fetchClickHouseSchema,
 } from '@/controllers/investigation-tools/schema';
-import { getAIModel } from '@/controllers/ai';
-import { getConnectionById } from '@/controllers/connection';
 import { getSource } from '@/controllers/sources';
 import { getNonNullUserWithTeam } from '@/middleware/auth';
-import { objectIdSchema } from '@/utils/zod';
 import logger from '@/utils/logger';
+import { objectIdSchema } from '@/utils/zod';
 
 const router = express.Router();
 
@@ -223,8 +223,10 @@ router.post(
           username: connection.username,
           password: connection.password,
         },
-        onTextDelta: (delta) => {
-          res.write(`data: ${JSON.stringify({ type: 'text', content: delta })}\n\n`);
+        onTextDelta: delta => {
+          res.write(
+            `data: ${JSON.stringify({ type: 'text', content: delta })}\n\n`,
+          );
         },
         onToolCall: (toolName, args, result) => {
           toolCalls.push({ name: toolName, args, result });

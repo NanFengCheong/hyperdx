@@ -1,9 +1,9 @@
-import Investigation from '@/models/investigation';
+import Alert from '@/models/alert';
 import type {
   EntryPointType,
   InvestigationStatus,
 } from '@/models/investigation';
-import Alert from '@/models/alert';
+import Investigation from '@/models/investigation';
 
 export async function createInvestigation({
   teamId,

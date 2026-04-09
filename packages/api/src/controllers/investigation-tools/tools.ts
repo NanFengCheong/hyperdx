@@ -22,10 +22,7 @@ const searchTracesInputSchema = z.object({
     .number()
     .optional()
     .describe('Minimum duration in milliseconds'),
-  query: z
-    .string()
-    .optional()
-    .describe('Additional WHERE clause conditions'),
+  query: z.string().optional().describe('Additional WHERE clause conditions'),
   fields: z
     .array(z.string())
     .optional()
@@ -69,18 +66,12 @@ const findSimilarErrorsInputSchema = z.object({
 });
 
 const getServiceMapInputSchema = z.object({
-  service: z
-    .string()
-    .optional()
-    .describe('Center service (omit for full map)'),
+  service: z.string().optional().describe('Center service (omit for full map)'),
   timeRange: timeRangeSchema,
 });
 
 const getSessionReplayInputSchema = z.object({
-  traceId: z
-    .string()
-    .optional()
-    .describe('Find session linked to this trace'),
+  traceId: z.string().optional().describe('Find session linked to this trace'),
   sessionId: z.string().optional().describe('Direct session ID lookup'),
 });
 
@@ -114,7 +105,7 @@ export function createInvestigationTools(connection: {
     description:
       'Search for traces by service name, time range, status, or duration. Returns top matching traces.',
     inputSchema: searchTracesInputSchema,
-    execute: async (input) => {
+    execute: async input => {
       const params = searchTracesInputSchema.parse(input);
       const conditions: string[] = [
         `Timestamp >= '${params.timeRange.start}'`,
@@ -167,7 +158,7 @@ export function createInvestigationTools(connection: {
     description:
       'Get the full span tree for a specific trace ID, including timing, attributes, events, and errors.',
     inputSchema: getTraceDetailInputSchema,
-    execute: async (input) => {
+    execute: async input => {
       const params = getTraceDetailInputSchema.parse(input);
       const query = `
         SELECT TraceId, SpanId, ParentSpanId, SpanName, ServiceName,
@@ -196,7 +187,7 @@ export function createInvestigationTools(connection: {
     description:
       'Search logs by text query, time range, service, and severity level.',
     inputSchema: searchLogsInputSchema,
-    execute: async (input) => {
+    execute: async input => {
       const params = searchLogsInputSchema.parse(input);
       const conditions: string[] = [
         `Timestamp >= '${params.timeRange.start}'`,
@@ -244,7 +235,7 @@ export function createInvestigationTools(connection: {
     description:
       'Get time series metrics (error rate, latency percentiles, throughput) for a service.',
     inputSchema: getMetricsInputSchema,
-    execute: async (input) => {
+    execute: async input => {
       const params = getMetricsInputSchema.parse(input);
       const granularity = params.granularity ?? '5m';
       const granularitySecondsMap: Record<string, number> = {
@@ -321,7 +312,7 @@ export function createInvestigationTools(connection: {
     description:
       'Find traces and logs with similar error messages, grouped by pattern with frequency counts.',
     inputSchema: findSimilarErrorsInputSchema,
-    execute: async (input) => {
+    execute: async input => {
       const params = findSimilarErrorsInputSchema.parse(input);
       const timeFilter = params.timeRange
         ? `AND Timestamp >= '${params.timeRange.start}' AND Timestamp <= '${params.timeRange.end}'`
@@ -369,7 +360,7 @@ export function createInvestigationTools(connection: {
     description:
       'Get upstream and downstream service dependencies with edge latency and error rates.',
     inputSchema: getServiceMapInputSchema,
-    execute: async (input) => {
+    execute: async input => {
       const params = getServiceMapInputSchema.parse(input);
       const serviceFilter = params.service
         ? `AND (parent.ServiceName = {service:String} OR child.ServiceName = {service:String})`
@@ -414,7 +405,7 @@ export function createInvestigationTools(connection: {
     description:
       'Get session replay metadata and linked trace IDs for a given trace or session ID.',
     inputSchema: getSessionReplayInputSchema,
-    execute: async (input) => {
+    execute: async input => {
       const params = getSessionReplayInputSchema.parse(input);
       if (!params.traceId && !params.sessionId) {
         return 'Error: provide either traceId or sessionId';

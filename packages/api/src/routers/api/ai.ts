@@ -2,12 +2,7 @@ import {
   AssistantLineTableConfigSchema,
   SourceKind,
 } from '@hyperdx/common-utils/dist/types';
-import {
-  APICallError,
-  generateText,
-  NoObjectGeneratedError,
-  Output,
-} from 'ai';
+import { APICallError, generateText, NoObjectGeneratedError, Output } from 'ai';
 import express from 'express';
 import { z } from 'zod';
 import { validateRequest } from 'zod-express-middleware';

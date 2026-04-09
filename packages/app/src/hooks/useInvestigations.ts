@@ -43,8 +43,7 @@ export function useInvestigations(page = 1, limit = 20) {
 export function useInvestigation(id: string | undefined) {
   return useQuery({
     queryKey: ['investigation', id],
-    queryFn: () =>
-      hdxServer(`investigations/${id}`).json<Investigation>(),
+    queryFn: () => hdxServer(`investigations/${id}`).json<Investigation>(),
     enabled: !!id,
   });
 }
@@ -175,10 +174,10 @@ export function useInvestigationChat(investigationId: string | undefined) {
 
             switch (data.type) {
               case 'text':
-                setStreamedText((prev) => prev + data.content);
+                setStreamedText(prev => prev + data.content);
                 break;
               case 'tool':
-                setToolEvents((prev) => [
+                setToolEvents(prev => [
                   ...prev,
                   { name: data.name, args: data.args, result: data.result },
                 ]);

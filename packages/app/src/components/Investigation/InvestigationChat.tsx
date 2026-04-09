@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActionIcon,
   Box,
@@ -7,7 +8,6 @@ import {
   Text,
   Textarea,
 } from '@mantine/core';
-import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   useInvestigation,
@@ -69,7 +69,8 @@ export default function InvestigationChat({
             <Box style={{ alignSelf: 'flex-start', maxWidth: '85%' }}>
               {toolEvents.map((te, i) => (
                 <Text key={i} size="xs" c="dimmed" mb="xs">
-                  {'\u{1F527}'} {te.name}({JSON.stringify(te.args).slice(0, 100)})
+                  {'\u{1F527}'} {te.name}(
+                  {JSON.stringify(te.args).slice(0, 100)})
                 </Text>
               ))}
               {streamedText ? (
@@ -85,13 +86,16 @@ export default function InvestigationChat({
       </ScrollArea>
 
       {/* Input area */}
-      <Box p="md" style={{ borderTop: '1px solid var(--mantine-color-dark-4)' }}>
+      <Box
+        p="md"
+        style={{ borderTop: '1px solid var(--mantine-color-dark-4)' }}
+      >
         <Box style={{ display: 'flex', gap: 8 }}>
           <Textarea
             style={{ flex: 1 }}
             placeholder="Ask about this trace, search logs, find root cause..."
             value={input}
-            onChange={(e) => setInput(e.currentTarget.value)}
+            onChange={e => setInput(e.currentTarget.value)}
             onKeyDown={handleKeyDown}
             autosize
             minRows={1}
@@ -99,17 +103,12 @@ export default function InvestigationChat({
             disabled={isStreaming}
           />
           {isStreaming ? (
-            <ActionIcon
-              variant="subtle"
-              onClick={cancel}
-              size="lg"
-              mt="auto"
-            >
+            <ActionIcon variant="subtle" onClick={cancel} size="lg" mt="auto">
               {'\u23F9'}
             </ActionIcon>
           ) : (
             <ActionIcon
-              variant="filled"
+              variant="primary"
               onClick={handleSend}
               size="lg"
               mt="auto"

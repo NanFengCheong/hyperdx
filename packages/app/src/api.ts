@@ -244,20 +244,18 @@ const api = {
   },
   useCreateAlertInvestigation() {
     const queryClient = useQueryClient();
-    return useMutation<
-      { _id: string },
-      Error | HTTPError,
-      { alertId: string }
-    >({
-      mutationFn: ({ alertId }) =>
-        hdxServer(`investigations/from-alert`, {
-          method: 'POST',
-          json: { alertId },
-        }).json(),
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ['investigations'] });
+    return useMutation<{ _id: string }, Error | HTTPError, { alertId: string }>(
+      {
+        mutationFn: ({ alertId }) =>
+          hdxServer(`investigations/from-alert`, {
+            method: 'POST',
+            json: { alertId },
+          }).json(),
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: ['investigations'] });
+        },
       },
-    });
+    );
   },
   useServices() {
     return useQuery({

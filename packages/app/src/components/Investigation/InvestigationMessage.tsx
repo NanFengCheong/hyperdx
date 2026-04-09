@@ -1,14 +1,6 @@
-import {
-  Badge,
-  Box,
-  Collapse,
-  Group,
-  Paper,
-  Stack,
-  Text,
-} from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
 import { memo } from 'react';
+import { Badge, Box, Collapse, Group, Paper, Stack, Text } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 
 interface ToolCall {
   name: string;

@@ -13,7 +13,7 @@
 import { AssistantLineTableConfigSchema } from '@hyperdx/common-utils/dist/types';
 
 // Use native https (jest.setup.ts mocks global.fetch, so we bypass it)
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+
 const https = require('https');
 
 // ---------------------------------------------------------------------------
@@ -256,8 +256,7 @@ async function callChatCompletion(
 
   return {
     content: choice.message.content ?? data.output?.text ?? '',
-    inputTokens:
-      data.usage?.prompt_tokens ?? data.usage?.input_tokens ?? 0,
+    inputTokens: data.usage?.prompt_tokens ?? data.usage?.input_tokens ?? 0,
     outputTokens:
       data.usage?.completion_tokens ?? data.usage?.output_tokens ?? 0,
     reasoningTokens:

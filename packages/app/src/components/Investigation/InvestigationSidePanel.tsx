@@ -1,7 +1,7 @@
+import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import { ActionIcon, Box, Drawer, Group, Text } from '@mantine/core';
 import { useHotkeys } from '@mantine/hooks';
-import { useRouter } from 'next/router';
-import { useCallback, useEffect, useState } from 'react';
 
 import { useCreateInvestigation } from '../../hooks/useInvestigations';
 
