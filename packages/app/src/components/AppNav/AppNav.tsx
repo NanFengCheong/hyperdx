@@ -46,7 +46,7 @@ import api from '@/api';
 import { IS_LOCAL_MODE } from '@/config';
 import { usePermissions } from '@/contexts/PermissionContext';
 import { useIsSuperAdmin } from '@/hooks/usePermission';
-import InstallInstructionModal from '@/InstallInstructionsModal';
+import IntegrationGuideDrawer from '@/IntegrationGuideDrawer';
 import OnboardingChecklist from '@/OnboardingChecklist';
 import { useSavedSearches, useUpdateSavedSearch } from '@/savedSearch';
 import { useLogomark, useWordmark } from '@/theme/ThemeProvider';
@@ -538,9 +538,9 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
           }}
         ></div>
       )}
-      <InstallInstructionModal
-        show={showInstallInstructions}
-        onHide={closeInstallInstructions}
+      <IntegrationGuideDrawer
+        opened={showInstallInstructions}
+        onClose={closeInstallInstructions}
       />
       <div
         className={cx(styles.nav, {
