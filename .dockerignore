@@ -1,5 +1,34 @@
 .git
 .volumes
 .DS_Store
+.vscode
+.idea
+
+# Dependencies (rebuilt in Docker)
 node_modules
 packages/*/node_modules
+
+# Build artifacts
+packages/app/.next
+packages/api/build
+packages/common-utils/dist
+
+# Test & docs
+**/__tests__
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+docs
+agent_docs
+*.md
+!packages/*/README.md
+
+# Dev tooling
+.env*
+.eslintcache
+coverage
+.nyc_output
+storybook-static
+playwright-report
+test-results

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import CopyToClipboard from 'react-copy-to-clipboard';
 import {
   MetricsDataType,
   TLogSource,
@@ -6,6 +7,7 @@ import {
   TSource,
 } from '@hyperdx/common-utils/dist/types';
 import {
+  Button,
   Modal,
   Paper,
   Stack,
@@ -14,11 +16,38 @@ import {
   TextProps,
   Tooltip,
 } from '@mantine/core';
-import { IconCode, IconRefresh } from '@tabler/icons-react';
+import { IconCheck, IconCode, IconCopy, IconRefresh } from '@tabler/icons-react';
 
 import { useTableMetadata } from '@/hooks/useMetadata';
 
 import { SQLPreview } from './ChartSQLPreview';
+
+function extractColumnNames(createTableQuery: string): string[] {
+  const columns: string[] = [];
+  const lines = createTableQuery.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // Skip lines that are INDEX definitions, ENGINE, PARTITION, ORDER BY, etc.
+    if (
+      trimmed.startsWith('INDEX ') ||
+      trimmed.startsWith('ENGINE') ||
+      trimmed.startsWith('PARTITION') ||
+      trimmed.startsWith('ORDER BY') ||
+      trimmed.startsWith('SETTINGS') ||
+      trimmed.startsWith('CREATE ') ||
+      trimmed.startsWith(')') ||
+      trimmed.startsWith('ttl_') ||
+      trimmed === ''
+    ) {
+      continue;
+    }
+    const match = trimmed.match(/^`([^`]+)`/);
+    if (match) {
+      columns.push(match[1]);
+    }
+  }
+  return columns;
+}
 
 interface SourceSchemaInfoIconProps {
   onClick: () => void;
@@ -70,6 +99,49 @@ interface TableSchemaPreviewProps {
   connectionId: string;
 }
 
+const ColumnsList = ({ query }: { query: string }) => {
+  const [copied, setCopied] = useState(false);
+  const columns = useMemo(() => extractColumnNames(query), [query]);
+
+  if (columns.length === 0) return null;
+
+  const columnsText = columns.join(', ');
+
+  return (
+    <Paper p="xs" radius="sm" bg="dark.7" style={{ position: 'relative' }}>
+      <Text size="xs" fw={600} c="dimmed" mb={4}>
+        Columns
+      </Text>
+      <Text
+        size="xs"
+        c="gray.4"
+        style={{ fontFamily: 'monospace', wordBreak: 'break-word' }}
+      >
+        {columnsText}
+      </Text>
+      <CopyToClipboard
+        text={columnsText}
+        onCopy={() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        }}
+      >
+        <Button
+          variant="subtle"
+          size="compact-xs"
+          color={copied ? 'green' : 'gray'}
+          style={{ position: 'absolute', top: 6, right: 6 }}
+          leftSection={
+            copied ? <IconCheck size={12} /> : <IconCopy size={12} />
+          }
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </Button>
+      </CopyToClipboard>
+    </Paper>
+  );
+};
+
 const TableSchemaPreview = ({
   databaseName,
   tableName,
@@ -116,6 +188,9 @@ const TableSchemaPreview = ({
                 copyButtonSize="xs"
               />
             </>
+          )}
+          {data?.create_table_query && (
+            <ColumnsList query={data.create_table_query} />
           )}
         </Stack>
       )}

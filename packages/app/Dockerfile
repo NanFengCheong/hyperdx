@@ -54,9 +54,11 @@ COPY ./packages/app/pages ./packages/app/pages
 COPY ./packages/app/public ./packages/app/public
 COPY ./packages/app/styles ./packages/app/styles
 COPY ./packages/app/types ./packages/app/types
+
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_OUTPUT_STANDALONE=true
+
 RUN yarn workspace @hyperdx/app run build
-RUN --mount=type=cache,target=/root/.yarn/berry/cache,id=yarn-cache \
-    rm -rf node_modules && yarn workspaces focus @hyperdx/app --production
 
 
 ## prod ############################################################################################
@@ -70,32 +72,27 @@ LABEL org.opencontainers.image.vendor="HyperDX" \
 
 WORKDIR /app
 
-ENV NODE_ENV production
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN addgroup -g 1001 -S nodejs
 RUN adduser -S nextjs -u 1001
 
-# You only need to copy next.config.mjs if you are NOT using the default configuration
-COPY --from=builder /app/packages/app/next.config.mjs ./
-COPY --from=builder --chown=nextjs:nodejs /app/packages/app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/packages/app/.next ./.next
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/packages/app/package.json ./package.json
+# Standalone output: only copies the minimal server + dependencies (~30MB vs ~500MB+ full node_modules)
+COPY --from=builder --chown=nextjs:nodejs /app/packages/app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/packages/app/.next/static ./packages/app/.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/packages/app/public ./packages/app/public
 
 USER nextjs
 
-ARG PORT
+ARG PORT=8080
 
 ENV PORT=$PORT
+ENV HOSTNAME="0.0.0.0"
 
 EXPOSE ${PORT}
-
-# Next.js collects completely anonymous telemetry data about general usage.
-# Learn more here: https://nextjs.org/telemetry
-# Uncomment the following line in case you want to disable telemetry.
-ENV NEXT_TELEMETRY_DISABLED 1
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD node -e "require('http').get('http://localhost:'+(process.env.PORT||8080)+'/api/health',r=>r.statusCode===200?process.exit(0):process.exit(1)).on('error',()=>process.exit(1))"
 
-CMD ["sh", "-c", "node_modules/.bin/next start -p ${PORT}"]
+CMD ["node", "packages/app/server.js"]

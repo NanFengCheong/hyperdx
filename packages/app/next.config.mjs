@@ -24,7 +24,21 @@ const nextConfig = {
   // when running dev and E2E simultaneously (e.g. NEXT_DIST_DIR=.next-e2e)
   ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   reactCompiler: true,
+  poweredByHeader: false,
   basePath: basePath,
+  optimizePackageImports: [
+    '@mantine/core',
+    '@mantine/dates',
+    '@mantine/dropzone',
+    '@mantine/form',
+    '@mantine/hooks',
+    '@mantine/notifications',
+    '@mantine/spotlight',
+    '@tabler/icons-react',
+    'date-fns',
+    'lodash',
+    'recharts',
+  ],
   env: {
     // Ensures bundler-time replacements for client/server code that references this env var
     NEXT_PUBLIC_APP_VERSION: version,
