@@ -200,10 +200,16 @@ router.put(
           .json({ error: `Invalid bot token: ${tokenValidation.error}` });
       }
 
-      await updateTeamTelegramConfig(teamId, req.body);
+      const configToSave = {
+        ...req.body,
+        webhookSecret:
+          req.body.webhookSecret || crypto.randomBytes(32).toString('hex'),
+      };
+
+      await updateTeamTelegramConfig(teamId, configToSave);
 
       // Register webhook with Telegram
-      const webhookResult = await registerWebhook(req.body);
+      const webhookResult = await registerWebhook(configToSave);
       if (!webhookResult.ok) {
         return res.status(400).json({
           error: `Config saved but webhook registration failed: ${webhookResult.error}`,

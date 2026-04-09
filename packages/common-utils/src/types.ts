@@ -813,7 +813,7 @@ export type TeamClickHouseSettings = z.infer<
 export const TelegramConfigSchema = z.object({
   botToken: z.string().min(1),
   webhookUrl: z.string().url(),
-  webhookSecret: z.string().min(1),
+  webhookSecret: z.string().min(1).optional(),
 });
 
 export type TelegramConfig = z.infer<typeof TelegramConfigSchema>;

@@ -23,7 +23,6 @@ export default function TelegramSection() {
 
   const [botToken, setBotToken] = useState('');
   const [webhookUrl, setWebhookUrl] = useState('');
-  const [webhookSecret, setWebhookSecret] = useState('');
 
   const handleSave = async () => {
     if (!botToken && !existing?.botToken) {
@@ -34,19 +33,10 @@ export default function TelegramSection() {
       notifications.show({ color: 'red', message: 'Webhook URL is required' });
       return;
     }
-    if (!webhookSecret && !existing?.webhookSecret) {
-      notifications.show({
-        color: 'red',
-        message: 'Webhook secret is required',
-      });
-      return;
-    }
-
     try {
       await updateConfig.mutateAsync({
         botToken: botToken || existing?.botToken || '',
         webhookUrl,
-        webhookSecret: webhookSecret || existing?.webhookSecret || '',
       });
       queryClient.invalidateQueries({ queryKey: ['team', 'telegram-config'] });
       notifications.show({
@@ -54,7 +44,6 @@ export default function TelegramSection() {
         message: 'Telegram configuration saved',
       });
       setBotToken('');
-      setWebhookSecret('');
     } catch {
       notifications.show({
         color: 'red',
@@ -103,14 +92,6 @@ export default function TelegramSection() {
           placeholder="https://your-domain.com/api/v1/telegram/callback"
           value={webhookUrl}
           onChange={e => setWebhookUrl(e.currentTarget.value)}
-        />
-        <PasswordInput
-          size="xs"
-          label="Webhook Secret"
-          description="Random string for verification. Generate with: openssl rand -hex 32"
-          placeholder={existing?.webhookSecret || 'Enter webhook secret'}
-          value={webhookSecret}
-          onChange={e => setWebhookSecret(e.currentTarget.value)}
         />
         <Group justify="flex-end">
           <Button
