@@ -317,6 +317,7 @@ export const ALERT_INTERVAL_TO_MINUTES: Record<AlertInterval, number> = {
 export const zAlertChannelType = z.union([
   z.literal('webhook'),
   z.literal('email'),
+  z.literal('telegram'),
 ]);
 
 export type AlertChannelType = z.infer<typeof zAlertChannelType>;
@@ -336,6 +337,10 @@ export const zAlertChannel = z.union([
       data => data.entireTeam === true || (data.userIds && data.userIds.length > 0),
       { message: 'At least one recipient is required when not notifying entire team', path: ['userIds'] },
     ),
+  z.object({
+    type: z.literal('telegram'),
+    chatId: z.string().nonempty("Chat ID can't be empty"),
+  }),
 ]);
 
 export const zSavedSearchAlert = z.object({
@@ -805,6 +810,14 @@ export type TeamClickHouseSettings = z.infer<
   typeof TeamClickHouseSettingsSchema
 >;
 
+export const TelegramConfigSchema = z.object({
+  botToken: z.string().min(1),
+  webhookUrl: z.string().url(),
+  webhookSecret: z.string().min(1),
+});
+
+export type TelegramConfig = z.infer<typeof TelegramConfigSchema>;
+
 export const TeamSchema = z
   .object({
     id: z.string(),
@@ -813,6 +826,7 @@ export const TeamSchema = z
     apiKey: z.string(),
     hookId: z.string(),
     collectorAuthenticationEnforced: z.boolean(),
+    telegramConfig: TelegramConfigSchema.optional(),
   })
   .merge(TeamClickHouseSettingsSchema);
 
