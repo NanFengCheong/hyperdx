@@ -4,6 +4,7 @@ import * as config from '@/config';
 import { renderAlertNotification } from '@/emails/AlertNotification';
 import { renderLoginVerification } from '@/emails/LoginVerification';
 import { renderPasswordReset } from '@/emails/PasswordReset';
+import { renderTeamInvite } from '@/emails/TeamInvite';
 import logger from '@/utils/logger';
 
 let transporter: nodemailer.Transporter | null = null;
@@ -82,6 +83,20 @@ export async function sendPasswordResetEmail(
   return sendEmail({
     to,
     subject: 'Reset your password',
+    html,
+    text,
+  });
+}
+
+export async function sendTeamInviteEmail(
+  to: string,
+  invitedByEmail: string,
+  joinUrl: string,
+): Promise<boolean> {
+  const { html, text } = await renderTeamInvite({ invitedByEmail, joinUrl });
+  return sendEmail({
+    to,
+    subject: `You've been invited to join a team on HyperDX`,
     html,
     text,
   });

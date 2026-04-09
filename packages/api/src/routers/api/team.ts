@@ -42,6 +42,7 @@ import AuditLog from '@/models/auditLog';
 import Group from '@/models/group';
 import Role from '@/models/role';
 import TeamInvite from '@/models/teamInvite';
+import { sendTeamInviteEmail } from '@/utils/emailService';
 import User from '@/models/user';
 import { registerWebhook, validateBotToken } from '@/services/telegram';
 import { sendJson } from '@/utils/serialization';
@@ -264,8 +265,13 @@ router.post(
         }).save();
       }
 
+      const joinUrl = `${config.FRONTEND_URL}/join-team?token=${teamInvite.token}`;
+
+      // Send invite email (non-blocking, don't fail the request if email fails)
+      sendTeamInviteEmail(normalizedEmail, fromEmail, joinUrl);
+
       res.json({
-        url: `${config.FRONTEND_URL}/join-team?token=${teamInvite.token}`,
+        url: joinUrl,
       });
     } catch (e) {
       next(e);
