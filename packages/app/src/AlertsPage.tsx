@@ -30,6 +30,7 @@ import {
   IconHelpCircle,
   IconInfoCircleFilled,
   IconTableRow,
+  IconSearch,
 } from '@tabler/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -44,8 +45,33 @@ import api from './api';
 import { withAppNav } from './layout';
 import type { AlertsPageItem } from './types';
 import { FormatTime } from './useFormatTime';
+import { useRouter } from 'next/router';
 
 import styles from '../styles/AlertsPage.module.scss';
+
+function InvestigateAlert({ alert }: { alert: AlertsPageItem }) {
+  const router = useRouter();
+  const createAlertInvestigation = api.useCreateAlertInvestigation();
+
+  const handleInvestigate = async () => {
+    const result = await createAlertInvestigation.mutateAsync({
+      alertId: alert._id,
+    });
+    router.push(`/investigations/${result._id}`);
+  };
+
+  return (
+    <Button
+      size="compact-sm"
+      variant="secondary"
+      leftSection={<IconSearch size={16} />}
+      onClick={handleInvestigate}
+      loading={createAlertInvestigation.isPending}
+    >
+      Investigate
+    </Button>
+  );
+}
 
 function AlertHistoryCard({
   history,
@@ -441,6 +467,7 @@ function AlertDetails({ alert }: { alert: AlertsPageItem }) {
 
       <Group>
         <AlertHistoryCardList history={alert.history} alertUrl={alertUrl} />
+        <InvestigateAlert alert={alert} />
         <AckAlert alert={alert} />
       </Group>
     </div>

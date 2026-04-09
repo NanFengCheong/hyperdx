@@ -6,6 +6,7 @@ import { validateRequest } from 'zod-express-middleware';
 import {
   addExport,
   appendMessage,
+  createAlertInvestigation,
   createInvestigation,
   deleteInvestigation,
   getInvestigation,
@@ -58,6 +59,35 @@ router.post(
 
       res.json(investigation);
     } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// POST /investigations/from-alert - Create investigation from alert with pre-filled message
+router.post(
+  '/from-alert',
+  validateRequest({
+    body: z.object({
+      alertId: z.string().min(1),
+    }),
+  }),
+  async (req, res, next) => {
+    try {
+      const { teamId, userId } = getNonNullUserWithTeam(req);
+      const { alertId } = req.body;
+
+      const investigation = await createAlertInvestigation({
+        teamId: teamId.toString(),
+        userId: userId.toString(),
+        alertId,
+      });
+
+      res.json(investigation);
+    } catch (e) {
+      if ((e as Error).message === 'Alert not found') {
+        return res.status(404).json({ error: 'Alert not found' });
+      }
       next(e);
     }
   },

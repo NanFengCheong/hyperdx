@@ -3,6 +3,7 @@ import type {
   EntryPointType,
   InvestigationStatus,
 } from '@/models/investigation';
+import Alert from '@/models/alert';
 
 export async function createInvestigation({
   teamId,
@@ -23,6 +24,36 @@ export async function createInvestigation({
     entryPoint,
     messages: [],
   });
+}
+
+export async function createAlertInvestigation({
+  teamId,
+  userId,
+  alertId,
+}: {
+  teamId: string;
+  userId: string;
+  alertId: string;
+}) {
+  const alert = await Alert.findOne({ _id: alertId, team: teamId });
+  if (!alert) throw new Error('Alert not found');
+
+  const investigation = await Investigation.create({
+    team: teamId,
+    createdBy: userId,
+    title: `Alert: ${alert.name || 'Unnamed alert'}`,
+    status: 'active',
+    entryPoint: { type: 'alert', alertId },
+    messages: [
+      {
+        role: 'user',
+        content: `Investigate this alert: "${alert.name || 'Alert'}". It triggered with threshold ${JSON.stringify(alert.threshold)} (${alert.thresholdType}). Interval: ${alert.interval}. Please fetch relevant traces, logs, and metrics to identify the root cause.`,
+        timestamp: new Date(),
+      },
+    ],
+  });
+
+  return investigation;
 }
 
 export async function listInvestigations({
