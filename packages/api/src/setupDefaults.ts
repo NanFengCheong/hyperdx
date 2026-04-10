@@ -80,14 +80,17 @@ export async function setupTeamDefaults(teamId: string) {
     );
   }
 
-  // Check existing sources for this team
-  const sources = await getSources(teamId);
-
-  // Create default sources if none exist
-  if (sources.length === 0 && Array.isArray(parsedDefaultSources)) {
-    logger.info(
-      `No sources found for team ${teamId}, creating default sources`,
-    );
+  // Upsert default sources by name. Missing sources (by name) are created;
+  // existing sources are left untouched. This lets defaults evolve over time
+  // without wiping manual edits.
+  if (Array.isArray(parsedDefaultSources)) {
+    const existingSources = await getSources(teamId);
+    const sourcesByName: { [key: string]: any } = {};
+    for (const s of existingSources) {
+      if (s.name) {
+        sourcesByName[s.name] = s;
+      }
+    }
 
     // Get the connections again in case we just created some
     const updatedConnections = await getConnections();
@@ -102,10 +105,8 @@ export async function setupTeamDefaults(teamId: string) {
       return;
     }
 
-    // Create a mapping of source configurations by name for later correlation
+    // First pass: create any sources missing by name
     const sourceConfigsByName: { [key: string]: any } = {};
-
-    // First create all sources
     const createdSources: { [key: string]: any } = {};
 
     for (const sourceConfig of parsedDefaultSources) {
@@ -122,8 +123,16 @@ export async function setupTeamDefaults(teamId: string) {
           continue;
         }
 
-        // Store the config by name for later reference
+        // Track config for the reference-resolution pass below
         sourceConfigsByName[sourceConfig.name] = sourceConfig;
+
+        // Skip if already present (by name)
+        if (sourcesByName[sourceConfig.name]) {
+          logger.info(
+            `Default source already exists for team ${teamId}: ${sourceConfig.name}, skipping creation`,
+          );
+          continue;
+        }
 
         // Find the connection by name if string provided
         let connectionId = sourceConfig.connection;
@@ -163,59 +172,42 @@ export async function setupTeamDefaults(teamId: string) {
           `Created default source: ${sourceConfig.name} (${newSource._id})`,
         );
 
-        // Store the created source for the second pass
+        // Track for reference resolution and as a known source
         createdSources[sourceConfig.name] = newSource;
+        sourcesByName[sourceConfig.name] = newSource;
       } catch (error) {
         logger.error({ err: error }, 'Failed to create source');
       }
     }
 
-    // Second pass: update sources with references to other sources
+    // Second pass: resolve cross-source references for newly-created sources.
+    // Reference targets may point at either newly-created OR pre-existing
+    // sources, so look up against the merged sourcesByName map.
+    const resolveRef = (name: string | undefined) => {
+      if (!name) return undefined;
+      const target = sourcesByName[name];
+      return target ? target._id.toString() : undefined;
+    };
+
     for (const sourceName in createdSources) {
       try {
         const sourceConfig = sourceConfigsByName[sourceName];
         const createdSource = createdSources[sourceName];
 
-        // Check if this source has any reference fields that need to be updated
         const updateFields: { [key: string]: string } = {};
 
-        // Process logSourceId reference
-        if (
-          sourceConfig.logSourceId &&
-          createdSources[sourceConfig.logSourceId]
-        ) {
-          updateFields.logSourceId =
-            createdSources[sourceConfig.logSourceId]._id.toString();
-        }
+        const logRef = resolveRef(sourceConfig.logSourceId);
+        if (logRef) updateFields.logSourceId = logRef;
 
-        // Process traceSourceId reference
-        if (
-          sourceConfig.traceSourceId &&
-          createdSources[sourceConfig.traceSourceId]
-        ) {
-          updateFields.traceSourceId =
-            createdSources[sourceConfig.traceSourceId]._id.toString();
-        }
+        const traceRef = resolveRef(sourceConfig.traceSourceId);
+        if (traceRef) updateFields.traceSourceId = traceRef;
 
-        // Process sessionSourceId reference
-        if (
-          sourceConfig.sessionSourceId &&
-          createdSources[sourceConfig.sessionSourceId]
-        ) {
-          updateFields.sessionSourceId =
-            createdSources[sourceConfig.sessionSourceId]._id.toString();
-        }
+        const sessionRef = resolveRef(sourceConfig.sessionSourceId);
+        if (sessionRef) updateFields.sessionSourceId = sessionRef;
 
-        // Process metricSourceId reference
-        if (
-          sourceConfig.metricSourceId &&
-          createdSources[sourceConfig.metricSourceId]
-        ) {
-          updateFields.metricSourceId =
-            createdSources[sourceConfig.metricSourceId]._id.toString();
-        }
+        const metricRef = resolveRef(sourceConfig.metricSourceId);
+        if (metricRef) updateFields.metricSourceId = metricRef;
 
-        // If we have fields to update, update the source
         if (Object.keys(updateFields).length > 0) {
           await updateSource(teamId, createdSource._id.toString(), {
             ...createdSource.toObject(),
@@ -230,9 +222,5 @@ export async function setupTeamDefaults(teamId: string) {
         logger.error({ err: error }, 'Failed to update source references');
       }
     }
-  } else if (parsedDefaultSources) {
-    logger.info(
-      `Sources already exist for team ${teamId}, skipping default source creation`,
-    );
   }
 }
