@@ -47,6 +47,160 @@ const otelEndpoint = `${window.location.protocol}//${window.location.hostname}:4
 For production/deployed environments, the endpoint should match whatever
 host/port is exposed by the infrastructure (load balancer, ingress, etc.).
 
+## Port-Based vs Path-Based Routing
+
+### Port-Based (Local Dev)
+
+Each service gets its own port. Simple but only works when ports are directly
+accessible (local dev, direct VM access).
+
+```
+http://localhost:4318/v1/traces    ← OTel Collector HTTP
+http://localhost:4317              ← OTel Collector gRPC
+http://localhost:8080/api/...      ← HyperDX API
+```
+
+SDK config:
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+### Path-Based (Production / Ingress)
+
+Behind an ingress controller (NGINX, ACK, ALB), only ports 80/443 are exposed.
+Traffic is routed by path prefix to different backend services.
+
+```
+https://hyperdx.example.com/api/...          → HyperDX API service
+https://hyperdx.example.com/otel/v1/traces   → OTel Collector (4318)
+https://hyperdx.example.com/otel/v1/logs     → OTel Collector (4318)
+https://hyperdx.example.com/otel/v1/metrics  → OTel Collector (4318)
+```
+
+SDK config:
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=https://hyperdx.example.com/otel
+```
+
+The SDK automatically appends `/v1/traces`, `/v1/logs`, `/v1/metrics` to the
+base endpoint — so the base URL should NOT include these suffixes.
+
+**Ingress rule example (NGINX-style):**
+```yaml
+rules:
+  - host: hyperdx.example.com
+    http:
+      paths:
+        - path: /otel/
+          pathType: Prefix
+          backend:
+            service:
+              name: otel-collector
+              port:
+                number: 4318
+        - path: /api/
+          pathType: Prefix
+          backend:
+            service:
+              name: hyperdx-api
+              port:
+                number: 8080
+```
+
+**ACK ingress note:** TLS terminates at ingress, so traffic from ingress to the
+OTel Collector is plain HTTP internally. The ingress strips TLS but does NOT
+strip the path prefix — the collector receives `/otel/v1/traces`. If your
+collector doesn't expect the `/otel` prefix, configure path rewrite in the
+ingress annotation:
+```yaml
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /otel(/|$)(.*)
+            pathType: ImplementationSpecific
+```
+
+### gRPC Through Ingress
+
+Path-based routing for gRPC requires ingress with gRPC support:
+- **NGINX Ingress:** Use `nginx.org/grpc-services` annotation
+- **ALB:** gRPC target groups (HTTP/2)
+- **Simpler alternative:** Just use HTTP/protobuf (port 4318) instead of gRPC
+  (4317) — works everywhere, same data, no HTTP/2 requirement
+
+Most OTel SDKs default to HTTP/protobuf. Only switch to gRPC if you have a
+specific performance reason.
+
+### How to Detect Which Mode in the UI
+
+The `IntegrationGuideDrawer.tsx` currently hardcodes port 4318. For deployments
+behind ingress, the endpoint should come from a config value instead:
+
+| Environment | Expected Endpoint |
+|-------------|-------------------|
+| Local dev   | `http://localhost:4318` |
+| K8s (dev)   | `https://dev-hyperdx.example.com/otel` |
+| K8s (prod)  | `https://hyperdx.example.com/otel` |
+
+When modifying the UI, prefer reading the endpoint from an environment variable
+or API response rather than constructing it from `window.location`.
+
+### Internal vs External Endpoints
+
+Services sending telemetry may be inside or outside the cluster. The endpoint
+URL differs depending on network position.
+
+**Internal (same K8s cluster):**
+
+Services running inside the same cluster can reach the OTel Collector directly
+via Kubernetes service DNS — no ingress, no TLS overhead, no path rewrite.
+
+```bash
+# Direct service-to-service (cluster-internal)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.hyperdx.svc.cluster.local:4318
+
+# Or short form (same namespace)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+```
+
+- Plain HTTP (no TLS needed — traffic stays within cluster network)
+- Port-based (4318 directly), no path prefix
+- Lower latency, no ingress hop
+- No CORS concerns (server-to-server)
+
+**External (outside cluster):**
+
+Browser apps, mobile apps, or services in other networks must go through
+the public ingress.
+
+```bash
+# Through ingress (external)
+OTEL_EXPORTER_OTLP_ENDPOINT=https://hyperdx.example.com/otel
+```
+
+- TLS required (data traverses public network)
+- Path-based routing through ingress
+- Subject to WAF/DDoS protection rules
+- CORS headers needed for browser SDKs
+
+**Decision matrix:**
+
+| Sender Location | Protocol | Endpoint | Auth |
+|-----------------|----------|----------|------|
+| Same K8s namespace | HTTP | `http://otel-collector:4318` | API key header |
+| Different K8s namespace | HTTP | `http://otel-collector.hyperdx.svc.cluster.local:4318` | API key header |
+| External backend (server) | HTTPS | `https://hyperdx.example.com/otel` | API key header |
+| External browser/mobile | HTTPS | `https://hyperdx.example.com/otel` | API key header (⚠️ exposed in client code) |
+
+**Security note for browser/mobile:** The API key is visible in client-side
+code. This is acceptable because ingestion keys are write-only — they can send
+telemetry but cannot read data. However, rate limiting on the ingress is
+recommended to prevent abuse.
+
 ## Authentication
 
 All OTLP requests must include the team's ingestion API key.
