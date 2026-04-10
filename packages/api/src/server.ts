@@ -97,9 +97,13 @@ export default class Server {
     await seedSystemRoles();
     await ensureDefaultSuperAdmin();
 
-    // Initialize default connections and sources for local app mode
-    if (config.IS_LOCAL_APP_MODE) {
-      try {
+    // Reconcile default connections and sources on every boot. In local app
+    // mode this targets the singleton LOCAL_APP_TEAM; in multi-team mode we
+    // iterate every registered team so new entries added to DEFAULT_SOURCES
+    // are upserted on existing teams after a pod restart. setupTeamDefaults
+    // upserts by name, so manually-edited sources are left untouched.
+    try {
+      if (config.IS_LOCAL_APP_MODE) {
         logger.info(
           'Local app mode detected, setting up default connections and sources...',
         );
@@ -107,13 +111,36 @@ export default class Server {
         logger.info(
           'Default connections and sources setup completed for local app mode',
         );
-      } catch (error) {
-        logger.error(
-          { err: serializeError(error) },
-          'Failed to setup team defaults for local app mode',
-        );
-        // Don't throw - allow server to start even if defaults setup fails
+      } else {
+        const teams = await Team.find({}).select('_id');
+        if (teams.length > 0) {
+          logger.info(
+            `Reconciling default connections and sources across ${teams.length} team(s)...`,
+          );
+          for (const team of teams) {
+            try {
+              await setupTeamDefaults(team._id.toString());
+            } catch (error) {
+              logger.error(
+                {
+                  err: serializeError(error),
+                  teamId: team._id.toString(),
+                },
+                'Failed to setup team defaults for team',
+              );
+            }
+          }
+          logger.info(
+            'Default connections and sources reconciliation complete',
+          );
+        }
       }
+    } catch (error) {
+      logger.error(
+        { err: serializeError(error) },
+        'Failed to setup team defaults',
+      );
+      // Don't throw - allow server to start even if defaults setup fails
     }
 
     // Initialize Telegram webhooks for teams with configured bots
