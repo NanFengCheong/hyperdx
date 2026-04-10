@@ -482,10 +482,15 @@ export default function IntegrationGuidePage() {
   const { data: team } = api.useTeam();
 
   const apiKey = team?.apiKey ?? '<YOUR_API_KEY>';
-  const otelEndpoint =
-    typeof window !== 'undefined'
-      ? `${window.location.protocol}//${window.location.hostname}`
-      : 'http://localhost:4318';
+  const hostname =
+    typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+  const isLocal =
+    hostname === 'localhost' || hostname === '127.0.0.1';
+  const otelEndpoint = isLocal
+    ? 'http://localhost:4318'
+    : `${typeof window !== 'undefined' ? window.location.protocol : 'https:'}//${hostname}`;
+  const internalEndpoint =
+    'http://msm-otel-collector.msm.svc.cluster.local:4318';
 
   const platforms = useMemo(
     () => getPlatformConfig(apiKey, otelEndpoint),
@@ -517,7 +522,20 @@ export default function IntegrationGuidePage() {
         >
           <Stack gap="sm">
             <CopyableField label="Ingestion API Key" value={apiKey} />
-            <CopyableField label="OTEL Endpoint" value={otelEndpoint} />
+            <CopyableField
+              label="OTEL Endpoint (External)"
+              value={otelEndpoint}
+            />
+            <CopyableField
+              label="OTEL Endpoint (Internal K8s)"
+              value={internalEndpoint}
+            />
+            <Text size="xs" c="dimmed">
+              Use the external endpoint for browser/mobile apps and services
+              outside the cluster. Use the internal K8s endpoint for services
+              running in the same cluster (msm namespace) — lower latency, no
+              ingress hop.
+            </Text>
           </Stack>
         </Paper>
 
