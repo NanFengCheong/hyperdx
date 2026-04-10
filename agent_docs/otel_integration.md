@@ -71,15 +71,15 @@ Behind an ingress controller (NGINX, ACK, ALB), only ports 80/443 are exposed.
 Traffic is routed by path prefix to different backend services.
 
 ```
-https://hyperdx.example.com/api/...          → HyperDX API service
-https://hyperdx.example.com/otel/v1/traces   → OTel Collector (4318)
-https://hyperdx.example.com/otel/v1/logs     → OTel Collector (4318)
-https://hyperdx.example.com/otel/v1/metrics  → OTel Collector (4318)
+https://dev-insights.rwgenting.com/api/...          → HyperDX API service
+https://dev-insights.rwgenting.com/otel/v1/traces   → OTel Collector (4318)
+https://dev-insights.rwgenting.com/otel/v1/logs     → OTel Collector (4318)
+https://dev-insights.rwgenting.com/otel/v1/metrics  → OTel Collector (4318)
 ```
 
 SDK config:
 ```bash
-OTEL_EXPORTER_OTLP_ENDPOINT=https://hyperdx.example.com/otel
+OTEL_EXPORTER_OTLP_ENDPOINT=https://dev-insights.rwgenting.com/otel
 ```
 
 The SDK automatically appends `/v1/traces`, `/v1/logs`, `/v1/metrics` to the
@@ -88,7 +88,7 @@ base endpoint — so the base URL should NOT include these suffixes.
 **Ingress rule example (NGINX-style):**
 ```yaml
 rules:
-  - host: hyperdx.example.com
+  - host: dev-insights.rwgenting.com
     http:
       paths:
         - path: /otel/
@@ -143,8 +143,9 @@ behind ingress, the endpoint should come from a config value instead:
 | Environment | Expected Endpoint |
 |-------------|-------------------|
 | Local dev   | `http://localhost:4318` |
-| K8s (dev)   | `https://dev-hyperdx.example.com/otel` |
-| K8s (prod)  | `https://hyperdx.example.com/otel` |
+| K8s (dev)   | `https://dev-insights.rwgenting.com/otel` |
+| K8s (SIT)   | `https://sit-insights.rwgenting.com/otel` |
+| K8s (prod)  | `https://insights.rwgenting.com/otel` |
 
 When modifying the UI, prefer reading the endpoint from an environment variable
 or API response rather than constructing it from `window.location`.
@@ -193,8 +194,8 @@ OTEL_EXPORTER_OTLP_ENDPOINT=https://hyperdx.example.com/otel
 |-----------------|----------|----------|------|
 | Same K8s namespace | HTTP | `http://otel-collector:4318` | API key header |
 | Different K8s namespace | HTTP | `http://otel-collector.hyperdx.svc.cluster.local:4318` | API key header |
-| External backend (server) | HTTPS | `https://hyperdx.example.com/otel` | API key header |
-| External browser/mobile | HTTPS | `https://hyperdx.example.com/otel` | API key header (⚠️ exposed in client code) |
+| External backend (server) | HTTPS | `https://dev-insights.rwgenting.com/otel` | API key header |
+| External browser/mobile | HTTPS | `https://dev-insights.rwgenting.com/otel` | API key header (⚠️ exposed in client code) |
 
 **Security note for browser/mobile:** The API key is visible in client-side
 code. This is acceptable because ingestion keys are write-only — they can send
