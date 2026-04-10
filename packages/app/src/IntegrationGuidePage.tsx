@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import Head from 'next/head';
 import {
   ActionIcon,
   Anchor,
@@ -20,7 +21,10 @@ import {
   IconExternalLink,
 } from '@tabler/icons-react';
 
+import { PageHeader } from './components/PageHeader';
+import { useBrandDisplayName } from './theme/ThemeProvider';
 import api from './api';
+import { withAppNav } from './layout';
 
 type Platform = 'browser' | 'react-native' | 'nodejs' | 'dotnet';
 
@@ -478,14 +482,14 @@ function OptionsTable() {
 }
 
 export default function IntegrationGuidePage() {
+  const brandName = useBrandDisplayName();
   const [platform, setPlatform] = useState<Platform>('browser');
   const { data: team } = api.useTeam();
 
   const apiKey = team?.apiKey ?? '<YOUR_API_KEY>';
   const hostname =
     typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-  const isLocal =
-    hostname === 'localhost' || hostname === '127.0.0.1';
+  const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
   const otelEndpoint = isLocal
     ? 'http://localhost:4318'
     : `${typeof window !== 'undefined' ? window.location.protocol : 'https:'}//${hostname}`;
@@ -500,65 +504,23 @@ export default function IntegrationGuidePage() {
   const current = platforms[platform];
 
   return (
-    <Container size="md" py="xl">
-      <Stack gap="lg">
-        <Box>
-          <Title order={2} mb={4}>
-            Integration Guide
-          </Title>
-          <Text size="sm" c="dimmed">
-            Instrument your application to send logs, traces, metrics, and
-            session replays to ClickStack.
-          </Text>
-        </Box>
-
-        {/* API Key & Endpoint */}
-        <Paper
-          p="md"
-          withBorder
-          style={{
-            backgroundColor: 'var(--mantine-color-dark-7)',
-          }}
-        >
-          <Stack gap="sm">
-            <CopyableField label="Ingestion API Key" value={apiKey} />
-            <CopyableField
-              label="OTEL Endpoint (External)"
-              value={otelEndpoint}
-            />
-            <CopyableField
-              label="OTEL Endpoint (Internal K8s)"
-              value={internalEndpoint}
-            />
-            <Text size="xs" c="dimmed">
-              Use the external endpoint for browser/mobile apps and services
-              outside the cluster. Use the internal K8s endpoint for services
-              running in the same cluster (msm namespace) — lower latency, no
-              ingress hop.
+    <div className="IntegrationGuidePage">
+      <Head>
+        <title>Integration Guide - {brandName}</title>
+      </Head>
+      <PageHeader>
+        <Title order={2}>Integration Guide</Title>
+      </PageHeader>
+      <Container size="md" py="xl">
+        <Stack gap="lg">
+          <Box>
+            <Text size="sm" c="dimmed">
+              Instrument your application to send logs, traces, metrics, and
+              session replays to ClickStack.
             </Text>
-          </Stack>
-        </Paper>
+          </Box>
 
-        {/* Platform Selector */}
-        <Box>
-          <Text size="sm" fw={600} mb="xs">
-            Select your platform
-          </Text>
-          <SegmentedControl
-            value={platform}
-            onChange={v => setPlatform(v as Platform)}
-            fullWidth
-            data={[
-              { label: 'Browser', value: 'browser' },
-              { label: 'React Native', value: 'react-native' },
-              { label: 'Node.js', value: 'nodejs' },
-              { label: 'ASP.NET Core', value: 'dotnet' },
-            ]}
-          />
-        </Box>
-
-        {/* What gets captured (browser only) */}
-        {platform === 'browser' && (
+          {/* API Key & Endpoint */}
           <Paper
             p="md"
             withBorder
@@ -566,78 +528,124 @@ export default function IntegrationGuidePage() {
               backgroundColor: 'var(--mantine-color-dark-7)',
             }}
           >
-            <Text size="sm" fw={600} mb="xs">
-              What gets captured
-            </Text>
-            <Group gap="lg">
-              {[
-                'Console Logs',
-                'Session Replays',
-                'XHR/Fetch/Websocket Requests',
-                'Exceptions',
-              ].map(item => (
-                <Text key={item} size="xs" c="dimmed">
-                  {item}
-                </Text>
-              ))}
-            </Group>
+            <Stack gap="sm">
+              <CopyableField label="Ingestion API Key" value={apiKey} />
+              <CopyableField
+                label="OTEL Endpoint (External)"
+                value={otelEndpoint}
+              />
+              <CopyableField
+                label="OTEL Endpoint (Internal K8s)"
+                value={internalEndpoint}
+              />
+              <Text size="xs" c="dimmed">
+                Use the external endpoint for browser/mobile apps and services
+                outside the cluster. Use the internal K8s endpoint for services
+                running in the same cluster (msm namespace) — lower latency, no
+                ingress hop.
+              </Text>
+            </Stack>
           </Paper>
-        )}
 
-        {/* Steps */}
-        {current.steps.map((step, index) => (
-          <Box key={index}>
-            <Group gap="xs" mb={4}>
-              <Box
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: '50%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  border: '1px solid var(--mantine-color-dark-4)',
-                  flexShrink: 0,
-                }}
-              >
-                <Text size="xs" fw="bold">
-                  {index + 1}
-                </Text>
-              </Box>
-              <Text size="sm" fw={600}>
-                {step.title}
-              </Text>
-            </Group>
-            {step.description && (
-              <Text size="xs" c="dimmed" mb="xs" ml={32}>
-                {step.description}
-              </Text>
-            )}
-            <Box ml={32}>
-              <CodeBlock code={step.code} />
-            </Box>
-          </Box>
-        ))}
-
-        {/* Options table (browser only) */}
-        {platform === 'browser' && (
-          <Box ml={32}>
-            <OptionsTable />
-          </Box>
-        )}
-
-        {/* Script tag alternative (browser only) */}
-        {platform === 'browser' && (
-          <Box ml={32}>
+          {/* Platform Selector */}
+          <Box>
             <Text size="sm" fw={600} mb="xs">
-              Alternative: Script Tag
+              Select your platform
             </Text>
-            <Text size="xs" c="dimmed" mb="xs">
-              If your site doesn&apos;t use a bundler, include the SDK via a
-              script tag:
-            </Text>
-            <CodeBlock
-              code={`<script src="//www.unpkg.com/@hyperdx/browser/build/index.js"></script>
+            <SegmentedControl
+              value={platform}
+              onChange={v => setPlatform(v as Platform)}
+              fullWidth
+              data={[
+                { label: 'Browser', value: 'browser' },
+                { label: 'React Native', value: 'react-native' },
+                { label: 'Node.js', value: 'nodejs' },
+                { label: 'ASP.NET Core', value: 'dotnet' },
+              ]}
+            />
+          </Box>
+
+          {/* What gets captured (browser only) */}
+          {platform === 'browser' && (
+            <Paper
+              p="md"
+              withBorder
+              style={{
+                backgroundColor: 'var(--mantine-color-dark-7)',
+              }}
+            >
+              <Text size="sm" fw={600} mb="xs">
+                What gets captured
+              </Text>
+              <Group gap="lg">
+                {[
+                  'Console Logs',
+                  'Session Replays',
+                  'XHR/Fetch/Websocket Requests',
+                  'Exceptions',
+                ].map(item => (
+                  <Text key={item} size="xs" c="dimmed">
+                    {item}
+                  </Text>
+                ))}
+              </Group>
+            </Paper>
+          )}
+
+          {/* Steps */}
+          {current.steps.map((step, index) => (
+            <Box key={index}>
+              <Group gap="xs" mb={4}>
+                <Box
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '1px solid var(--mantine-color-dark-4)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Text size="xs" fw="bold">
+                    {index + 1}
+                  </Text>
+                </Box>
+                <Text size="sm" fw={600}>
+                  {step.title}
+                </Text>
+              </Group>
+              {step.description && (
+                <Text size="xs" c="dimmed" mb="xs" ml={32}>
+                  {step.description}
+                </Text>
+              )}
+              <Box ml={32}>
+                <CodeBlock code={step.code} />
+              </Box>
+            </Box>
+          ))}
+
+          {/* Options table (browser only) */}
+          {platform === 'browser' && (
+            <Box ml={32}>
+              <OptionsTable />
+            </Box>
+          )}
+
+          {/* Script tag alternative (browser only) */}
+          {platform === 'browser' && (
+            <Box ml={32}>
+              <Text size="sm" fw={600} mb="xs">
+                Alternative: Script Tag
+              </Text>
+              <Text size="xs" c="dimmed" mb="xs">
+                If your site doesn&apos;t use a bundler, include the SDK via a
+                script tag:
+              </Text>
+              <CodeBlock
+                code={`<script src="//www.unpkg.com/@hyperdx/browser/build/index.js"></script>
 <script>
   window.HyperDX.init({
     url: '${otelEndpoint}',
@@ -646,27 +654,33 @@ export default function IntegrationGuidePage() {
     tracePropagationTargets: [/api.myapp.domain/i],
   });
 </script>`}
-            />
-          </Box>
-        )}
+              />
+            </Box>
+          )}
 
-        {/* Docs Link */}
-        <Box ml={32} pb="xl">
-          <Anchor
-            href={current.docsUrl}
-            target="_blank"
-            rel="noreferrer"
-            underline="hover"
-          >
-            <Group gap={4}>
-              <Text size="sm" c="blue">
-                {current.docsLabel}
-              </Text>
-              <IconExternalLink size={14} color="var(--mantine-color-blue-5)" />
-            </Group>
-          </Anchor>
-        </Box>
-      </Stack>
-    </Container>
+          {/* Docs Link */}
+          <Box ml={32} pb="xl">
+            <Anchor
+              href={current.docsUrl}
+              target="_blank"
+              rel="noreferrer"
+              underline="hover"
+            >
+              <Group gap={4}>
+                <Text size="sm" c="blue">
+                  {current.docsLabel}
+                </Text>
+                <IconExternalLink
+                  size={14}
+                  color="var(--mantine-color-blue-5)"
+                />
+              </Group>
+            </Anchor>
+          </Box>
+        </Stack>
+      </Container>
+    </div>
   );
 }
+
+IntegrationGuidePage.getLayout = withAppNav;
