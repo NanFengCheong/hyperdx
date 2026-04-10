@@ -161,12 +161,21 @@ Services running inside the same cluster can reach the OTel Collector directly
 via Kubernetes service DNS — no ingress, no TLS overhead, no path rewrite.
 
 ```bash
-# Direct service-to-service (cluster-internal)
-OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.hyperdx.svc.cluster.local:4318
+# Full FQDN (cross-namespace or explicit)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://msm-otel-collector.msm.svc.cluster.local:4318
 
-# Or short form (same namespace)
-OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+# Short form (same namespace, i.e. within msm namespace)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://msm-otel-collector:4318
 ```
+
+The service name follows the Helm template pattern from
+`k8s/msm/templates/_helpers.tpl`:
+```
+{{ include "msm.fullname" . }}-otel-collector.{{ include "msm.namespace" . }}.svc.cluster.local:4318
+```
+
+With default values (`fullname=msm`, `namespace=msm`) this resolves to
+`msm-otel-collector.msm.svc.cluster.local:4318`.
 
 - Plain HTTP (no TLS needed — traffic stays within cluster network)
 - Port-based (4318 directly), no path prefix
@@ -192,8 +201,8 @@ OTEL_EXPORTER_OTLP_ENDPOINT=https://hyperdx.example.com/otel
 
 | Sender Location | Protocol | Endpoint | Auth |
 |-----------------|----------|----------|------|
-| Same K8s namespace | HTTP | `http://otel-collector:4318` | API key header |
-| Different K8s namespace | HTTP | `http://otel-collector.hyperdx.svc.cluster.local:4318` | API key header |
+| Same K8s namespace (`msm`) | HTTP | `http://msm-otel-collector:4318` | API key header |
+| Different K8s namespace | HTTP | `http://msm-otel-collector.msm.svc.cluster.local:4318` | API key header |
 | External backend (server) | HTTPS | `https://dev-insights.rwgenting.com/otel` | API key header |
 | External browser/mobile | HTTPS | `https://dev-insights.rwgenting.com/otel` | API key header (⚠️ exposed in client code) |
 
