@@ -9,12 +9,21 @@ export type DebugEventType =
   | 'phase_start'
   | 'phase_end'
   | 'investigation_complete'
-  | 'investigation_failed';
+  | 'investigation_failed'
+  | 'tool_call'
+  | 'tool_result'
+  | 'tool_error';
+
+export interface BudgetSnapshot {
+  toolCallsUsed: number;
+  toolCallsTotal: number;
+}
 
 export interface PhaseStartEvent {
   type: 'phase_start';
   investigationId: string;
   phase: string;
+  budgetSnapshot?: BudgetSnapshot;
   timestamp: number;
 }
 
@@ -24,6 +33,39 @@ export interface PhaseEndEvent {
   phase: string;
   summaryText: string;
   toolCallCount: number;
+  budgetSnapshot?: BudgetSnapshot;
+  timestamp: number;
+}
+
+export interface ToolCallEvent {
+  type: 'tool_call';
+  investigationId: string;
+  callIndex: number;
+  phase: string;
+  tool: string;
+  args: Record<string, unknown>;
+  timestamp: number;
+}
+
+export interface ToolResultEvent {
+  type: 'tool_result';
+  investigationId: string;
+  callIndex: number;
+  phase: string;
+  tool: string;
+  result: unknown;
+  durationMs: number;
+  timestamp: number;
+}
+
+export interface ToolErrorEvent {
+  type: 'tool_error';
+  investigationId: string;
+  callIndex: number;
+  phase: string;
+  tool: string;
+  error: string;
+  durationMs: number;
   timestamp: number;
 }
 
@@ -45,7 +87,10 @@ export type DebugEvent =
   | PhaseStartEvent
   | PhaseEndEvent
   | InvestigationCompleteEvent
-  | InvestigationFailedEvent;
+  | InvestigationFailedEvent
+  | ToolCallEvent
+  | ToolResultEvent
+  | ToolErrorEvent;
 
 class InvestigationEventBus extends EventEmitter {
   private static instance: InvestigationEventBus;

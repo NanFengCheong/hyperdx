@@ -11,6 +11,22 @@ export interface PhaseGroup {
   completedAt?: number;
 }
 
+export interface ToolCallEntry {
+  callIndex: number;
+  phase: LoopPhase;
+  tool: string;
+  args: Record<string, unknown>;
+  result?: unknown;
+  error?: string;
+  durationMs?: number;
+  status: 'pending' | 'completed' | 'error';
+}
+
+export interface BudgetSnapshot {
+  toolCallsUsed: number;
+  toolCallsTotal: number;
+}
+
 interface StreamState {
   currentPhase: LoopPhase | null;
   phaseGroups: PhaseGroup[];
@@ -18,20 +34,26 @@ interface StreamState {
   confidence?: 'high' | 'medium' | 'low';
   error?: string;
   connected: boolean;
+  toolCallsByPhase: Record<string, ToolCallEntry[]>;
+  budgetSnapshot?: BudgetSnapshot;
 }
 
 type StreamAction =
   | { type: 'connected' }
-  | { type: 'phase_start'; phase: LoopPhase; timestamp: number }
+  | { type: 'phase_start'; phase: LoopPhase; timestamp: number; budgetSnapshot?: BudgetSnapshot }
   | {
       type: 'phase_end';
       phase: LoopPhase;
       summaryText: string;
       toolCallCount: number;
       timestamp: number;
+      budgetSnapshot?: BudgetSnapshot;
     }
   | { type: 'investigation_complete'; confidence: 'high' | 'medium' | 'low' }
   | { type: 'investigation_failed'; error: string }
+  | { type: 'tool_call'; callIndex: number; phase: string; tool: string; args: Record<string, unknown>; timestamp: number }
+  | { type: 'tool_result'; callIndex: number; phase: string; tool: string; result: unknown; durationMs: number; timestamp: number }
+  | { type: 'tool_error'; callIndex: number; phase: string; tool: string; error: string; durationMs: number; timestamp: number }
   | { type: 'reset' };
 
 const ALL_PHASES: LoopPhase[] = ['plan', 'execute', 'verify', 'summarize'];
@@ -45,6 +67,7 @@ function initialState(): StreamState {
     })),
     isComplete: false,
     connected: false,
+    toolCallsByPhase: {},
   };
 }
 
@@ -59,7 +82,12 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
           ? { ...pg, status: 'active' as const, startedAt: action.timestamp }
           : pg,
       );
-      return { ...state, currentPhase: action.phase, phaseGroups };
+      return {
+        ...state,
+        currentPhase: action.phase,
+        phaseGroups,
+        ...(action.budgetSnapshot ? { budgetSnapshot: action.budgetSnapshot } : {}),
+      };
     }
 
     case 'phase_end': {
@@ -74,7 +102,55 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
             }
           : pg,
       );
-      return { ...state, phaseGroups };
+      return {
+        ...state,
+        phaseGroups,
+        ...(action.budgetSnapshot ? { budgetSnapshot: action.budgetSnapshot } : {}),
+      };
+    }
+
+    case 'tool_call': {
+      const entry: ToolCallEntry = {
+        callIndex: action.callIndex,
+        phase: action.phase as LoopPhase,
+        tool: action.tool,
+        args: action.args,
+        status: 'pending',
+      };
+      const existing = state.toolCallsByPhase[action.phase] ?? [];
+      return {
+        ...state,
+        toolCallsByPhase: {
+          ...state.toolCallsByPhase,
+          [action.phase]: [...existing, entry],
+        },
+      };
+    }
+
+    case 'tool_result': {
+      const entries = state.toolCallsByPhase[action.phase] ?? [];
+      const updated = entries.map(e =>
+        e.callIndex === action.callIndex
+          ? { ...e, result: action.result, durationMs: action.durationMs, status: 'completed' as const }
+          : e,
+      );
+      return {
+        ...state,
+        toolCallsByPhase: { ...state.toolCallsByPhase, [action.phase]: updated },
+      };
+    }
+
+    case 'tool_error': {
+      const entries = state.toolCallsByPhase[action.phase] ?? [];
+      const updated = entries.map(e =>
+        e.callIndex === action.callIndex
+          ? { ...e, error: action.error, durationMs: action.durationMs, status: 'error' as const }
+          : e,
+      );
+      return {
+        ...state,
+        toolCallsByPhase: { ...state.toolCallsByPhase, [action.phase]: updated },
+      };
     }
 
     case 'investigation_complete':
@@ -174,5 +250,7 @@ export function useInvestigationStream(investigationId: string | null) {
     confidence: state.confidence,
     error: state.error,
     connected: state.connected,
+    toolCallsByPhase: state.toolCallsByPhase,
+    budgetSnapshot: state.budgetSnapshot,
   };
 }

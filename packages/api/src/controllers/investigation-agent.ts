@@ -7,9 +7,11 @@ import { CODE_VERSION } from '@/config';
 import type {
   IInvestigationMessage,
   ILoopState,
+  IToolCallEntry,
   LoopPhase,
 } from '@/models/investigation';
 
+import type { BudgetSnapshot } from '@/utils/investigationEventBus';
 import { investigationEventBus } from '@/utils/investigationEventBus';
 
 import { getAIModel } from './ai';
@@ -302,8 +304,11 @@ export async function runAgentPhase({
   userId,
   maxSteps = 10,
   phaseName = 'unknown',
+  investigationId,
+  callIndexOffset = 0,
   onTextDelta,
   onToolCall,
+  onToolEvent,
 }: {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
   systemPrompt: string;
@@ -312,8 +317,18 @@ export async function runAgentPhase({
   userId: string;
   maxSteps?: number;
   phaseName?: string;
+  investigationId?: string;
+  callIndexOffset?: number;
   onTextDelta?: (delta: string) => void;
   onToolCall?: (toolName: string, args: unknown, result: unknown) => void;
+  onToolEvent?: (event: {
+    callIndex: number;
+    tool: string;
+    args: unknown;
+    result?: unknown;
+    error?: string;
+    durationMs: number;
+  }) => void;
 }): Promise<PhaseResult> {
   return investigationTracer.startActiveSpan(
     `investigation.${phaseName}`,
@@ -345,6 +360,10 @@ export async function runAgentPhase({
       let toolCallCount = 0;
       const allToolCalls: { name: string; args: unknown; result: unknown }[] =
         [];
+      // Track per-tool-call start times keyed by phase-local index
+      const toolCallStartTimes = new Map<number, number>();
+      // Phase-local call index (0-based within this phase)
+      let phaseLocalCallIndex = 0;
 
       try {
         for await (const part of result.fullStream) {
@@ -353,14 +372,34 @@ export async function runAgentPhase({
               fullText += part.text;
               onTextDelta?.(part.text);
               break;
-            case 'tool-call':
+            case 'tool-call': {
+              const localIdx = phaseLocalCallIndex++;
+              const globalIdx = callIndexOffset + localIdx;
               toolCallCount++;
+              toolCallStartTimes.set(localIdx, performance.now());
               span.addEvent('tool_call', {
                 'tool.name': part.toolName,
                 'tool.args': JSON.stringify(part.input).slice(0, 500),
               });
+              if (investigationId) {
+                investigationEventBus.emitDebugEvent({
+                  type: 'tool_call',
+                  investigationId,
+                  callIndex: globalIdx,
+                  phase: phaseName,
+                  tool: part.toolName,
+                  args: part.input as Record<string, unknown>,
+                  timestamp: Date.now(),
+                });
+              }
               break;
-            case 'tool-result':
+            }
+            case 'tool-result': {
+              // localIdx for result matches the call order (tool-result follows tool-call in sequence)
+              const localIdx = allToolCalls.length;
+              const globalIdx = callIndexOffset + localIdx;
+              const startTime = toolCallStartTimes.get(localIdx) ?? performance.now();
+              const durationMs = performance.now() - startTime;
               allToolCalls.push({
                 name: part.toolName,
                 args: part.input,
@@ -371,8 +410,28 @@ export async function runAgentPhase({
                 'hyperdx.investigation.tool.name': part.toolName,
                 'hyperdx.investigation.phase': phaseName,
               });
+              if (investigationId) {
+                investigationEventBus.emitDebugEvent({
+                  type: 'tool_result',
+                  investigationId,
+                  callIndex: globalIdx,
+                  phase: phaseName,
+                  tool: part.toolName,
+                  result: part.output,
+                  durationMs,
+                  timestamp: Date.now(),
+                });
+              }
+              onToolEvent?.({
+                callIndex: globalIdx,
+                tool: part.toolName,
+                args: part.input,
+                result: part.output,
+                durationMs,
+              });
               onToolCall?.(part.toolName, part.input, part.output);
               break;
+            }
           }
         }
 
@@ -468,6 +527,7 @@ export interface InvestigationCycleResult {
   summary: string;
   confidence: 'high' | 'medium' | 'low';
   phaseHistory: ILoopState['phaseHistory'];
+  toolCallLog: IToolCallEntry[];
 }
 
 export async function runInvestigationCycle({
@@ -492,6 +552,9 @@ export async function runInvestigationCycle({
 
       const cycleStart = performance.now();
       const phaseHistory: ILoopState['phaseHistory'] = [];
+      const toolCallLog: IToolCallEntry[] = [];
+      const TOTAL_BUDGET = 22; // plan(3) + execute(8) + verify(6) + summarize(5)
+      let toolCallIndex = 0;
 
       try {
         // ----- Phase 1: PLAN -----
@@ -509,7 +572,13 @@ export async function runInvestigationCycle({
         ];
 
         if (investigationId) {
-          investigationEventBus.emitDebugEvent({ type: 'phase_start', investigationId, phase: 'plan', timestamp: Date.now() });
+          investigationEventBus.emitDebugEvent({
+            type: 'phase_start',
+            investigationId,
+            phase: 'plan',
+            budgetSnapshot: { toolCallsUsed: toolCallIndex, toolCallsTotal: TOTAL_BUDGET },
+            timestamp: Date.now(),
+          });
         }
 
         const planResult = await runAgentPhase({
@@ -520,8 +589,22 @@ export async function runInvestigationCycle({
           userId,
           maxSteps: 3,
           phaseName: 'plan',
+          investigationId,
+          callIndexOffset: toolCallIndex,
+          onToolEvent: event => {
+            toolCallLog.push({
+              callIndex: event.callIndex,
+              phase: 'plan',
+              tool: event.tool,
+              args: event.args as Record<string, unknown>,
+              result: event.result,
+              error: event.error,
+              durationMs: event.durationMs,
+            });
+          },
         });
 
+        toolCallIndex += planResult.toolCallCount;
         phaseHistory.push({
           phase: 'plan',
           input: triggerDescription,
@@ -532,7 +615,15 @@ export async function runInvestigationCycle({
         onPhaseUpdate?.('plan', planResult.text);
         phaseHistory[phaseHistory.length - 1].summaryText = planResult.text.slice(0, 200);
         if (investigationId) {
-          investigationEventBus.emitDebugEvent({ type: 'phase_end', investigationId, phase: 'plan', summaryText: planResult.text.slice(0, 200), toolCallCount: planResult.toolCallCount, timestamp: Date.now() });
+          investigationEventBus.emitDebugEvent({
+            type: 'phase_end',
+            investigationId,
+            phase: 'plan',
+            summaryText: planResult.text.slice(0, 200),
+            toolCallCount: planResult.toolCallCount,
+            budgetSnapshot: { toolCallsUsed: toolCallIndex, toolCallsTotal: TOTAL_BUDGET },
+            timestamp: Date.now(),
+          });
         }
 
         // ----- Phase 2: EXECUTE -----
@@ -550,7 +641,13 @@ export async function runInvestigationCycle({
         ];
 
         if (investigationId) {
-          investigationEventBus.emitDebugEvent({ type: 'phase_start', investigationId, phase: 'execute', timestamp: Date.now() });
+          investigationEventBus.emitDebugEvent({
+            type: 'phase_start',
+            investigationId,
+            phase: 'execute',
+            budgetSnapshot: { toolCallsUsed: toolCallIndex, toolCallsTotal: TOTAL_BUDGET },
+            timestamp: Date.now(),
+          });
         }
 
         const executeResult = await runAgentPhase({
@@ -561,8 +658,22 @@ export async function runInvestigationCycle({
           userId,
           maxSteps: 8,
           phaseName: 'execute',
+          investigationId,
+          callIndexOffset: toolCallIndex,
+          onToolEvent: event => {
+            toolCallLog.push({
+              callIndex: event.callIndex,
+              phase: 'execute',
+              tool: event.tool,
+              args: event.args as Record<string, unknown>,
+              result: event.result,
+              error: event.error,
+              durationMs: event.durationMs,
+            });
+          },
         });
 
+        toolCallIndex += executeResult.toolCallCount;
         phaseHistory.push({
           phase: 'execute',
           input: planResult.text,
@@ -573,7 +684,15 @@ export async function runInvestigationCycle({
         onPhaseUpdate?.('execute', executeResult.text);
         phaseHistory[phaseHistory.length - 1].summaryText = executeResult.text.slice(0, 200);
         if (investigationId) {
-          investigationEventBus.emitDebugEvent({ type: 'phase_end', investigationId, phase: 'execute', summaryText: executeResult.text.slice(0, 200), toolCallCount: executeResult.toolCallCount, timestamp: Date.now() });
+          investigationEventBus.emitDebugEvent({
+            type: 'phase_end',
+            investigationId,
+            phase: 'execute',
+            summaryText: executeResult.text.slice(0, 200),
+            toolCallCount: executeResult.toolCallCount,
+            budgetSnapshot: { toolCallsUsed: toolCallIndex, toolCallsTotal: TOTAL_BUDGET },
+            timestamp: Date.now(),
+          });
         }
 
         // ----- Phase 3: VERIFY -----
@@ -591,7 +710,13 @@ export async function runInvestigationCycle({
         ];
 
         if (investigationId) {
-          investigationEventBus.emitDebugEvent({ type: 'phase_start', investigationId, phase: 'verify', timestamp: Date.now() });
+          investigationEventBus.emitDebugEvent({
+            type: 'phase_start',
+            investigationId,
+            phase: 'verify',
+            budgetSnapshot: { toolCallsUsed: toolCallIndex, toolCallsTotal: TOTAL_BUDGET },
+            timestamp: Date.now(),
+          });
         }
 
         const verifyResult = await runAgentPhase({
@@ -602,8 +727,22 @@ export async function runInvestigationCycle({
           userId,
           maxSteps: 6,
           phaseName: 'verify',
+          investigationId,
+          callIndexOffset: toolCallIndex,
+          onToolEvent: event => {
+            toolCallLog.push({
+              callIndex: event.callIndex,
+              phase: 'verify',
+              tool: event.tool,
+              args: event.args as Record<string, unknown>,
+              result: event.result,
+              error: event.error,
+              durationMs: event.durationMs,
+            });
+          },
         });
 
+        toolCallIndex += verifyResult.toolCallCount;
         phaseHistory.push({
           phase: 'verify',
           input: executeResult.text,
@@ -614,7 +753,15 @@ export async function runInvestigationCycle({
         onPhaseUpdate?.('verify', verifyResult.text);
         phaseHistory[phaseHistory.length - 1].summaryText = verifyResult.text.slice(0, 200);
         if (investigationId) {
-          investigationEventBus.emitDebugEvent({ type: 'phase_end', investigationId, phase: 'verify', summaryText: verifyResult.text.slice(0, 200), toolCallCount: verifyResult.toolCallCount, timestamp: Date.now() });
+          investigationEventBus.emitDebugEvent({
+            type: 'phase_end',
+            investigationId,
+            phase: 'verify',
+            summaryText: verifyResult.text.slice(0, 200),
+            toolCallCount: verifyResult.toolCallCount,
+            budgetSnapshot: { toolCallsUsed: toolCallIndex, toolCallsTotal: TOTAL_BUDGET },
+            timestamp: Date.now(),
+          });
         }
 
         // ----- Phase 4: SUMMARIZE -----
@@ -634,7 +781,13 @@ export async function runInvestigationCycle({
         ];
 
         if (investigationId) {
-          investigationEventBus.emitDebugEvent({ type: 'phase_start', investigationId, phase: 'summarize', timestamp: Date.now() });
+          investigationEventBus.emitDebugEvent({
+            type: 'phase_start',
+            investigationId,
+            phase: 'summarize',
+            budgetSnapshot: { toolCallsUsed: toolCallIndex, toolCallsTotal: TOTAL_BUDGET },
+            timestamp: Date.now(),
+          });
         }
 
         const summarizeResult = await runAgentPhase({
@@ -645,8 +798,22 @@ export async function runInvestigationCycle({
           userId,
           maxSteps: 5,
           phaseName: 'summarize',
+          investigationId,
+          callIndexOffset: toolCallIndex,
+          onToolEvent: event => {
+            toolCallLog.push({
+              callIndex: event.callIndex,
+              phase: 'summarize',
+              tool: event.tool,
+              args: event.args as Record<string, unknown>,
+              result: event.result,
+              error: event.error,
+              durationMs: event.durationMs,
+            });
+          },
         });
 
+        toolCallIndex += summarizeResult.toolCallCount;
         phaseHistory.push({
           phase: 'summarize',
           input: verifyResult.text,
@@ -657,7 +824,15 @@ export async function runInvestigationCycle({
         onPhaseUpdate?.('summarize', summarizeResult.text);
         phaseHistory[phaseHistory.length - 1].summaryText = summarizeResult.text.slice(0, 200);
         if (investigationId) {
-          investigationEventBus.emitDebugEvent({ type: 'phase_end', investigationId, phase: 'summarize', summaryText: summarizeResult.text.slice(0, 200), toolCallCount: summarizeResult.toolCallCount, timestamp: Date.now() });
+          investigationEventBus.emitDebugEvent({
+            type: 'phase_end',
+            investigationId,
+            phase: 'summarize',
+            summaryText: summarizeResult.text.slice(0, 200),
+            toolCallCount: summarizeResult.toolCallCount,
+            budgetSnapshot: { toolCallsUsed: toolCallIndex, toolCallsTotal: TOTAL_BUDGET },
+            timestamp: Date.now(),
+          });
         }
 
         // Determine confidence from verification verdicts
@@ -716,6 +891,7 @@ export async function runInvestigationCycle({
           summary: summarizeResult.text,
           confidence,
           phaseHistory,
+          toolCallLog,
         };
       } catch (err) {
         cycleSpan.recordException(err as Error);

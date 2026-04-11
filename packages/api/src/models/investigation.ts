@@ -41,12 +41,23 @@ export interface ILoopPhaseHistory {
   completedAt: Date;
 }
 
+export interface IToolCallEntry {
+  callIndex: number;
+  phase: LoopPhase;
+  tool: string;
+  args: Record<string, unknown>;
+  result?: unknown;
+  error?: string;
+  durationMs?: number;
+}
+
 export interface ILoopState {
   currentPhase: LoopPhase;
   plan: string | null;
   evidence: string | null;
   verification: string | null;
   phaseHistory: ILoopPhaseHistory[];
+  toolCallLog: IToolCallEntry[];
 }
 
 export interface IInvestigation {
@@ -128,6 +139,7 @@ const LoopStateSchema = new Schema(
     evidence: { type: String, default: null },
     verification: { type: String, default: null },
     phaseHistory: { type: [LoopPhaseHistorySchema], default: [] },
+    toolCallLog: { type: Schema.Types.Mixed, default: [] },
   },
   { _id: false },
 );

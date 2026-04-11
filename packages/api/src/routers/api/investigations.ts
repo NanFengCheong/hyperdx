@@ -14,6 +14,7 @@ import {
   updateInvestigation,
 } from '@/controllers/investigation';
 import { updateInvestigation as updateInv } from '@/controllers/investigation';
+import Investigation from '@/models/investigation';
 import {
   buildSystemPrompt,
   convertMessagesToAIFormat,
@@ -538,6 +539,7 @@ router.post(
         },
         teamId: teamId.toString(),
         userId: userId.toString(),
+        investigationId,
         onPhaseUpdate: (phase, output) => {
           res.write(
             `data: ${JSON.stringify({
@@ -558,6 +560,15 @@ router.post(
           status: result.confidence === 'high' ? 'resolved' : 'active',
         },
       });
+
+      // Persist toolCallLog to loopState
+      if (result.toolCallLog.length > 0) {
+        await Investigation.findByIdAndUpdate(investigationId, {
+          $set: {
+            'loopState.toolCallLog': result.toolCallLog,
+          },
+        });
+      }
 
       res.write(
         `data: ${JSON.stringify({
