@@ -5,7 +5,6 @@ import cx from 'classnames';
 import HyperDX from '@hyperdx/browser';
 import { isBuilderSavedChartConfig } from '@hyperdx/common-utils/dist/guards';
 import {
-  AlertState,
   SavedSearchListApiResponse,
 } from '@hyperdx/common-utils/dist/types';
 import {
@@ -41,7 +40,6 @@ import { usePermissions } from '@/contexts/PermissionContext';
 import { Dashboard, useDashboards } from '@/dashboard';
 import { useFavorites } from '@/favorites';
 import { useIsSuperAdmin } from '@/hooks/usePermission';
-import OnboardingChecklist from '@/OnboardingChecklist';
 import { useSavedSearches } from '@/savedSearch';
 import { useLogomark, useWordmark } from '@/theme/ThemeProvider';
 import { UserPreferencesModal } from '@/UserPreferencesModal';
@@ -284,10 +282,6 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
     userPreferences: { isUTC },
   } = useUserPreferences();
 
-  const navigateToIntegrationGuide = useCallback(() => {
-    Router.push('/integration-guide');
-  }, []);
-
   const isSavedSearchActive = useMemo(() => {
     if (!pathname?.startsWith('/search/')) return false;
 
@@ -488,20 +482,18 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
             )}
 
             {/* Integration Guide */}
-            {!IS_LOCAL_MODE && (
-              <Link
-                href="/integration-guide"
-                className={styles.navItem}
-                style={{ textDecoration: 'none', color: 'inherit' }}
-              >
-                <span className={styles.navItemContent}>
-                  <span className={styles.navItemIcon}>
-                    <IconRocket size={16} />
-                  </span>
-                  {!isCollapsed && <span>Integration Guide</span>}
+            <Link
+              href="/integration-guide"
+              className={styles.navItem}
+              style={{ textDecoration: 'none', color: 'inherit' }}
+            >
+              <span className={styles.navItemContent}>
+                <span className={styles.navItemIcon}>
+                  <IconRocket size={16} />
                 </span>
-              </Link>
-            )}
+                {!isCollapsed && <span>Integration Guide</span>}
+              </span>
+            </Link>
 
             {/* Help */}
             <AppNavHelpMenu version={APP_VERSION} />
@@ -524,17 +516,6 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
               />
             )}
           </div>
-
-          {!isCollapsed && (
-            <div
-              style={{ width: navWidth }}
-              className={styles.onboardingSection}
-            >
-              <OnboardingChecklist
-                onAddDataClick={navigateToIntegrationGuide}
-              />
-            </div>
-          )}
         </ScrollArea>
 
         <div className={styles.footer} style={{ width: navWidth }}>
