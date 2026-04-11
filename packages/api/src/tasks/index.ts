@@ -6,6 +6,7 @@ import { RUN_SCHEDULED_TASKS_EXTERNALLY } from '@/config';
 import CheckAlertTask from '@/tasks/checkAlerts';
 import CheckInactiveUsersTask from '@/tasks/checkInactiveUsers';
 import DataRetentionTask from '@/tasks/dataRetention';
+import ProactiveInvestigationTask from '@/tasks/proactiveInvestigation';
 import {
   taskExecutionDurationGauge,
   taskExecutionFailureCounter,
@@ -29,6 +30,8 @@ function createTask(argv: TaskArgs): HdxTask<TaskArgs> {
       return new CheckInactiveUsersTask(argv);
     case TaskName.DATA_RETENTION:
       return new DataRetentionTask(argv);
+    case TaskName.PROACTIVE_INVESTIGATION:
+      return new ProactiveInvestigationTask(argv);
     default:
       throw new Error(`Unknown task name ${taskName}`);
   }
@@ -77,6 +80,19 @@ if (!RUN_SCHEDULED_TASKS_EXTERNALLY) {
     logger.info('Data retention cron: daily at 3:00 AM MYT (19:00 UTC)');
     CronJob.from({
       cronTime: '0 19 * * *', // 19:00 UTC = 3:00 AM MYT
+      waitForCompletion: true,
+      onTick: async () => instrumentedMain(argv),
+      errorHandler: async err => {
+        console.error(err);
+      },
+      start: true,
+      timeZone: 'UTC',
+    });
+  } else if (argv.taskName === TaskName.PROACTIVE_INVESTIGATION) {
+    // Proactive investigation: every hour
+    logger.info('Proactive investigation cron: every hour');
+    CronJob.from({
+      cronTime: '0 0 * * * *',
       waitForCompletion: true,
       onTick: async () => instrumentedMain(argv),
       errorHandler: async err => {

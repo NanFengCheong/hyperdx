@@ -8,8 +8,8 @@ import { createInvestigationTools } from './investigation-tools/tools';
 
 interface EntryPoint {
   type: 'trace' | 'alert' | 'standalone';
-  traceId?: string;
-  alertId?: string;
+  traceId?: any;
+  alertId?: any;
 }
 
 export function buildSystemPrompt({
@@ -72,6 +72,8 @@ export async function runInvestigationAgent({
   messages,
   systemPrompt,
   connection,
+  teamId,
+  userId,
   onTextDelta,
   onToolCall,
   onFinish,
@@ -79,12 +81,14 @@ export async function runInvestigationAgent({
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
   systemPrompt: string;
   connection: { host: string; username: string; password: string };
+  teamId: string;
+  userId: string;
   onTextDelta?: (delta: string) => void;
   onToolCall?: (toolName: string, args: unknown, result: unknown) => void;
   onFinish?: (text: string) => void;
 }) {
   const model = getInvestigationModel();
-  const tools = createInvestigationTools(connection);
+  const tools = createInvestigationTools({ connection, teamId, userId });
 
   const result = streamText({
     model,

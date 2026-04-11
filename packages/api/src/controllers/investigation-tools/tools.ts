@@ -2,6 +2,9 @@ import { ClickhouseClient } from '@hyperdx/common-utils/dist/clickhouse/node';
 import { dynamicTool } from 'ai';
 import { z } from 'zod';
 
+import Dashboard from '@/models/dashboard';
+import { SavedSearch } from '@/models/savedSearch';
+import { Source } from '@/models/source';
 import logger from '@/utils/logger';
 
 // Shared time range schema
@@ -75,6 +78,25 @@ const getSessionReplayInputSchema = z.object({
   sessionId: z.string().optional().describe('Direct session ID lookup'),
 });
 
+const createSavedSearchInputSchema = z.object({
+  name: z.string().describe('Name of the saved search'),
+  kind: z.enum(['log', 'trace']).describe('Type of search'),
+  where: z.string().describe('The WHERE clause for the search'),
+});
+
+const createDashboardInputSchema = z.object({
+  name: z.string().describe('Name of the dashboard'),
+  charts: z
+    .array(
+      z.object({
+        title: z.string(),
+        metric: z.enum(['error_rate', 'latency', 'throughput']),
+        service: z.string(),
+      }),
+    )
+    .describe('List of charts to include in the dashboard'),
+});
+
 // Helper to format results for AI consumption (truncate large results)
 async function formatForAI(
   result: Awaited<ReturnType<InstanceType<typeof ClickhouseClient>['query']>>,
@@ -90,10 +112,14 @@ async function formatForAI(
   return resultStr;
 }
 
-export function createInvestigationTools(connection: {
-  host: string;
-  username: string;
-  password: string;
+export function createInvestigationTools({
+  connection,
+  teamId,
+  userId,
+}: {
+  connection: { host: string; username: string; password: string };
+  teamId: string;
+  userId: string;
 }) {
   const client = new ClickhouseClient({
     host: connection.host,
@@ -450,6 +476,69 @@ export function createInvestigationTools(connection: {
     },
   });
 
+  const createSavedSearch = dynamicTool({
+    description:
+      'Create a saved search (Source) for the team based on a query.',
+    inputSchema: createSavedSearchInputSchema,
+    execute: async input => {
+      const params = createSavedSearchInputSchema.parse(input);
+      try {
+        // Find a source of the same kind to copy base settings
+        const baseSource = await Source.findOne({
+          team: teamId,
+          kind: params.kind,
+        });
+        if (!baseSource) {
+          return `Error: No base source found for kind ${params.kind}`;
+        }
+
+        const savedSearch = await SavedSearch.create({
+          team: teamId,
+          name: params.name,
+          where: params.where,
+          source: baseSource._id,
+          createdBy: userId,
+        });
+        return `Successfully created saved search: ${savedSearch.name} (ID: ${savedSearch._id})`;
+      } catch (err) {
+        logger.error({ err }, 'createSavedSearch failed');
+        return `Error creating saved search: ${(err as Error).message}`;
+      }
+    },
+  });
+
+  const createDashboard = dynamicTool({
+    description: 'Create a new dashboard with multiple charts for the team.',
+    inputSchema: createDashboardInputSchema,
+    execute: async input => {
+      const params = createDashboardInputSchema.parse(input);
+      try {
+        const dashboard = await Dashboard.create({
+          name: params.name,
+          team: teamId,
+          createdBy: userId,
+          tiles: params.charts.map((chart, i) => ({
+            id: `chart-${i}`,
+            title: chart.title,
+            type: 'chart',
+            x: (i % 2) * 6,
+            y: Math.floor(i / 2) * 4,
+            w: 6,
+            h: 4,
+            query: {
+              metric: chart.metric,
+              service: chart.service,
+            },
+          })),
+        });
+        return `Successfully created dashboard: ${dashboard.name} (ID: ${dashboard._id})`;
+      } catch (err) {
+        logger.error({ err }, 'createDashboard failed');
+        return `Error creating dashboard: ${(err as Error).message}`;
+      }
+    },
+  });
+
   return {
     searchTraces,
     getTraceDetail,
@@ -458,6 +547,8 @@ export function createInvestigationTools(connection: {
     findSimilarErrors,
     getServiceMap,
     getSessionReplay,
+    createSavedSearch,
+    createDashboard,
   };
 }
 

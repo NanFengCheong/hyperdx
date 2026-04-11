@@ -1,14 +1,10 @@
-import type { Request } from 'express';
 import express from 'express';
 import { z } from 'zod';
 import { validateRequest } from 'zod-express-middleware';
 
-import { getAIModel } from '@/controllers/ai';
-import { getConnectionById } from '@/controllers/connection';
 import {
   addExport,
   appendMessage,
-  createAlertInvestigation,
   createInvestigation,
   deleteInvestigation,
   getInvestigation,
@@ -20,18 +16,18 @@ import {
   convertMessagesToAIFormat,
   runInvestigationAgent,
 } from '@/controllers/investigation-agent';
+import { getConnectionById } from '@/controllers/connection';
 import {
   buildSchemaPrompt,
   fetchClickHouseSchema,
 } from '@/controllers/investigation-tools/schema';
-import { getSource } from '@/controllers/sources';
 import { getNonNullUserWithTeam } from '@/middleware/auth';
-import logger from '@/utils/logger';
+import { getSource } from '@/controllers/sources';
 import { objectIdSchema } from '@/utils/zod';
 
 const router = express.Router();
 
-// POST /investigations - Create a new investigation
+// POST /investigations — Create a new investigation
 router.post(
   '/',
   validateRequest({
@@ -47,8 +43,8 @@ router.post(
   }),
   async (req, res, next) => {
     try {
-      const { teamId, userId } = getNonNullUserWithTeam(req);
-      const { title, entryPoint, sourceId } = req.body;
+      const { teamId, userId } = getNonNullUserWithTeam(req as any);
+      const { title, entryPoint } = req.body;
 
       const investigation = await createInvestigation({
         teamId: teamId.toString(),
@@ -64,36 +60,7 @@ router.post(
   },
 );
 
-// POST /investigations/from-alert - Create investigation from alert with pre-filled message
-router.post(
-  '/from-alert',
-  validateRequest({
-    body: z.object({
-      alertId: z.string().min(1),
-    }),
-  }),
-  async (req, res, next) => {
-    try {
-      const { teamId, userId } = getNonNullUserWithTeam(req);
-      const { alertId } = req.body;
-
-      const investigation = await createAlertInvestigation({
-        teamId: teamId.toString(),
-        userId: userId.toString(),
-        alertId,
-      });
-
-      res.json(investigation);
-    } catch (e) {
-      if ((e as Error).message === 'Alert not found') {
-        return res.status(404).json({ error: 'Alert not found' });
-      }
-      next(e);
-    }
-  },
-);
-
-// GET /investigations - List investigations
+// GET /investigations — List investigations
 router.get(
   '/',
   validateRequest({
@@ -104,9 +71,8 @@ router.get(
   }),
   async (req, res, next) => {
     try {
-      const { teamId } = getNonNullUserWithTeam(req as Request);
-      const page = Number(req.query.page);
-      const limit = Number(req.query.limit);
+      const { teamId } = getNonNullUserWithTeam(req as any);
+      const { page, limit } = req.query;
 
       const results = await listInvestigations({
         teamId: teamId.toString(),
@@ -121,10 +87,10 @@ router.get(
   },
 );
 
-// GET /investigations/:id - Get a single investigation
+// GET /investigations/:id — Get a single investigation
 router.get('/:id', async (req, res, next) => {
   try {
-    const { teamId } = getNonNullUserWithTeam(req);
+    const { teamId } = getNonNullUserWithTeam(req as any);
     const investigation = await getInvestigation({
       teamId: teamId.toString(),
       investigationId: req.params.id,
@@ -140,7 +106,7 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-// POST /investigations/:id/messages - Send message & run agent loop (SSE)
+// POST /investigations/:id/messages — Send message & run agent loop (SSE)
 router.post(
   '/:id/messages',
   validateRequest({
@@ -151,7 +117,7 @@ router.post(
   }),
   async (req, res, next) => {
     try {
-      const { teamId } = getNonNullUserWithTeam(req);
+      const { teamId, userId } = getNonNullUserWithTeam(req as any);
       const { content, sourceId } = req.body;
       const investigationId = req.params.id;
 
@@ -193,11 +159,7 @@ router.post(
       const schemaPrompt = buildSchemaPrompt(schema);
       const systemPrompt = buildSystemPrompt({
         schemaPrompt,
-        entryPoint: {
-          type: investigation.entryPoint.type,
-          traceId: investigation.entryPoint.traceId,
-          alertId: investigation.entryPoint.alertId?.toString(),
-        },
+        entryPoint: investigation.entryPoint,
       });
 
       // Convert messages to AI format
@@ -223,6 +185,8 @@ router.post(
           username: connection.username,
           password: connection.password,
         },
+        teamId: teamId.toString(),
+        userId: userId.toString(),
         onTextDelta: delta => {
           res.write(
             `data: ${JSON.stringify({ type: 'text', content: delta })}\n\n`,
@@ -231,7 +195,12 @@ router.post(
         onToolCall: (toolName, args, result) => {
           toolCalls.push({ name: toolName, args, result });
           res.write(
-            `data: ${JSON.stringify({ type: 'tool', name: toolName, args, result })}\n\n`,
+            `data: ${JSON.stringify({
+              type: 'tool',
+              name: toolName,
+              args,
+              result,
+            })}\n\n`,
           );
         },
         onFinish: () => {
@@ -254,7 +223,10 @@ router.post(
       // If SSE already started, send error event
       if (res.headersSent) {
         res.write(
-          `data: ${JSON.stringify({ type: 'error', message: (e as Error).message })}\n\n`,
+          `data: ${JSON.stringify({
+            type: 'error',
+            message: (e as Error).message,
+          })}\n\n`,
         );
         res.end();
       } else {
@@ -264,7 +236,7 @@ router.post(
   },
 );
 
-// PATCH /investigations/:id - Update investigation
+// PATCH /investigations/:id — Update investigation
 router.patch(
   '/:id',
   validateRequest({
@@ -276,7 +248,7 @@ router.patch(
   }),
   async (req, res, next) => {
     try {
-      const { teamId } = getNonNullUserWithTeam(req);
+      const { teamId } = getNonNullUserWithTeam(req as any);
       const updated = await updateInvestigation({
         teamId: teamId.toString(),
         investigationId: req.params.id,
@@ -294,10 +266,10 @@ router.patch(
   },
 );
 
-// DELETE /investigations/:id - Soft delete
+// DELETE /investigations/:id — Soft delete
 router.delete('/:id', async (req, res, next) => {
   try {
-    const { teamId } = getNonNullUserWithTeam(req);
+    const { teamId } = getNonNullUserWithTeam(req as any);
     await deleteInvestigation({
       teamId: teamId.toString(),
       investigationId: req.params.id,
@@ -308,7 +280,7 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
-// POST /investigations/:id/export - Generate incident report
+// POST /investigations/:id/export — Generate incident report
 router.post(
   '/:id/export',
   validateRequest({
@@ -319,7 +291,7 @@ router.post(
   }),
   async (req, res, next) => {
     try {
-      const { teamId } = getNonNullUserWithTeam(req);
+      const { teamId, userId } = getNonNullUserWithTeam(req as any);
       const { format, sourceId } = req.body;
       const investigationId = req.params.id;
 
@@ -359,7 +331,7 @@ router.post(
 
       const allMessages = convertMessagesToAIFormat(investigation.messages);
       allMessages.push({
-        role: 'user' as const,
+        role: 'user',
         content:
           'Please synthesize all findings from this investigation into a structured incident report in markdown format. Include sections: ## Summary, ## Timeline, ## Root Cause, ## Affected Services, ## Evidence, ## Recommendations.',
       });
@@ -373,6 +345,8 @@ router.post(
           username: connection.username,
           password: connection.password,
         },
+        teamId: teamId.toString(),
+        userId: userId.toString(),
       });
 
       const result = await addExport({
@@ -388,7 +362,7 @@ router.post(
   },
 );
 
-// POST /investigations/:id/share - Share with team members
+// POST /investigations/:id/share — Share with team members
 router.post(
   '/:id/share',
   validateRequest({
@@ -398,7 +372,7 @@ router.post(
   }),
   async (req, res, next) => {
     try {
-      const { teamId } = getNonNullUserWithTeam(req);
+      const { teamId } = getNonNullUserWithTeam(req as any);
       const updated = await updateInvestigation({
         teamId: teamId.toString(),
         investigationId: req.params.id,
