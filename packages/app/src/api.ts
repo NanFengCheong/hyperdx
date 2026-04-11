@@ -1016,3 +1016,18 @@ export const useUpdateDataRetentionSettings = () =>
         json: settings,
       }).json(),
   });
+
+export const useProactiveInvestigationSettings = () =>
+  useQuery<{ data: any }>({
+    queryKey: ['admin', 'proactive-investigation-settings'],
+    queryFn: () => hdxServer('admin/settings/proactive-investigation').json(),
+  });
+
+export const useUpdateProactiveInvestigationSettings = () =>
+  useMutation<{ data: any }, Error, any>({
+    mutationFn: settings =>
+      hdxServer('admin/settings/proactive-investigation', {
+        method: 'PATCH',
+        json: settings,
+      }).json(),
+  });

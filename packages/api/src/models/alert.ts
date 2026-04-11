@@ -12,6 +12,7 @@ export enum AlertThresholdType {
 export enum AlertState {
   ALERT = 'ALERT',
   DISABLED = 'DISABLED',
+  DRAFT = 'DRAFT',
   INSUFFICIENT_DATA = 'INSUFFICIENT_DATA',
   OK = 'OK',
 }

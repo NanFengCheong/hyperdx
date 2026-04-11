@@ -44,7 +44,12 @@ interface StreamState {
 
 type StreamAction =
   | { type: 'connected' }
-  | { type: 'phase_start'; phase: LoopPhase; timestamp: number; budgetSnapshot?: BudgetSnapshot }
+  | {
+      type: 'phase_start';
+      phase: LoopPhase;
+      timestamp: number;
+      budgetSnapshot?: BudgetSnapshot;
+    }
   | {
       type: 'phase_end';
       phase: LoopPhase;
@@ -55,9 +60,32 @@ type StreamAction =
     }
   | { type: 'investigation_complete'; confidence: 'high' | 'medium' | 'low' }
   | { type: 'investigation_failed'; error: string }
-  | { type: 'tool_call'; callIndex: number; phase: string; tool: string; args: Record<string, unknown>; timestamp: number }
-  | { type: 'tool_result'; callIndex: number; phase: string; tool: string; result: unknown; durationMs: number; timestamp: number }
-  | { type: 'tool_error'; callIndex: number; phase: string; tool: string; error: string; durationMs: number; timestamp: number }
+  | {
+      type: 'tool_call';
+      callIndex: number;
+      phase: string;
+      tool: string;
+      args: Record<string, unknown>;
+      timestamp: number;
+    }
+  | {
+      type: 'tool_result';
+      callIndex: number;
+      phase: string;
+      tool: string;
+      result: unknown;
+      durationMs: number;
+      timestamp: number;
+    }
+  | {
+      type: 'tool_error';
+      callIndex: number;
+      phase: string;
+      tool: string;
+      error: string;
+      durationMs: number;
+      timestamp: number;
+    }
   | { type: 'waiting' }
   | { type: 'replay_start' }
   | { type: 'replay_complete' }
@@ -99,7 +127,9 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
         ...state,
         currentPhase: action.phase,
         phaseGroups,
-        ...(action.budgetSnapshot ? { budgetSnapshot: action.budgetSnapshot } : {}),
+        ...(action.budgetSnapshot
+          ? { budgetSnapshot: action.budgetSnapshot }
+          : {}),
       };
     }
 
@@ -118,7 +148,9 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
       return {
         ...state,
         phaseGroups,
-        ...(action.budgetSnapshot ? { budgetSnapshot: action.budgetSnapshot } : {}),
+        ...(action.budgetSnapshot
+          ? { budgetSnapshot: action.budgetSnapshot }
+          : {}),
       };
     }
 
@@ -144,12 +176,20 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
       const entries = state.toolCallsByPhase[action.phase] ?? [];
       const updated = entries.map(e =>
         e.callIndex === action.callIndex
-          ? { ...e, result: action.result, durationMs: action.durationMs, status: 'completed' as const }
+          ? {
+              ...e,
+              result: action.result,
+              durationMs: action.durationMs,
+              status: 'completed' as const,
+            }
           : e,
       );
       return {
         ...state,
-        toolCallsByPhase: { ...state.toolCallsByPhase, [action.phase]: updated },
+        toolCallsByPhase: {
+          ...state.toolCallsByPhase,
+          [action.phase]: updated,
+        },
       };
     }
 
@@ -157,12 +197,20 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
       const entries = state.toolCallsByPhase[action.phase] ?? [];
       const updated = entries.map(e =>
         e.callIndex === action.callIndex
-          ? { ...e, error: action.error, durationMs: action.durationMs, status: 'error' as const }
+          ? {
+              ...e,
+              error: action.error,
+              durationMs: action.durationMs,
+              status: 'error' as const,
+            }
           : e,
       );
       return {
         ...state,
-        toolCallsByPhase: { ...state.toolCallsByPhase, [action.phase]: updated },
+        toolCallsByPhase: {
+          ...state.toolCallsByPhase,
+          [action.phase]: updated,
+        },
       };
     }
 
@@ -191,7 +239,10 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
         ...state,
         thinkingByPhase: {
           ...state.thinkingByPhase,
-          [action.phase]: { content: action.content, tokenCount: action.tokenCount },
+          [action.phase]: {
+            content: action.content,
+            tokenCount: action.tokenCount,
+          },
         },
       };
 

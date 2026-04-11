@@ -1,5 +1,5 @@
-import { Badge, Box, Code, Collapse, Group, Stack, Text } from '@mantine/core';
 import { useState } from 'react';
+import { Badge, Box, Code, Collapse, Group, Stack, Text } from '@mantine/core';
 
 import type { ToolCallEntry } from '../../hooks/useInvestigationStream';
 
@@ -35,7 +35,12 @@ export function ToolCallCard({ entry }: { entry: ToolCallEntry }) {
       onClick={() => setExpanded(e => !e)}
     >
       <Group gap="xs" wrap="nowrap">
-        <Badge size="xs" color={color} variant="light" style={{ flexShrink: 0 }}>
+        <Badge
+          size="xs"
+          color={color}
+          variant="light"
+          style={{ flexShrink: 0 }}
+        >
           {entry.tool}
         </Badge>
         {entry.status === 'pending' && (
@@ -66,7 +71,10 @@ export function ToolCallCard({ entry }: { entry: ToolCallEntry }) {
             </Text>
           ))}
           {entry.result !== undefined && (
-            <Code block style={{ fontSize: 10, maxHeight: 120, overflow: 'auto' }}>
+            <Code
+              block
+              style={{ fontSize: 10, maxHeight: 120, overflow: 'auto' }}
+            >
               {JSON.stringify(entry.result, null, 2).slice(0, 500)}
             </Code>
           )}

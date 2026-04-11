@@ -15,6 +15,7 @@ import {
   validateAlertInput,
 } from '@/controllers/alerts';
 import { requirePermission } from '@/middleware/auth';
+import Alert from '@/models/alert';
 import { sendJson } from '@/utils/serialization';
 import { alertSchema, objectIdSchema } from '@/utils/zod';
 
@@ -214,6 +215,32 @@ router.delete(
       await alert.save();
 
       res.sendStatus(200);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+router.patch(
+  '/:id/state',
+  requirePermission('alerts:edit'),
+  validateRequest({
+    body: z.object({
+      state: z.enum(['OK', 'DISABLED']),
+    }),
+    params: z.object({ id: objectIdSchema }),
+  }),
+  async (req, res, next) => {
+    try {
+      const teamId = req.user?.team;
+      if (teamId == null) return res.sendStatus(403);
+      const updated = await Alert.findOneAndUpdate(
+        { _id: req.params.id, team: teamId },
+        { $set: { state: req.body.state } },
+        { new: true },
+      );
+      if (!updated) return res.status(404).json({ error: 'Alert not found' });
+      res.json({ data: updated });
     } catch (e) {
       next(e);
     }

@@ -76,7 +76,11 @@ export default function InvestigationChat({
       <Box
         px="md"
         py="xs"
-        style={{ borderBottom: '1px solid var(--mantine-color-dark-4)', display: 'flex', justifyContent: 'flex-end' }}
+        style={{
+          borderBottom: '1px solid var(--mantine-color-dark-4)',
+          display: 'flex',
+          justifyContent: 'flex-end',
+        }}
       >
         <Button size="xs" variant="subtle" onClick={openDebug}>
           Debug

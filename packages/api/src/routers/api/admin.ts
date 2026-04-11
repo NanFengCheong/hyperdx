@@ -1,6 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import { z } from 'zod';
+import { validateRequest } from 'zod-express-middleware';
 
 import {
   RETENTION_DAYS_ALERTHISTORY,
@@ -446,5 +447,76 @@ router.post('/data-retention/run', async (req, res, next) => {
     next(e);
   }
 });
+
+// Proactive investigation config schema
+const proactiveInvestigationConfigSchema = z
+  .object({
+    enabled: z.boolean(),
+    triageCron: z.string(),
+    runnerCron: z.string(),
+    modelName: z.string(),
+    modelBaseUrl: z.string().optional(),
+    maxRunsPerTeamHour: z.number().int().positive(),
+    reopenAfterHours: z.number().int().positive(),
+    memoryTTLDays: z.number().int().positive(),
+    budget: z
+      .object({
+        maxToolCalls: z.number().int().positive(),
+        maxTokens: z.number().int().positive(),
+        maxWallclockMs: z.number().int().positive(),
+      })
+      .partial()
+      .optional(),
+    anomalySweep: z
+      .object({
+        errorRateMultiplier: z.number().positive(),
+        minAbsoluteCount: z.number().int().nonnegative(),
+        topK: z.number().int().positive(),
+        lookbackMinutes: z.number().int().positive(),
+        baselineHours: z.number().int().positive(),
+      })
+      .partial()
+      .optional(),
+    circuitBreaker: z
+      .object({
+        maxFailuresPerHour: z.number().int().positive(),
+        pauseMinutes: z.number().int().positive(),
+      })
+      .partial()
+      .optional(),
+  })
+  .partial();
+
+// GET /admin/settings/proactive-investigation — read config
+router.get('/settings/proactive-investigation', async (req, res, next) => {
+  try {
+    const setting = await PlatformSetting.findOne({
+      key: 'proactiveInvestigation',
+    });
+    res.json({ data: setting?.value ?? null });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// PATCH /admin/settings/proactive-investigation — update config
+router.patch(
+  '/settings/proactive-investigation',
+  validateRequest({ body: proactiveInvestigationConfigSchema }),
+  async (req, res, next) => {
+    try {
+      const actor = req.user as any;
+      const userId = actor?._id;
+      const setting = await PlatformSetting.findOneAndUpdate(
+        { key: 'proactiveInvestigation' },
+        { $set: { value: req.body, updatedBy: userId } },
+        { upsert: true, new: true },
+      );
+      res.json({ data: setting });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
 
 export default router;

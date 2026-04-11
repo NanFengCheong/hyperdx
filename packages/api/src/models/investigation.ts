@@ -2,9 +2,16 @@ import mongoose, { Schema } from 'mongoose';
 
 import type { ObjectId } from '.';
 
-export type InvestigationStatus = 'active' | 'resolved' | 'exported';
+export type InvestigationStatus =
+  | 'active'
+  | 'resolved'
+  | 'exported'
+  | 'pending'
+  | 'failed'
+  | 'needs_review'
+  | 'ignored';
 
-export type EntryPointType = 'trace' | 'alert' | 'standalone';
+export type EntryPointType = 'trace' | 'alert' | 'standalone' | 'proactive';
 
 export interface IToolCall {
   name: string;
@@ -67,6 +74,12 @@ export interface ILoopState {
   thinkingLog: IThinkingEntry[];
 }
 
+export interface IInvestigationArtifact {
+  type: 'savedSearch' | 'dashboard' | 'alert';
+  id: string;
+  purpose: string;
+}
+
 export interface IInvestigation {
   _id: ObjectId;
   team: ObjectId;
@@ -83,6 +96,16 @@ export interface IInvestigation {
   sharedWith?: ObjectId[];
   exports?: IInvestigationExport[];
   loopState?: ILoopState;
+  // Proactive investigation fields
+  source?: 'alert' | 'anomaly';
+  sourceRef?: string;
+  fingerprint?: string;
+  reopenedFrom?: ObjectId;
+  leaseExpiresAt?: Date;
+  attemptCount?: number;
+  lastError?: string;
+  artifacts?: IInvestigationArtifact[];
+  budget?: { startedAt?: Date; tokenUsed?: number; toolCalls?: number };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -152,6 +175,19 @@ const LoopStateSchema = new Schema(
   { _id: false },
 );
 
+const ArtifactSchema = new Schema(
+  {
+    type: {
+      type: String,
+      enum: ['savedSearch', 'dashboard', 'alert'],
+      required: true,
+    },
+    id: { type: String, required: true },
+    purpose: { type: String, required: true },
+  },
+  { _id: false },
+);
+
 const InvestigationSchema = new Schema<IInvestigation>(
   {
     team: { type: Schema.Types.ObjectId, ref: 'Team', required: true },
@@ -159,13 +195,21 @@ const InvestigationSchema = new Schema<IInvestigation>(
     title: { type: String, required: true },
     status: {
       type: String,
-      enum: ['active', 'resolved', 'exported'],
+      enum: [
+        'active',
+        'resolved',
+        'exported',
+        'pending',
+        'failed',
+        'needs_review',
+        'ignored',
+      ],
       default: 'active',
     },
     entryPoint: {
       type: {
         type: String,
-        enum: ['trace', 'alert', 'standalone'],
+        enum: ['trace', 'alert', 'standalone', 'proactive'],
         required: true,
       },
       traceId: { type: String },
@@ -176,6 +220,20 @@ const InvestigationSchema = new Schema<IInvestigation>(
     sharedWith: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     exports: { type: [ExportSchema], default: undefined },
     loopState: { type: LoopStateSchema, default: () => ({}) },
+    // Proactive investigation fields
+    source: { type: String, enum: ['alert', 'anomaly'], required: false },
+    sourceRef: { type: String, required: false },
+    fingerprint: { type: String, required: false },
+    reopenedFrom: {
+      type: Schema.Types.ObjectId,
+      ref: 'Investigation',
+      required: false,
+    },
+    leaseExpiresAt: { type: Date, required: false },
+    attemptCount: { type: Number, required: false },
+    lastError: { type: String, required: false },
+    artifacts: { type: [ArtifactSchema], required: false },
+    budget: { type: Schema.Types.Mixed, required: false },
   },
   { timestamps: true },
 );
@@ -184,6 +242,7 @@ const InvestigationSchema = new Schema<IInvestigation>(
 InvestigationSchema.index({ team: 1, createdAt: -1 });
 InvestigationSchema.index({ team: 1, status: 1 });
 InvestigationSchema.index({ sharedWith: 1 });
+InvestigationSchema.index({ team: 1, fingerprint: 1 });
 
 const Investigation = mongoose.model<IInvestigation>(
   'Investigation',

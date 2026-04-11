@@ -17,6 +17,7 @@ import type {
   PhaseGroup,
   ToolCallEntry,
 } from '../../hooks/useInvestigationStream';
+
 import { BudgetBar } from './BudgetBar';
 import { ReplayControls } from './ReplayControls';
 import { ThinkingBlock } from './ThinkingBlock';
@@ -54,7 +55,9 @@ function PhaseTimeline({
   isOwner: boolean;
 }) {
   const activePhase = isComplete ? null : currentPhase;
-  const startedAt = phaseGroups.find(pg => pg.phase === currentPhase)?.startedAt;
+  const startedAt = phaseGroups.find(
+    pg => pg.phase === currentPhase,
+  )?.startedAt;
 
   return (
     <Stack gap="xs">
@@ -67,7 +70,9 @@ function PhaseTimeline({
         value={activePhase}
         multiple={false}
         chevronPosition="right"
-        styles={{ item: { borderBottom: '1px solid var(--mantine-color-dark-5)' } }}
+        styles={{
+          item: { borderBottom: '1px solid var(--mantine-color-dark-5)' },
+        }}
       >
         {phaseGroups.map(pg => {
           const calls = toolCallsByPhase[pg.phase] ?? [];
@@ -76,7 +81,12 @@ function PhaseTimeline({
               <Accordion.Control>
                 <Group gap="xs">
                   {pg.status === 'completed' ? (
-                    <ThemeIcon size="xs" color="green" radius="xl" variant="light">
+                    <ThemeIcon
+                      size="xs"
+                      color="green"
+                      radius="xl"
+                      variant="light"
+                    >
                       <IconCheck size={10} />
                     </ThemeIcon>
                   ) : pg.status === 'active' ? (
@@ -98,7 +108,7 @@ function PhaseTimeline({
                     <Text size="xs" c="dimmed">
                       {pg.status === 'pending'
                         ? PHASE_DESCRIPTIONS[pg.phase]
-                        : pg.summaryText ?? PHASE_DESCRIPTIONS[pg.phase]}
+                        : (pg.summaryText ?? PHASE_DESCRIPTIONS[pg.phase])}
                     </Text>
                   ) : (
                     <>
@@ -173,7 +183,11 @@ export function DebugDrawer({
   jumpToPhase,
 }: DebugDrawerProps) {
   const confidenceColor =
-    confidence === 'high' ? 'green' : confidence === 'medium' ? 'yellow' : 'red';
+    confidence === 'high'
+      ? 'green'
+      : confidence === 'medium'
+        ? 'yellow'
+        : 'red';
 
   return (
     <Drawer

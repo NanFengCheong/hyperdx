@@ -1,5 +1,5 @@
-import { Group, Progress, Stack, Text } from '@mantine/core';
 import { useEffect, useRef, useState } from 'react';
+import { Group, Progress, Stack, Text } from '@mantine/core';
 
 import type { BudgetSnapshot } from '../../hooks/useInvestigationStream';
 
@@ -22,7 +22,11 @@ interface BudgetBarProps {
   startedAt?: number;
 }
 
-export function BudgetBar({ budgetSnapshot, isActive, startedAt }: BudgetBarProps) {
+export function BudgetBar({
+  budgetSnapshot,
+  isActive,
+  startedAt,
+}: BudgetBarProps) {
   const [elapsed, setElapsed] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 

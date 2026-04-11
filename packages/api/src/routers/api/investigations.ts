@@ -76,17 +76,19 @@ router.get(
     query: z.object({
       page: z.coerce.number().int().positive().default(1),
       limit: z.coerce.number().int().positive().max(100).default(20),
+      source: z.enum(['proactive']).optional(),
     }),
   }),
   async (req, res, next) => {
     try {
       const { teamId } = getNonNullUserWithTeam(req as any);
-      const { page, limit } = req.query;
+      const { page, limit, source } = req.query;
 
       const results = await listInvestigations({
         teamId: teamId.toString(),
         page,
         limit,
+        source,
       });
 
       res.json(results);
@@ -103,6 +105,7 @@ router.get('/:id', async (req, res, next) => {
     const investigation = await getInvestigation({
       teamId: teamId.toString(),
       investigationId: req.params.id,
+      withMemory: true,
     });
 
     if (!investigation) {

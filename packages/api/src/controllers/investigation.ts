@@ -4,6 +4,7 @@ import type {
   InvestigationStatus,
 } from '@/models/investigation';
 import Investigation from '@/models/investigation';
+import InvestigationMemory from '@/models/investigationMemory';
 
 export async function createInvestigation({
   teamId,
@@ -60,35 +61,77 @@ export async function listInvestigations({
   teamId,
   page = 1,
   limit = 20,
+  source,
 }: {
   teamId: string;
   page?: number;
   limit?: number;
+  source?: string;
 }) {
   const skip = (page - 1) * limit;
+  const filter: Record<string, unknown> = { team: teamId };
+  if (source === 'proactive') {
+    filter['entryPoint.type'] = 'proactive';
+  }
   const [data, total] = await Promise.all([
-    Investigation.find({ team: teamId })
+    Investigation.find(filter)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .select('-messages')
       .lean(),
-    Investigation.countDocuments({ team: teamId }),
+    Investigation.countDocuments(filter),
   ]);
-  return { data, total, page, limit };
+
+  // Attach recurrenceCount for proactive investigations (single batched query)
+  const proactiveIds = data
+    .filter(inv => inv.entryPoint?.type === 'proactive')
+    .map(inv => inv._id);
+  const memories =
+    proactiveIds.length > 0
+      ? await InvestigationMemory.find({
+          investigationId: { $in: proactiveIds },
+        })
+          .select('investigationId recurrenceCount')
+          .lean()
+      : [];
+  const memoryMap = new Map(
+    memories.map(m => [m.investigationId.toString(), m.recurrenceCount]),
+  );
+  const enrichedData = data.map(inv => {
+    if (inv.entryPoint?.type === 'proactive') {
+      return { ...inv, recurrenceCount: memoryMap.get(inv._id.toString()) ?? 0 };
+    }
+    return inv;
+  });
+
+  return { data: enrichedData, total, page, limit };
 }
 
 export async function getInvestigation({
   teamId,
   investigationId,
+  withMemory = false,
 }: {
   teamId: string;
   investigationId: string;
+  withMemory?: boolean;
 }) {
-  return Investigation.findOne({
+  const investigation = await Investigation.findOne({
     _id: investigationId,
     team: teamId,
   }).lean();
+
+  if (!investigation) return null;
+
+  if (withMemory) {
+    const memory = await InvestigationMemory.findOne({
+      investigationId: investigation._id,
+    }).lean();
+    return { ...investigation, memory: memory ?? null };
+  }
+
+  return investigation;
 }
 
 export async function updateInvestigation({

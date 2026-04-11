@@ -1,7 +1,16 @@
 import { useState } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import { Badge, Box, Button, Group, Menu, Text, Title } from '@mantine/core';
+import {
+  Badge,
+  Box,
+  Button,
+  Group,
+  Menu,
+  Stack,
+  Text,
+  Title,
+} from '@mantine/core';
 
 import {
   InvestigationChat,
@@ -110,6 +119,89 @@ function InvestigationDetailContent() {
           </Group>
         </Group>
       </Box>
+
+      {/* AI Investigation Report */}
+      {investigation.entryPoint.type === 'proactive' &&
+        investigation.memory && (
+          <Box
+            p="md"
+            style={{ borderBottom: '1px solid var(--mantine-color-dark-4)' }}
+          >
+            <Title order={5} mb="sm">
+              AI Investigation Report
+            </Title>
+            <Stack gap="xs">
+              <Text size="sm">{investigation.memory.summary}</Text>
+
+              <Group gap="xs">
+                <Text size="xs" c="dimmed">
+                  Confidence:
+                </Text>
+                <Badge
+                  size="xs"
+                  color={
+                    investigation.memory.confidence === 'high'
+                      ? 'green'
+                      : investigation.memory.confidence === 'medium'
+                        ? 'yellow'
+                        : 'red'
+                  }
+                >
+                  {investigation.memory.confidence}
+                </Badge>
+              </Group>
+
+              {investigation.memory.rootCause && (
+                <Group gap="xs" align="flex-start">
+                  <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+                    Root cause:
+                  </Text>
+                  <Text size="xs">{investigation.memory.rootCause}</Text>
+                </Group>
+              )}
+
+              {investigation.memory.findings.length > 0 && (
+                <Group gap="xs">
+                  <Text size="xs" c="dimmed">
+                    Affected services:
+                  </Text>
+                  {[
+                    ...new Set(
+                      investigation.memory.findings.map(f => f.service),
+                    ),
+                  ].map(svc => (
+                    <Badge key={svc} size="xs" variant="outline">
+                      {svc}
+                    </Badge>
+                  ))}
+                </Group>
+              )}
+
+              {investigation.memory.artifactsCreated.length > 0 && (
+                <Group gap="xs">
+                  <Text size="xs" c="dimmed">
+                    Artifacts:
+                  </Text>
+                  {investigation.memory.artifactsCreated.map((a, i) => (
+                    <Badge
+                      key={i}
+                      size="xs"
+                      variant="light"
+                      style={{ cursor: 'pointer' }}
+                    >
+                      {a.type === 'savedSearch'
+                        ? 'Saved Search'
+                        : a.type === 'dashboard'
+                          ? 'Dashboard'
+                          : 'Alert'}
+                      : {a.purpose}
+                    </Badge>
+                  ))}
+                </Group>
+              )}
+            </Stack>
+          </Box>
+        )}
 
       {/* Chat area */}
       <Box style={{ flex: 1, overflow: 'hidden' }}>

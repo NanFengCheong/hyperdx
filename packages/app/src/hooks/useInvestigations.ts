@@ -3,14 +3,36 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { hdxServer } from '@/api';
 
+export interface InvestigationMemory {
+  summary: string;
+  confidence: 'high' | 'medium' | 'low';
+  rootCause?: string;
+  findings: {
+    service: string;
+    symptom: string;
+    rootCause: string;
+    confidence: string;
+    wasVerified: boolean;
+  }[];
+  artifactsCreated: { type: string; id: string; purpose: string }[];
+  recurrenceCount: number;
+}
+
 export interface Investigation {
   _id: string;
   team: string;
   createdBy: string;
   title: string;
-  status: 'active' | 'resolved' | 'exported';
+  status:
+    | 'active'
+    | 'resolved'
+    | 'exported'
+    | 'pending'
+    | 'failed'
+    | 'needs_review'
+    | 'ignored';
   entryPoint: {
-    type: 'trace' | 'alert' | 'standalone';
+    type: 'trace' | 'alert' | 'standalone' | 'proactive';
     traceId?: string;
     alertId?: string;
   };
@@ -20,6 +42,17 @@ export interface Investigation {
   exports?: { format: string; content: string; createdAt: string }[];
   createdAt: string;
   updatedAt: string;
+  source?: 'alert' | 'anomaly';
+  fingerprint?: string;
+  sourceRef?: string;
+  attemptCount?: number;
+  artifacts?: {
+    type: 'savedSearch' | 'dashboard' | 'alert';
+    id: string;
+    purpose: string;
+  }[];
+  recurrenceCount?: number;
+  memory?: InvestigationMemory;
 }
 
 export interface InvestigationMessage {
@@ -29,14 +62,20 @@ export interface InvestigationMessage {
   timestamp: string;
 }
 
-export function useInvestigations(page = 1, limit = 20) {
+export function useInvestigations(page = 1, limit = 20, source?: string) {
   return useQuery({
-    queryKey: ['investigations', page, limit],
-    queryFn: () =>
-      hdxServer(`investigations?page=${page}&limit=${limit}`).json<{
+    queryKey: ['investigations', page, limit, source],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(limit),
+      });
+      if (source) params.set('source', source);
+      return hdxServer(`investigations?${params.toString()}`).json<{
         data: Investigation[];
         total: number;
-      }>(),
+      }>();
+    },
   });
 }
 

@@ -49,10 +49,12 @@ import {
   useAdminTeamMembers,
   useAdminTeams,
   useDataRetentionSettings,
+  useProactiveInvestigationSettings,
   useRunDataRetention,
   useToggleSuperAdmin,
   useUpdateAdminNotificationLogRetention,
   useUpdateDataRetentionSettings,
+  useUpdateProactiveInvestigationSettings,
 } from './api';
 import { withAppNav } from './layout';
 
@@ -998,6 +1000,286 @@ function DataRetentionPanel() {
 }
 
 // ---------------------------------------------------------------------------
+// Proactive Investigations Tab
+// ---------------------------------------------------------------------------
+const DEFAULT_PI_SETTINGS = {
+  enabled: false,
+  modelName: '',
+  modelBaseUrl: '',
+  maxRunsPerTeamHour: 4,
+  reopenAfterHours: 24,
+  memoryTTLDays: 30,
+  budget: {
+    maxToolCalls: 20,
+    maxTokens: 50000,
+  },
+  anomalySweep: {
+    errorRateMultiplier: 2,
+    minAbsoluteCount: 10,
+    topK: 5,
+  },
+  circuitBreaker: {
+    maxFailuresPerHour: 5,
+    pauseMinutes: 60,
+  },
+};
+
+function ProactiveInvestigationsPanel() {
+  const queryClient = useQueryClient();
+  const { data: settingsData, isLoading: settingsLoading } =
+    useProactiveInvestigationSettings();
+  const updateSettings = useUpdateProactiveInvestigationSettings();
+
+  const [form, setForm] =
+    useState<typeof DEFAULT_PI_SETTINGS>(DEFAULT_PI_SETTINGS);
+  const [formInitialized, setFormInitialized] = useState(false);
+
+  if (settingsData?.data && !formInitialized) {
+    const s = settingsData.data;
+    setForm({
+      enabled: s.enabled ?? DEFAULT_PI_SETTINGS.enabled,
+      modelName: s.modelName ?? DEFAULT_PI_SETTINGS.modelName,
+      modelBaseUrl: s.modelBaseUrl ?? DEFAULT_PI_SETTINGS.modelBaseUrl,
+      maxRunsPerTeamHour:
+        s.maxRunsPerTeamHour ?? DEFAULT_PI_SETTINGS.maxRunsPerTeamHour,
+      reopenAfterHours:
+        s.reopenAfterHours ?? DEFAULT_PI_SETTINGS.reopenAfterHours,
+      memoryTTLDays: s.memoryTTLDays ?? DEFAULT_PI_SETTINGS.memoryTTLDays,
+      budget: {
+        maxToolCalls:
+          s.budget?.maxToolCalls ?? DEFAULT_PI_SETTINGS.budget.maxToolCalls,
+        maxTokens: s.budget?.maxTokens ?? DEFAULT_PI_SETTINGS.budget.maxTokens,
+      },
+      anomalySweep: {
+        errorRateMultiplier:
+          s.anomalySweep?.errorRateMultiplier ??
+          DEFAULT_PI_SETTINGS.anomalySweep.errorRateMultiplier,
+        minAbsoluteCount:
+          s.anomalySweep?.minAbsoluteCount ??
+          DEFAULT_PI_SETTINGS.anomalySweep.minAbsoluteCount,
+        topK: s.anomalySweep?.topK ?? DEFAULT_PI_SETTINGS.anomalySweep.topK,
+      },
+      circuitBreaker: {
+        maxFailuresPerHour:
+          s.circuitBreaker?.maxFailuresPerHour ??
+          DEFAULT_PI_SETTINGS.circuitBreaker.maxFailuresPerHour,
+        pauseMinutes:
+          s.circuitBreaker?.pauseMinutes ??
+          DEFAULT_PI_SETTINGS.circuitBreaker.pauseMinutes,
+      },
+    });
+    setFormInitialized(true);
+  }
+
+  const handleSave = useCallback(() => {
+    updateSettings.mutate(form, {
+      onSuccess: () => {
+        notifications.show({
+          color: 'green',
+          title: 'Settings Saved',
+          message: 'Proactive investigation settings updated successfully.',
+        });
+        queryClient.invalidateQueries({
+          queryKey: ['admin', 'proactive-investigation-settings'],
+        });
+      },
+      onError: e => {
+        notifications.show({
+          color: 'red',
+          title: 'Save Failed',
+          message: e.message ?? 'Failed to update settings.',
+        });
+      },
+    });
+  }, [form, updateSettings, queryClient]);
+
+  if (settingsLoading) {
+    return (
+      <Center py="xl">
+        <Loader />
+      </Center>
+    );
+  }
+
+  return (
+    <Stack gap="lg">
+      <Stack gap="sm">
+        <Title order={4}>General</Title>
+        <Switch
+          label="Enable proactive investigations"
+          checked={form.enabled}
+          onChange={e =>
+            setForm(f => ({ ...f, enabled: e.currentTarget.checked }))
+          }
+        />
+        <Group grow>
+          <TextInput
+            label="Model name"
+            placeholder="e.g. qwen3-235b-a22b"
+            value={form.modelName}
+            onChange={e =>
+              setForm(f => ({ ...f, modelName: e.currentTarget.value }))
+            }
+          />
+          <TextInput
+            label="Model base URL (optional)"
+            value={form.modelBaseUrl}
+            onChange={e =>
+              setForm(f => ({ ...f, modelBaseUrl: e.currentTarget.value }))
+            }
+          />
+        </Group>
+        <Text size="sm" c="dimmed">
+          API key is configured via environment variable — not editable here.
+        </Text>
+        <Group grow>
+          <NumberInput
+            label="Max runs per team per hour"
+            min={1}
+            value={form.maxRunsPerTeamHour}
+            onChange={v =>
+              setForm(f => ({ ...f, maxRunsPerTeamHour: Number(v) }))
+            }
+          />
+          <NumberInput
+            label="Reopen after hours"
+            min={1}
+            value={form.reopenAfterHours}
+            onChange={v =>
+              setForm(f => ({ ...f, reopenAfterHours: Number(v) }))
+            }
+          />
+          <NumberInput
+            label="Memory TTL (days)"
+            min={1}
+            value={form.memoryTTLDays}
+            onChange={v => setForm(f => ({ ...f, memoryTTLDays: Number(v) }))}
+          />
+        </Group>
+      </Stack>
+
+      <Stack gap="sm">
+        <Title order={4}>Budget</Title>
+        <Group grow>
+          <NumberInput
+            label="Max tool calls"
+            min={1}
+            value={form.budget.maxToolCalls}
+            onChange={v =>
+              setForm(f => ({
+                ...f,
+                budget: { ...f.budget, maxToolCalls: Number(v) },
+              }))
+            }
+          />
+          <NumberInput
+            label="Max tokens"
+            min={1}
+            value={form.budget.maxTokens}
+            onChange={v =>
+              setForm(f => ({
+                ...f,
+                budget: { ...f.budget, maxTokens: Number(v) },
+              }))
+            }
+          />
+        </Group>
+      </Stack>
+
+      <Stack gap="sm">
+        <Title order={4}>Anomaly Sweep</Title>
+        <Group grow>
+          <NumberInput
+            label="Error rate multiplier"
+            step={0.1}
+            min={0.1}
+            value={form.anomalySweep.errorRateMultiplier}
+            onChange={v =>
+              setForm(f => ({
+                ...f,
+                anomalySweep: {
+                  ...f.anomalySweep,
+                  errorRateMultiplier: Number(v),
+                },
+              }))
+            }
+          />
+          <NumberInput
+            label="Min absolute error count"
+            min={1}
+            value={form.anomalySweep.minAbsoluteCount}
+            onChange={v =>
+              setForm(f => ({
+                ...f,
+                anomalySweep: {
+                  ...f.anomalySweep,
+                  minAbsoluteCount: Number(v),
+                },
+              }))
+            }
+          />
+          <NumberInput
+            label="Top K services to investigate"
+            min={1}
+            value={form.anomalySweep.topK}
+            onChange={v =>
+              setForm(f => ({
+                ...f,
+                anomalySweep: { ...f.anomalySweep, topK: Number(v) },
+              }))
+            }
+          />
+        </Group>
+      </Stack>
+
+      <Stack gap="sm">
+        <Title order={4}>Circuit Breaker</Title>
+        <Group grow>
+          <NumberInput
+            label="Circuit breaker: max failures per hour"
+            min={1}
+            value={form.circuitBreaker.maxFailuresPerHour}
+            onChange={v =>
+              setForm(f => ({
+                ...f,
+                circuitBreaker: {
+                  ...f.circuitBreaker,
+                  maxFailuresPerHour: Number(v),
+                },
+              }))
+            }
+          />
+          <NumberInput
+            label="Circuit breaker: pause duration (minutes)"
+            min={1}
+            value={form.circuitBreaker.pauseMinutes}
+            onChange={v =>
+              setForm(f => ({
+                ...f,
+                circuitBreaker: {
+                  ...f.circuitBreaker,
+                  pauseMinutes: Number(v),
+                },
+              }))
+            }
+          />
+        </Group>
+      </Stack>
+
+      <Group>
+        <Button
+          onClick={handleSave}
+          loading={updateSettings.isPending}
+          size="sm"
+        >
+          Save Settings
+        </Button>
+      </Group>
+    </Stack>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Page
 // ---------------------------------------------------------------------------
 export default function AdminPage() {
@@ -1025,6 +1307,9 @@ export default function AdminPage() {
             <Tabs.Tab value="audit-log">Global Audit Log</Tabs.Tab>
             <Tabs.Tab value="notification-log">Notification Log</Tabs.Tab>
             <Tabs.Tab value="data-retention">Data Retention</Tabs.Tab>
+            <Tabs.Tab value="proactive-investigations">
+              Proactive Investigations
+            </Tabs.Tab>
           </Tabs.List>
 
           <Tabs.Panel value="teams">
@@ -1045,6 +1330,10 @@ export default function AdminPage() {
 
           <Tabs.Panel value="data-retention">
             <DataRetentionPanel />
+          </Tabs.Panel>
+
+          <Tabs.Panel value="proactive-investigations">
+            <ProactiveInvestigationsPanel />
           </Tabs.Panel>
         </Tabs>
       </Container>

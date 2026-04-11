@@ -73,6 +73,44 @@ function InvestigateAlert({ alert }: { alert: AlertsPageItem }) {
   );
 }
 
+function PromoteAlert({ alert }: { alert: AlertsPageItem }) {
+  const queryClient = useQueryClient();
+  const [isLoading, setIsLoading] = React.useState(false);
+
+  const handlePromote = async () => {
+    setIsLoading(true);
+    try {
+      await fetch(`/api/alerts/${alert._id}/state`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: 'OK' }),
+      });
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      notifications.show({
+        color: 'green',
+        message: 'Alert promoted successfully',
+      });
+    } catch {
+      notifications.show({ color: 'red', message: 'Failed to promote alert' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Button
+      size="compact-sm"
+      variant="primary"
+      leftSection={<IconCheck size={16} />}
+      onClick={handlePromote}
+      loading={isLoading}
+    >
+      Promote
+    </Button>
+  );
+}
+
 function AlertHistoryCard({
   history,
   alertUrl,
@@ -435,6 +473,11 @@ function AlertDetails({ alert }: { alert: AlertsPageItem }) {
             Disabled
           </Badge>
         )}
+        {alert.state === ('DRAFT' as any) && (
+          <Badge variant="light" color="yellow">
+            Draft
+          </Badge>
+        )}
 
         <Stack gap={2}>
           <div>
@@ -467,6 +510,7 @@ function AlertDetails({ alert }: { alert: AlertsPageItem }) {
 
       <Group>
         <AlertHistoryCardList history={alert.history} alertUrl={alertUrl} />
+        {alert.state === ('DRAFT' as any) && <PromoteAlert alert={alert} />}
         <InvestigateAlert alert={alert} />
         <AckAlert alert={alert} />
       </Group>
@@ -477,6 +521,7 @@ function AlertDetails({ alert }: { alert: AlertsPageItem }) {
 function AlertCardList({ alerts }: { alerts: AlertsPageItem[] }) {
   const alarmAlerts = alerts.filter(alert => alert.state === AlertState.ALERT);
   const okData = alerts.filter(alert => alert.state === AlertState.OK);
+  const draftAlerts = alerts.filter(alert => alert.state === ('DRAFT' as any));
 
   return (
     <div className="d-flex flex-column gap-4">
@@ -506,6 +551,16 @@ function AlertCardList({ alerts }: { alerts: AlertsPageItem[] }) {
           <AlertDetails key={index} alert={alert} />
         ))}
       </div>
+      {draftAlerts.length > 0 && (
+        <div>
+          <Group className={styles.sectionHeader}>
+            <IconBell size={14} /> Draft
+          </Group>
+          {draftAlerts.map((alert, index) => (
+            <AlertDetails key={index} alert={alert} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

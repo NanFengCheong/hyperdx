@@ -64,7 +64,7 @@ const artifactsCreatedCounter: Counter = meter.createCounter(
 
 // EntryPoint type (matches the model's entryPoint discriminator)
 export type EntryPoint = {
-  type: 'trace' | 'alert' | 'standalone';
+  type: 'trace' | 'alert' | 'standalone' | 'proactive';
   traceId?: any;
   alertId?: any;
 };
