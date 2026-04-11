@@ -2,18 +2,22 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActionIcon,
   Box,
+  Button,
   Loader,
   ScrollArea,
   Stack,
   Text,
   Textarea,
 } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 
 import {
   useInvestigation,
   useInvestigationChat,
 } from '../../hooks/useInvestigations';
+import { useInvestigationStream } from '../../hooks/useInvestigationStream';
 
+import { DebugDrawer } from './DebugDrawer';
 import InvestigationMessage from './InvestigationMessage';
 
 interface InvestigationChatProps {
@@ -30,6 +34,9 @@ export default function InvestigationChat({
     useInvestigationChat(investigationId);
   const [input, setInput] = useState('');
   const viewportRef = useRef<HTMLDivElement>(null);
+  const [debugOpened, { open: openDebug, close: closeDebug }] =
+    useDisclosure(false);
+  const streamState = useInvestigationStream(investigationId ?? null);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -57,6 +64,22 @@ export default function InvestigationChat({
 
   return (
     <Stack h="100%" gap={0}>
+      <DebugDrawer
+        opened={debugOpened}
+        onClose={closeDebug}
+        investigationId={investigationId}
+        {...streamState}
+      />
+      {/* Header */}
+      <Box
+        px="md"
+        py="xs"
+        style={{ borderBottom: '1px solid var(--mantine-color-dark-4)', display: 'flex', justifyContent: 'flex-end' }}
+      >
+        <Button size="xs" variant="subtle" onClick={openDebug}>
+          Debug
+        </Button>
+      </Box>
       {/* Messages area */}
       <ScrollArea style={{ flex: 1 }} viewportRef={viewportRef}>
         <Stack gap="md" p="md">

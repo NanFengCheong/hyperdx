@@ -26,6 +26,8 @@ import {
 } from '@/controllers/investigation-tools/schema';
 import { getSource } from '@/controllers/sources';
 import { getNonNullUserWithTeam } from '@/middleware/auth';
+import type { DebugEvent } from '@/utils/investigationEventBus';
+import { investigationEventBus } from '@/utils/investigationEventBus';
 import { objectIdSchema } from '@/utils/zod';
 
 const router = express.Router();
@@ -580,5 +582,53 @@ router.post(
     }
   },
 );
+
+// GET /investigations/:id/stream — SSE debug stream for an investigation
+router.get('/:id/stream', async (req, res, next) => {
+  try {
+    const { teamId } = getNonNullUserWithTeam(req as any);
+    const investigationId = req.params.id;
+
+    // Verify investigation exists and belongs to team
+    const investigation = await getInvestigation({
+      teamId: teamId.toString(),
+      investigationId,
+    });
+    if (!investigation) {
+      return res.status(404).json({ error: 'Investigation not found' });
+    }
+
+    // Set up SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    let eventId = 0;
+
+    const sendEvent = (event: DebugEvent) => {
+      eventId++;
+      res.write(`id: ${eventId}\n`);
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    };
+
+    // Subscribe to investigation events
+    const unsubscribe = investigationEventBus.subscribeToInvestigation(
+      investigationId,
+      sendEvent,
+    );
+
+    // Send initial connected event
+    res.write(`data: ${JSON.stringify({ type: 'connected', investigationId })}\n\n`);
+
+    // Clean up on client disconnect
+    req.on('close', () => {
+      unsubscribe();
+    });
+  } catch (e) {
+    next(e);
+  }
+});
 
 export default router;

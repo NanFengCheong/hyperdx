@@ -37,6 +37,7 @@ export interface ILoopPhaseHistory {
   input: string;
   output: string;
   toolCalls: number;
+  summaryText?: string;
   completedAt: Date;
 }
 
@@ -110,6 +111,7 @@ const LoopPhaseHistorySchema = new Schema(
     input: { type: String, required: true },
     output: { type: String, required: true },
     toolCalls: { type: Number, default: 0 },
+    summaryText: { type: String },
     completedAt: { type: Date, default: Date.now },
   },
   { _id: false },

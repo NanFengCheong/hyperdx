@@ -10,6 +10,8 @@ import type {
   LoopPhase,
 } from '@/models/investigation';
 
+import { investigationEventBus } from '@/utils/investigationEventBus';
+
 import { getAIModel } from './ai';
 import { createInvestigationTools } from './investigation-tools/tools';
 
@@ -455,6 +457,7 @@ export interface InvestigationCycleInput {
   connection: { host: string; username: string; password: string };
   teamId: string;
   userId: string;
+  investigationId?: string;
   onPhaseUpdate?: (phase: LoopPhase, output: string) => void;
 }
 
@@ -475,6 +478,7 @@ export async function runInvestigationCycle({
   connection,
   teamId,
   userId,
+  investigationId,
   onPhaseUpdate,
 }: InvestigationCycleInput): Promise<InvestigationCycleResult> {
   return investigationTracer.startActiveSpan(
@@ -504,6 +508,10 @@ export async function runInvestigationCycle({
           },
         ];
 
+        if (investigationId) {
+          investigationEventBus.emitDebugEvent({ type: 'phase_start', investigationId, phase: 'plan', timestamp: Date.now() });
+        }
+
         const planResult = await runAgentPhase({
           messages: planMessages,
           systemPrompt: planPrompt,
@@ -522,6 +530,10 @@ export async function runInvestigationCycle({
           completedAt: new Date(),
         });
         onPhaseUpdate?.('plan', planResult.text);
+        phaseHistory[phaseHistory.length - 1].summaryText = planResult.text.slice(0, 200);
+        if (investigationId) {
+          investigationEventBus.emitDebugEvent({ type: 'phase_end', investigationId, phase: 'plan', summaryText: planResult.text.slice(0, 200), toolCallCount: planResult.toolCallCount, timestamp: Date.now() });
+        }
 
         // ----- Phase 2: EXECUTE -----
         const executePrompt = buildExecuteSystemPrompt({
@@ -536,6 +548,10 @@ export async function runInvestigationCycle({
               'Execute the investigation plan. Call tools to gather evidence.',
           },
         ];
+
+        if (investigationId) {
+          investigationEventBus.emitDebugEvent({ type: 'phase_start', investigationId, phase: 'execute', timestamp: Date.now() });
+        }
 
         const executeResult = await runAgentPhase({
           messages: executeMessages,
@@ -555,6 +571,10 @@ export async function runInvestigationCycle({
           completedAt: new Date(),
         });
         onPhaseUpdate?.('execute', executeResult.text);
+        phaseHistory[phaseHistory.length - 1].summaryText = executeResult.text.slice(0, 200);
+        if (investigationId) {
+          investigationEventBus.emitDebugEvent({ type: 'phase_end', investigationId, phase: 'execute', summaryText: executeResult.text.slice(0, 200), toolCallCount: executeResult.toolCallCount, timestamp: Date.now() });
+        }
 
         // ----- Phase 3: VERIFY -----
         const verifyPrompt = buildVerifySystemPrompt({
@@ -569,6 +589,10 @@ export async function runInvestigationCycle({
               'Verify the investigation findings. Try to disprove each conclusion using independent data.',
           },
         ];
+
+        if (investigationId) {
+          investigationEventBus.emitDebugEvent({ type: 'phase_start', investigationId, phase: 'verify', timestamp: Date.now() });
+        }
 
         const verifyResult = await runAgentPhase({
           messages: verifyMessages,
@@ -588,6 +612,10 @@ export async function runInvestigationCycle({
           completedAt: new Date(),
         });
         onPhaseUpdate?.('verify', verifyResult.text);
+        phaseHistory[phaseHistory.length - 1].summaryText = verifyResult.text.slice(0, 200);
+        if (investigationId) {
+          investigationEventBus.emitDebugEvent({ type: 'phase_end', investigationId, phase: 'verify', summaryText: verifyResult.text.slice(0, 200), toolCallCount: verifyResult.toolCallCount, timestamp: Date.now() });
+        }
 
         // ----- Phase 4: SUMMARIZE -----
         const summarizePrompt = buildSummarizeSystemPrompt({
@@ -604,6 +632,10 @@ export async function runInvestigationCycle({
               'Synthesize the investigation findings into a structured report. Create monitoring artifacts for anything worth tracking ongoing.',
           },
         ];
+
+        if (investigationId) {
+          investigationEventBus.emitDebugEvent({ type: 'phase_start', investigationId, phase: 'summarize', timestamp: Date.now() });
+        }
 
         const summarizeResult = await runAgentPhase({
           messages: summarizeMessages,
@@ -623,6 +655,10 @@ export async function runInvestigationCycle({
           completedAt: new Date(),
         });
         onPhaseUpdate?.('summarize', summarizeResult.text);
+        phaseHistory[phaseHistory.length - 1].summaryText = summarizeResult.text.slice(0, 200);
+        if (investigationId) {
+          investigationEventBus.emitDebugEvent({ type: 'phase_end', investigationId, phase: 'summarize', summaryText: summarizeResult.text.slice(0, 200), toolCallCount: summarizeResult.toolCallCount, timestamp: Date.now() });
+        }
 
         // Determine confidence from verification verdicts
         const confidence = determineConfidence(verifyResult.text);
@@ -669,6 +705,10 @@ export async function runInvestigationCycle({
           ).reduce((a, b) => a + b, 0),
         });
 
+        if (investigationId) {
+          investigationEventBus.emitDebugEvent({ type: 'investigation_complete', investigationId, confidence, timestamp: Date.now() });
+        }
+
         return {
           plan: planResult.text,
           evidence: executeResult.text,
@@ -683,6 +723,13 @@ export async function runInvestigationCycle({
           code: 2, // ERROR
           message: (err as Error).message,
         });
+        cycleFailureCounter.add(1, {
+          'hyperdx.investigation.team.id': teamId,
+          'hyperdx.investigation.trigger.type': triggerType,
+        });
+        if (investigationId) {
+          investigationEventBus.emitDebugEvent({ type: 'investigation_failed', investigationId, error: (err as Error).message, timestamp: Date.now() });
+        }
         throw err;
       } finally {
         cycleSpan.end();
@@ -726,13 +773,13 @@ function countArtifactsInSummary(summary: string): Record<string, number> {
     /created (?:advanced )?dashboard:\s*[^(]*\(ID:\s*[a-f0-9]+\)/gi;
   const alertPattern = /created alert:\s*[^(]*\(ID:\s*[a-f0-9]+\)/gi;
 
-  for (const match of summary.matchAll(savedSearchPattern)) {
+  for (const _match of summary.matchAll(savedSearchPattern)) {
     counts.savedSearch++;
   }
-  for (const match of summary.matchAll(dashboardPattern)) {
+  for (const _match of summary.matchAll(dashboardPattern)) {
     counts.dashboard++;
   }
-  for (const match of summary.matchAll(alertPattern)) {
+  for (const _match of summary.matchAll(alertPattern)) {
     counts.alert++;
   }
 
