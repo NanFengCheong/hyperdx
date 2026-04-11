@@ -2,6 +2,7 @@ import express from 'express';
 import { z } from 'zod';
 import { validateRequest } from 'zod-express-middleware';
 
+import { buildReplayEventSequence } from '@/controllers/buildReplayEventSequence';
 import { getConnectionById } from '@/controllers/connection';
 import {
   addExport,
@@ -14,7 +15,6 @@ import {
   updateInvestigation,
 } from '@/controllers/investigation';
 import { updateInvestigation as updateInv } from '@/controllers/investigation';
-import Investigation from '@/models/investigation';
 import {
   buildSystemPrompt,
   convertMessagesToAIFormat,
@@ -27,8 +27,11 @@ import {
 } from '@/controllers/investigation-tools/schema';
 import { getSource } from '@/controllers/sources';
 import { getNonNullUserWithTeam } from '@/middleware/auth';
+import type { LoopPhase } from '@/models/investigation';
+import Investigation from '@/models/investigation';
 import type { DebugEvent } from '@/utils/investigationEventBus';
 import { investigationEventBus } from '@/utils/investigationEventBus';
+import logger from '@/utils/logger';
 import { objectIdSchema } from '@/utils/zod';
 
 const router = express.Router();
@@ -561,11 +564,12 @@ router.post(
         },
       });
 
-      // Persist toolCallLog to loopState
-      if (result.toolCallLog.length > 0) {
+      // Persist toolCallLog and thinkingLog to loopState
+      if (result.toolCallLog.length > 0 || result.thinkingLog.length > 0) {
         await Investigation.findByIdAndUpdate(investigationId, {
           $set: {
             'loopState.toolCallLog': result.toolCallLog,
+            'loopState.thinkingLog': result.thinkingLog,
           },
         });
       }
@@ -598,16 +602,15 @@ router.post(
 router.get('/:id/stream', async (req, res, next) => {
   try {
     const { teamId } = getNonNullUserWithTeam(req as any);
+    // No teamRole in codebase — default isOwner to false (thinking events filtered for non-owners)
+    const isOwner = false;
     const investigationId = req.params.id;
-
-    // Verify investigation exists and belongs to team
-    const investigation = await getInvestigation({
-      teamId: teamId.toString(),
-      investigationId,
-    });
-    if (!investigation) {
-      return res.status(404).json({ error: 'Investigation not found' });
-    }
+    const speed = Number(req.query.speed) || 1;
+    const startPhase = req.query.startPhase as LoopPhase | undefined;
+    const lastEventIdHeader = req.headers['last-event-id'];
+    const lastEventId = lastEventIdHeader
+      ? Number(lastEventIdHeader)
+      : undefined;
 
     // Set up SSE
     res.setHeader('Content-Type', 'text/event-stream');
@@ -616,26 +619,187 @@ router.get('/:id/stream', async (req, res, next) => {
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
-    let eventId = 0;
+    let eventId = lastEventId ?? 0;
+    let closed = false;
+    let lastEventTime = Date.now();
+
+    req.on('close', () => {
+      closed = true;
+    });
 
     const sendEvent = (event: DebugEvent) => {
+      if (closed) return;
+      // Strip thinking events for non-owners
+      if (event.type === 'thinking' && !isOwner) return;
+      lastEventTime = Date.now();
       eventId++;
       res.write(`id: ${eventId}\n`);
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     };
 
-    // Subscribe to investigation events
+    // Fetch investigation
+    let investigation = await getInvestigation({
+      teamId: teamId.toString(),
+      investigationId,
+    });
+    if (!investigation) {
+      res.write(
+        `data: ${JSON.stringify({ type: 'investigation_failed', investigationId, error: 'Investigation not found', timestamp: Date.now() })}\n\n`,
+      );
+      res.end();
+      return;
+    }
+
+    logger.info(`[stream] opened investigationId=${investigationId}`);
+
+    // --- WAITING STATE (Phase 6) ---
+    if (
+      investigation.status === 'active' &&
+      !investigation.loopState?.currentPhase
+    ) {
+      let polls = 0;
+      const MAX_POLLS = 10;
+      while (polls < MAX_POLLS && !closed) {
+        res.write(
+          `data: ${JSON.stringify({ type: 'waiting', investigationId, timestamp: Date.now() })}\n\n`,
+        );
+        await new Promise(r => setTimeout(r, 2000));
+        investigation = await getInvestigation({
+          teamId: teamId.toString(),
+          investigationId,
+        });
+        if (!investigation || investigation.loopState?.currentPhase) break;
+        polls++;
+      }
+      if (polls >= MAX_POLLS || !investigation) {
+        res.write(
+          `data: ${JSON.stringify({ type: 'investigation_failed', investigationId, error: 'Investigation did not start in time', timestamp: Date.now() })}\n\n`,
+        );
+        res.end();
+        return;
+      }
+    }
+
+    // --- REPLAY MODE (terminal investigation) ---
+    const isTerminal =
+      investigation.status === 'resolved' ||
+      investigation.status === 'exported' ||
+      investigation.loopState?.currentPhase === 'complete';
+
+    if (isTerminal) {
+      const fullInv = await getInvestigation({
+        teamId: teamId.toString(),
+        investigationId,
+      });
+      if (!fullInv) {
+        res.end();
+        return;
+      }
+
+      const replayEvents = buildReplayEventSequence(fullInv, {
+        isOwner,
+        startPhase,
+        lastEventId,
+      });
+      const delayMs = speed >= 10 ? 8 : speed >= 5 ? 16 : 80;
+
+      res.write(
+        `data: ${JSON.stringify({ type: 'replay_start', investigationId, timestamp: Date.now() })}\n\n`,
+      );
+
+      for (const event of replayEvents) {
+        if (closed) break;
+        sendEvent(event);
+        await new Promise(r => setTimeout(r, delayMs));
+      }
+
+      if (!closed) {
+        res.write(
+          `data: ${JSON.stringify({ type: 'replay_complete', investigationId, timestamp: Date.now() })}\n\n`,
+        );
+        res.end();
+      }
+
+      logger.info(`[stream] closed investigationId=${investigationId}`);
+      return;
+    }
+
+    // --- LIVE MODE ---
+    // Replay missed events from toolCallLog on reconnect (Last-Event-ID)
+    if (lastEventId !== undefined && investigation.loopState?.toolCallLog) {
+      const missed = investigation.loopState.toolCallLog.filter(
+        tc => tc.callIndex > lastEventId - 1,
+      );
+      for (const tc of missed) {
+        sendEvent({
+          type: 'tool_call',
+          investigationId,
+          callIndex: tc.callIndex,
+          phase: tc.phase,
+          tool: tc.tool,
+          args: tc.args,
+          timestamp: Date.now(),
+        });
+        if (tc.error) {
+          sendEvent({
+            type: 'tool_error',
+            investigationId,
+            callIndex: tc.callIndex,
+            phase: tc.phase,
+            tool: tc.tool,
+            error: tc.error,
+            durationMs: tc.durationMs ?? 0,
+            timestamp: Date.now(),
+          });
+        } else if (tc.result !== undefined) {
+          sendEvent({
+            type: 'tool_result',
+            investigationId,
+            callIndex: tc.callIndex,
+            phase: tc.phase,
+            tool: tc.tool,
+            result: tc.result,
+            durationMs: tc.durationMs ?? 0,
+            timestamp: Date.now(),
+          });
+        }
+      }
+    }
+
+    // Subscribe to live events
     const unsubscribe = investigationEventBus.subscribeToInvestigation(
       investigationId,
       sendEvent,
     );
 
-    // Send initial connected event
-    res.write(`data: ${JSON.stringify({ type: 'connected', investigationId })}\n\n`);
+    // Send connected ping
+    res.write(
+      `data: ${JSON.stringify({ type: 'connected', investigationId })}\n\n`,
+    );
 
-    // Clean up on client disconnect
+    // 30s runner timeout guard (Phase 6)
+    const timeoutInterval = setInterval(() => {
+      if (closed) {
+        clearInterval(timeoutInterval);
+        return;
+      }
+      if (Date.now() - lastEventTime > 30000) {
+        clearInterval(timeoutInterval);
+        sendEvent({
+          type: 'investigation_failed',
+          investigationId,
+          error: 'runner_timeout',
+          timestamp: Date.now(),
+        });
+        res.end();
+      }
+    }, 5000);
+
     req.on('close', () => {
+      closed = true;
       unsubscribe();
+      clearInterval(timeoutInterval);
+      logger.info(`[stream] closed investigationId=${investigationId}`);
     });
   } catch (e) {
     next(e);

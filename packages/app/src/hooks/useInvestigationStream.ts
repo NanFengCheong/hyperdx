@@ -36,6 +36,10 @@ interface StreamState {
   connected: boolean;
   toolCallsByPhase: Record<string, ToolCallEntry[]>;
   budgetSnapshot?: BudgetSnapshot;
+  isReplay: boolean;
+  isWaiting: boolean;
+  thinkingByPhase: Record<string, { content: string; tokenCount: number }>;
+  isPaused: boolean;
 }
 
 type StreamAction =
@@ -54,6 +58,11 @@ type StreamAction =
   | { type: 'tool_call'; callIndex: number; phase: string; tool: string; args: Record<string, unknown>; timestamp: number }
   | { type: 'tool_result'; callIndex: number; phase: string; tool: string; result: unknown; durationMs: number; timestamp: number }
   | { type: 'tool_error'; callIndex: number; phase: string; tool: string; error: string; durationMs: number; timestamp: number }
+  | { type: 'waiting' }
+  | { type: 'replay_start' }
+  | { type: 'replay_complete' }
+  | { type: 'thinking'; phase: string; content: string; tokenCount: number }
+  | { type: 'set_paused'; paused: boolean }
   | { type: 'reset' };
 
 const ALL_PHASES: LoopPhase[] = ['plan', 'execute', 'verify', 'summarize'];
@@ -68,6 +77,10 @@ function initialState(): StreamState {
     isComplete: false,
     connected: false,
     toolCallsByPhase: {},
+    isReplay: false,
+    isWaiting: false,
+    thinkingByPhase: {},
+    isPaused: false,
   };
 }
 
@@ -164,6 +177,27 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
     case 'investigation_failed':
       return { ...state, isComplete: true, error: action.error };
 
+    case 'waiting':
+      return { ...state, isWaiting: true };
+
+    case 'replay_start':
+      return { ...state, isReplay: true, isWaiting: false };
+
+    case 'replay_complete':
+      return { ...state, isComplete: true };
+
+    case 'thinking':
+      return {
+        ...state,
+        thinkingByPhase: {
+          ...state.thinkingByPhase,
+          [action.phase]: { content: action.content, tokenCount: action.tokenCount },
+        },
+      };
+
+    case 'set_paused':
+      return { ...state, isPaused: action.paused };
+
     case 'reset':
       return initialState();
 
@@ -172,21 +206,36 @@ function streamReducer(state: StreamState, action: StreamAction): StreamState {
   }
 }
 
-export function useInvestigationStream(investigationId: string | null) {
+interface UrlParams {
+  speed: 1 | 5 | 10;
+  startPhase: string | undefined;
+}
+
+export function useInvestigationStream(
+  investigationId: string | null,
+  _isOwner: boolean = false,
+) {
   const [state, dispatch] = useReducer(streamReducer, undefined, initialState);
   const fetchRef = useRef<AbortController | null>(null);
+  const urlParamsRef = useRef<UrlParams>({ speed: 1, startPhase: undefined });
+  const pauseQueueRef = useRef<StreamAction[]>([]);
+  const isPausedRef = useRef(false);
 
   const connect = useCallback(() => {
     if (!investigationId) return;
 
-    // Abort any existing connection
     fetchRef.current?.abort();
     const controller = new AbortController();
     fetchRef.current = controller;
 
     dispatch({ type: 'reset' });
 
-    const url = `/api/investigations/${investigationId}/stream`;
+    const { speed, startPhase } = urlParamsRef.current;
+    const params = new URLSearchParams();
+    if (speed !== 1) params.set('speed', String(speed));
+    if (startPhase) params.set('startPhase', startPhase);
+    const query = params.toString();
+    const url = `/api/investigations/${investigationId}/stream${query ? `?${query}` : ''}`;
 
     fetch(url, {
       signal: controller.signal,
@@ -209,7 +258,11 @@ export function useInvestigationStream(investigationId: string | null) {
               if (line.startsWith('data: ')) {
                 try {
                   const event = JSON.parse(line.slice(6));
-                  dispatch(event);
+                  if (isPausedRef.current) {
+                    pauseQueueRef.current.push(event);
+                  } else {
+                    dispatch(event);
+                  }
                 } catch {
                   // ignore parse errors
                 }
@@ -228,7 +281,6 @@ export function useInvestigationStream(investigationId: string | null) {
       });
   }, [investigationId]);
 
-  // Reconnect when investigationId changes
   useEffect(() => {
     connect();
     return () => {
@@ -236,12 +288,41 @@ export function useInvestigationStream(investigationId: string | null) {
     };
   }, [connect]);
 
-  // Close stream when complete
   useEffect(() => {
     if (state.isComplete) {
       fetchRef.current?.abort();
     }
   }, [state.isComplete]);
+
+  const setSpeed = useCallback(
+    (speed: 1 | 5 | 10) => {
+      urlParamsRef.current = { ...urlParamsRef.current, speed };
+      connect();
+    },
+    [connect],
+  );
+
+  const jumpToPhase = useCallback(
+    (phase: string) => {
+      urlParamsRef.current = { ...urlParamsRef.current, startPhase: phase };
+      connect();
+    },
+    [connect],
+  );
+
+  const pause = useCallback(() => {
+    isPausedRef.current = true;
+    dispatch({ type: 'set_paused', paused: true });
+  }, []);
+
+  const resume = useCallback(() => {
+    isPausedRef.current = false;
+    const queued = pauseQueueRef.current.splice(0);
+    for (const action of queued) {
+      dispatch(action);
+    }
+    dispatch({ type: 'set_paused', paused: false });
+  }, []);
 
   return {
     currentPhase: state.currentPhase,
@@ -252,5 +333,13 @@ export function useInvestigationStream(investigationId: string | null) {
     connected: state.connected,
     toolCallsByPhase: state.toolCallsByPhase,
     budgetSnapshot: state.budgetSnapshot,
+    isReplay: state.isReplay,
+    isWaiting: state.isWaiting,
+    thinkingByPhase: state.thinkingByPhase,
+    isPaused: state.isPaused,
+    pause,
+    resume,
+    setSpeed,
+    jumpToPhase,
   };
 }

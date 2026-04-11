@@ -18,6 +18,8 @@ import type {
   ToolCallEntry,
 } from '../../hooks/useInvestigationStream';
 import { BudgetBar } from './BudgetBar';
+import { ReplayControls } from './ReplayControls';
+import { ThinkingBlock } from './ThinkingBlock';
 import { ToolCallCard } from './ToolCallCard';
 
 const PHASE_LABELS: Record<LoopPhase, string> = {
@@ -40,12 +42,16 @@ function PhaseTimeline({
   isComplete,
   toolCallsByPhase,
   budgetSnapshot,
+  thinkingByPhase,
+  isOwner,
 }: {
   phaseGroups: PhaseGroup[];
   currentPhase: LoopPhase | null;
   isComplete: boolean;
   toolCallsByPhase: Record<string, ToolCallEntry[]>;
   budgetSnapshot?: BudgetSnapshot;
+  thinkingByPhase: Record<string, { content: string; tokenCount: number }>;
+  isOwner: boolean;
 }) {
   const activePhase = isComplete ? null : currentPhase;
   const startedAt = phaseGroups.find(pg => pg.phase === currentPhase)?.startedAt;
@@ -106,6 +112,11 @@ function PhaseTimeline({
                       ))}
                     </>
                   )}
+                  <ThinkingBlock
+                    isOwner={isOwner}
+                    thinkingByPhase={thinkingByPhase}
+                    phase={pg.phase}
+                  />
                 </Stack>
               </Accordion.Panel>
             </Accordion.Item>
@@ -128,6 +139,15 @@ interface DebugDrawerProps {
   connected: boolean;
   toolCallsByPhase: Record<string, ToolCallEntry[]>;
   budgetSnapshot?: BudgetSnapshot;
+  isReplay: boolean;
+  isWaiting: boolean;
+  thinkingByPhase: Record<string, { content: string; tokenCount: number }>;
+  isOwner: boolean;
+  isPaused: boolean;
+  pause: () => void;
+  resume: () => void;
+  setSpeed: (speed: 1 | 5 | 10) => void;
+  jumpToPhase: (phase: LoopPhase) => void;
 }
 
 export function DebugDrawer({
@@ -142,6 +162,15 @@ export function DebugDrawer({
   connected,
   toolCallsByPhase,
   budgetSnapshot,
+  isReplay,
+  isWaiting,
+  thinkingByPhase,
+  isOwner,
+  isPaused,
+  pause,
+  resume,
+  setSpeed,
+  jumpToPhase,
 }: DebugDrawerProps) {
   const confidenceColor =
     confidence === 'high' ? 'green' : confidence === 'medium' ? 'yellow' : 'red';
@@ -153,12 +182,22 @@ export function DebugDrawer({
       title={
         <Group gap="xs">
           <Text fw={600}>Investigation Debug</Text>
-          {!connected && !isComplete && (
+          {isReplay && (
+            <Badge size="xs" color="violet">
+              Replay
+            </Badge>
+          )}
+          {!connected && !isComplete && !isWaiting && (
             <Badge size="xs" color="gray">
               Connecting...
             </Badge>
           )}
-          {connected && !isComplete && (
+          {isWaiting && (
+            <Badge size="xs" color="orange">
+              Waiting
+            </Badge>
+          )}
+          {connected && !isComplete && !isWaiting && (
             <Badge size="xs" color="blue">
               Live
             </Badge>
@@ -180,6 +219,22 @@ export function DebugDrawer({
       scrollAreaComponent={ScrollArea.Autosize}
     >
       <Stack gap="md" p="xs">
+        {isWaiting && (
+          <Stack gap="xs" align="center" py="xl">
+            <Loader size="md" />
+            <Text size="sm" c="dimmed">
+              Waiting for investigation to start...
+            </Text>
+          </Stack>
+        )}
+        <ReplayControls
+          isReplay={isReplay}
+          isPaused={isPaused}
+          onPause={pause}
+          onResume={resume}
+          onSetSpeed={setSpeed}
+          onJumpToPhase={jumpToPhase}
+        />
         {error ? (
           <Stack gap="xs" align="center" py="xl">
             <ThemeIcon color="red" size="lg" radius="xl">
@@ -189,15 +244,17 @@ export function DebugDrawer({
               {error}
             </Text>
           </Stack>
-        ) : (
+        ) : !isWaiting ? (
           <PhaseTimeline
             phaseGroups={phaseGroups}
             currentPhase={currentPhase}
             isComplete={isComplete}
             toolCallsByPhase={toolCallsByPhase}
             budgetSnapshot={budgetSnapshot}
+            thinkingByPhase={thinkingByPhase}
+            isOwner={isOwner}
           />
-        )}
+        ) : null}
       </Stack>
     </Drawer>
   );

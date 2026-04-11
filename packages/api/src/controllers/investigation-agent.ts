@@ -7,10 +7,10 @@ import { CODE_VERSION } from '@/config';
 import type {
   IInvestigationMessage,
   ILoopState,
+  IThinkingEntry,
   IToolCallEntry,
   LoopPhase,
 } from '@/models/investigation';
-
 import type { BudgetSnapshot } from '@/utils/investigationEventBus';
 import { investigationEventBus } from '@/utils/investigationEventBus';
 
@@ -398,7 +398,8 @@ export async function runAgentPhase({
               // localIdx for result matches the call order (tool-result follows tool-call in sequence)
               const localIdx = allToolCalls.length;
               const globalIdx = callIndexOffset + localIdx;
-              const startTime = toolCallStartTimes.get(localIdx) ?? performance.now();
+              const startTime =
+                toolCallStartTimes.get(localIdx) ?? performance.now();
               const durationMs = performance.now() - startTime;
               allToolCalls.push({
                 name: part.toolName,
@@ -528,6 +529,7 @@ export interface InvestigationCycleResult {
   confidence: 'high' | 'medium' | 'low';
   phaseHistory: ILoopState['phaseHistory'];
   toolCallLog: IToolCallEntry[];
+  thinkingLog: IThinkingEntry[];
 }
 
 export async function runInvestigationCycle({
@@ -553,6 +555,7 @@ export async function runInvestigationCycle({
       const cycleStart = performance.now();
       const phaseHistory: ILoopState['phaseHistory'] = [];
       const toolCallLog: IToolCallEntry[] = [];
+      const thinkingLog: IThinkingEntry[] = [];
       const TOTAL_BUDGET = 22; // plan(3) + execute(8) + verify(6) + summarize(5)
       let toolCallIndex = 0;
 
@@ -576,7 +579,10 @@ export async function runInvestigationCycle({
             type: 'phase_start',
             investigationId,
             phase: 'plan',
-            budgetSnapshot: { toolCallsUsed: toolCallIndex, toolCallsTotal: TOTAL_BUDGET },
+            budgetSnapshot: {
+              toolCallsUsed: toolCallIndex,
+              toolCallsTotal: TOTAL_BUDGET,
+            },
             timestamp: Date.now(),
           });
         }
@@ -613,7 +619,8 @@ export async function runInvestigationCycle({
           completedAt: new Date(),
         });
         onPhaseUpdate?.('plan', planResult.text);
-        phaseHistory[phaseHistory.length - 1].summaryText = planResult.text.slice(0, 200);
+        phaseHistory[phaseHistory.length - 1].summaryText =
+          planResult.text.slice(0, 200);
         if (investigationId) {
           investigationEventBus.emitDebugEvent({
             type: 'phase_end',
@@ -621,7 +628,24 @@ export async function runInvestigationCycle({
             phase: 'plan',
             summaryText: planResult.text.slice(0, 200),
             toolCallCount: planResult.toolCallCount,
-            budgetSnapshot: { toolCallsUsed: toolCallIndex, toolCallsTotal: TOTAL_BUDGET },
+            budgetSnapshot: {
+              toolCallsUsed: toolCallIndex,
+              toolCallsTotal: TOTAL_BUDGET,
+            },
+            timestamp: Date.now(),
+          });
+          const planThinking: IThinkingEntry = {
+            phase: 'plan',
+            tokenCount: Math.floor(planResult.text.length / 4),
+            content: planResult.text,
+          };
+          thinkingLog.push(planThinking);
+          investigationEventBus.emitDebugEvent({
+            type: 'thinking',
+            investigationId,
+            phase: 'plan',
+            tokenCount: planThinking.tokenCount,
+            content: planThinking.content,
             timestamp: Date.now(),
           });
         }
@@ -645,7 +669,10 @@ export async function runInvestigationCycle({
             type: 'phase_start',
             investigationId,
             phase: 'execute',
-            budgetSnapshot: { toolCallsUsed: toolCallIndex, toolCallsTotal: TOTAL_BUDGET },
+            budgetSnapshot: {
+              toolCallsUsed: toolCallIndex,
+              toolCallsTotal: TOTAL_BUDGET,
+            },
             timestamp: Date.now(),
           });
         }
@@ -682,7 +709,8 @@ export async function runInvestigationCycle({
           completedAt: new Date(),
         });
         onPhaseUpdate?.('execute', executeResult.text);
-        phaseHistory[phaseHistory.length - 1].summaryText = executeResult.text.slice(0, 200);
+        phaseHistory[phaseHistory.length - 1].summaryText =
+          executeResult.text.slice(0, 200);
         if (investigationId) {
           investigationEventBus.emitDebugEvent({
             type: 'phase_end',
@@ -690,7 +718,24 @@ export async function runInvestigationCycle({
             phase: 'execute',
             summaryText: executeResult.text.slice(0, 200),
             toolCallCount: executeResult.toolCallCount,
-            budgetSnapshot: { toolCallsUsed: toolCallIndex, toolCallsTotal: TOTAL_BUDGET },
+            budgetSnapshot: {
+              toolCallsUsed: toolCallIndex,
+              toolCallsTotal: TOTAL_BUDGET,
+            },
+            timestamp: Date.now(),
+          });
+          const executeThinking: IThinkingEntry = {
+            phase: 'execute',
+            tokenCount: Math.floor(executeResult.text.length / 4),
+            content: executeResult.text,
+          };
+          thinkingLog.push(executeThinking);
+          investigationEventBus.emitDebugEvent({
+            type: 'thinking',
+            investigationId,
+            phase: 'execute',
+            tokenCount: executeThinking.tokenCount,
+            content: executeThinking.content,
             timestamp: Date.now(),
           });
         }
@@ -714,7 +759,10 @@ export async function runInvestigationCycle({
             type: 'phase_start',
             investigationId,
             phase: 'verify',
-            budgetSnapshot: { toolCallsUsed: toolCallIndex, toolCallsTotal: TOTAL_BUDGET },
+            budgetSnapshot: {
+              toolCallsUsed: toolCallIndex,
+              toolCallsTotal: TOTAL_BUDGET,
+            },
             timestamp: Date.now(),
           });
         }
@@ -751,7 +799,8 @@ export async function runInvestigationCycle({
           completedAt: new Date(),
         });
         onPhaseUpdate?.('verify', verifyResult.text);
-        phaseHistory[phaseHistory.length - 1].summaryText = verifyResult.text.slice(0, 200);
+        phaseHistory[phaseHistory.length - 1].summaryText =
+          verifyResult.text.slice(0, 200);
         if (investigationId) {
           investigationEventBus.emitDebugEvent({
             type: 'phase_end',
@@ -759,7 +808,24 @@ export async function runInvestigationCycle({
             phase: 'verify',
             summaryText: verifyResult.text.slice(0, 200),
             toolCallCount: verifyResult.toolCallCount,
-            budgetSnapshot: { toolCallsUsed: toolCallIndex, toolCallsTotal: TOTAL_BUDGET },
+            budgetSnapshot: {
+              toolCallsUsed: toolCallIndex,
+              toolCallsTotal: TOTAL_BUDGET,
+            },
+            timestamp: Date.now(),
+          });
+          const verifyThinking: IThinkingEntry = {
+            phase: 'verify',
+            tokenCount: Math.floor(verifyResult.text.length / 4),
+            content: verifyResult.text,
+          };
+          thinkingLog.push(verifyThinking);
+          investigationEventBus.emitDebugEvent({
+            type: 'thinking',
+            investigationId,
+            phase: 'verify',
+            tokenCount: verifyThinking.tokenCount,
+            content: verifyThinking.content,
             timestamp: Date.now(),
           });
         }
@@ -785,7 +851,10 @@ export async function runInvestigationCycle({
             type: 'phase_start',
             investigationId,
             phase: 'summarize',
-            budgetSnapshot: { toolCallsUsed: toolCallIndex, toolCallsTotal: TOTAL_BUDGET },
+            budgetSnapshot: {
+              toolCallsUsed: toolCallIndex,
+              toolCallsTotal: TOTAL_BUDGET,
+            },
             timestamp: Date.now(),
           });
         }
@@ -822,7 +891,8 @@ export async function runInvestigationCycle({
           completedAt: new Date(),
         });
         onPhaseUpdate?.('summarize', summarizeResult.text);
-        phaseHistory[phaseHistory.length - 1].summaryText = summarizeResult.text.slice(0, 200);
+        phaseHistory[phaseHistory.length - 1].summaryText =
+          summarizeResult.text.slice(0, 200);
         if (investigationId) {
           investigationEventBus.emitDebugEvent({
             type: 'phase_end',
@@ -830,7 +900,24 @@ export async function runInvestigationCycle({
             phase: 'summarize',
             summaryText: summarizeResult.text.slice(0, 200),
             toolCallCount: summarizeResult.toolCallCount,
-            budgetSnapshot: { toolCallsUsed: toolCallIndex, toolCallsTotal: TOTAL_BUDGET },
+            budgetSnapshot: {
+              toolCallsUsed: toolCallIndex,
+              toolCallsTotal: TOTAL_BUDGET,
+            },
+            timestamp: Date.now(),
+          });
+          const summarizeThinking: IThinkingEntry = {
+            phase: 'summarize',
+            tokenCount: Math.floor(summarizeResult.text.length / 4),
+            content: summarizeResult.text,
+          };
+          thinkingLog.push(summarizeThinking);
+          investigationEventBus.emitDebugEvent({
+            type: 'thinking',
+            investigationId,
+            phase: 'summarize',
+            tokenCount: summarizeThinking.tokenCount,
+            content: summarizeThinking.content,
             timestamp: Date.now(),
           });
         }
@@ -881,7 +968,12 @@ export async function runInvestigationCycle({
         });
 
         if (investigationId) {
-          investigationEventBus.emitDebugEvent({ type: 'investigation_complete', investigationId, confidence, timestamp: Date.now() });
+          investigationEventBus.emitDebugEvent({
+            type: 'investigation_complete',
+            investigationId,
+            confidence,
+            timestamp: Date.now(),
+          });
         }
 
         return {
@@ -892,6 +984,7 @@ export async function runInvestigationCycle({
           confidence,
           phaseHistory,
           toolCallLog,
+          thinkingLog,
         };
       } catch (err) {
         cycleSpan.recordException(err as Error);
@@ -904,7 +997,12 @@ export async function runInvestigationCycle({
           'hyperdx.investigation.trigger.type': triggerType,
         });
         if (investigationId) {
-          investigationEventBus.emitDebugEvent({ type: 'investigation_failed', investigationId, error: (err as Error).message, timestamp: Date.now() });
+          investigationEventBus.emitDebugEvent({
+            type: 'investigation_failed',
+            investigationId,
+            error: (err as Error).message,
+            timestamp: Date.now(),
+          });
         }
         throw err;
       } finally {

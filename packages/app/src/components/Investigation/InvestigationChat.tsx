@@ -36,7 +36,8 @@ export default function InvestigationChat({
   const viewportRef = useRef<HTMLDivElement>(null);
   const [debugOpened, { open: openDebug, close: closeDebug }] =
     useDisclosure(false);
-  const streamState = useInvestigationStream(investigationId ?? null);
+  // Pass isOwner=false until user session hook is available
+  const streamState = useInvestigationStream(investigationId ?? null, false);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -68,6 +69,7 @@ export default function InvestigationChat({
         opened={debugOpened}
         onClose={closeDebug}
         investigationId={investigationId}
+        isOwner={false}
         {...streamState}
       />
       {/* Header */}

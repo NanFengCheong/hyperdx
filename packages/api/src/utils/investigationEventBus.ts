@@ -12,7 +12,12 @@ export type DebugEventType =
   | 'investigation_failed'
   | 'tool_call'
   | 'tool_result'
-  | 'tool_error';
+  | 'tool_error'
+  | 'thinking'
+  | 'waiting'
+  | 'replay_start'
+  | 'replay_complete'
+  | 'connected';
 
 export interface BudgetSnapshot {
   toolCallsUsed: number;
@@ -83,6 +88,38 @@ export interface InvestigationFailedEvent {
   timestamp: number;
 }
 
+export interface ThinkingEvent {
+  type: 'thinking';
+  investigationId: string;
+  phase: string;
+  tokenCount: number;
+  content: string;
+  timestamp: number;
+}
+
+export interface WaitingEvent {
+  type: 'waiting';
+  investigationId: string;
+  timestamp: number;
+}
+
+export interface ReplayStartEvent {
+  type: 'replay_start';
+  investigationId: string;
+  timestamp: number;
+}
+
+export interface ReplayCompleteEvent {
+  type: 'replay_complete';
+  investigationId: string;
+  timestamp: number;
+}
+
+export interface ConnectedEvent {
+  type: 'connected';
+  investigationId: string;
+}
+
 export type DebugEvent =
   | PhaseStartEvent
   | PhaseEndEvent
@@ -90,7 +127,12 @@ export type DebugEvent =
   | InvestigationFailedEvent
   | ToolCallEvent
   | ToolResultEvent
-  | ToolErrorEvent;
+  | ToolErrorEvent
+  | ThinkingEvent
+  | WaitingEvent
+  | ReplayStartEvent
+  | ReplayCompleteEvent
+  | ConnectedEvent;
 
 class InvestigationEventBus extends EventEmitter {
   private static instance: InvestigationEventBus;

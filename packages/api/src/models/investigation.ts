@@ -51,6 +51,12 @@ export interface IToolCallEntry {
   durationMs?: number;
 }
 
+export interface IThinkingEntry {
+  phase: LoopPhase;
+  tokenCount: number;
+  content: string;
+}
+
 export interface ILoopState {
   currentPhase: LoopPhase;
   plan: string | null;
@@ -58,6 +64,7 @@ export interface ILoopState {
   verification: string | null;
   phaseHistory: ILoopPhaseHistory[];
   toolCallLog: IToolCallEntry[];
+  thinkingLog: IThinkingEntry[];
 }
 
 export interface IInvestigation {
@@ -140,6 +147,7 @@ const LoopStateSchema = new Schema(
     verification: { type: String, default: null },
     phaseHistory: { type: [LoopPhaseHistorySchema], default: [] },
     toolCallLog: { type: Schema.Types.Mixed, default: [] },
+    thinkingLog: { type: Schema.Types.Mixed, default: [] },
   },
   { _id: false },
 );
