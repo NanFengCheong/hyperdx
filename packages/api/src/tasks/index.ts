@@ -6,7 +6,6 @@ import { RUN_SCHEDULED_TASKS_EXTERNALLY } from '@/config';
 import CheckAlertTask from '@/tasks/checkAlerts';
 import CheckInactiveUsersTask from '@/tasks/checkInactiveUsers';
 import DataRetentionTask from '@/tasks/dataRetention';
-import ProactiveInvestigationTask from '@/tasks/proactiveInvestigation';
 import {
   taskExecutionDurationGauge,
   taskExecutionFailureCounter,
@@ -14,6 +13,7 @@ import {
   timeExec,
 } from '@/tasks/metrics';
 import PingPongTask from '@/tasks/pingPongTask';
+import ProactiveInvestigationTask from '@/tasks/proactiveInvestigation';
 import { asTaskArgs, HdxTask, TaskArgs, TaskName } from '@/tasks/types';
 import logger from '@/utils/logger';
 

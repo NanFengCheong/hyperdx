@@ -1,16 +1,73 @@
-import type { LanguageModel } from 'ai';
+import opentelemetry, { Counter, Histogram, metrics } from '@opentelemetry/api';
+import type { LanguageModel, ToolSet } from 'ai';
 import { stepCountIs, streamText } from 'ai';
+import { performance } from 'perf_hooks';
 
-import type { IInvestigationMessage } from '@/models/investigation';
+import { CODE_VERSION } from '@/config';
+import type {
+  IInvestigationMessage,
+  ILoopState,
+  LoopPhase,
+} from '@/models/investigation';
 
 import { getAIModel } from './ai';
 import { createInvestigationTools } from './investigation-tools/tools';
 
-interface EntryPoint {
+// ---------------------------------------------------------------------------
+// OTel primitives (inline, matching the tasks/tracer.ts + tasks/metrics.ts pattern)
+// ---------------------------------------------------------------------------
+
+const investigationTracer = opentelemetry.trace.getTracer(
+  'hyperdx-investigation',
+  CODE_VERSION,
+);
+
+const meter = metrics.getMeter('hyperdx-investigation');
+
+const phaseDurationHistogram: Histogram = meter.createHistogram(
+  'hyperdx.investigation.phase.duration',
+  { description: 'Wall time for each investigation phase', unit: 'ms' },
+);
+
+const cycleDurationHistogram: Histogram = meter.createHistogram(
+  'hyperdx.investigation.cycle.duration',
+  { description: 'Wall time for a complete investigation cycle', unit: 'ms' },
+);
+
+const toolCallCounter: Counter = meter.createCounter(
+  'hyperdx.investigation.tool_call',
+  { description: 'Number of tool calls made during investigation' },
+);
+
+const cycleCompleteCounter: Counter = meter.createCounter(
+  'hyperdx.investigation.cycle.complete',
+  { description: 'Count of completed investigation cycles' },
+);
+
+const cycleFailureCounter: Counter = meter.createCounter(
+  'hyperdx.investigation.cycle.failure',
+  { description: 'Count of failed investigation cycles' },
+);
+
+const artifactsCreatedCounter: Counter = meter.createCounter(
+  'hyperdx.investigation.artifacts.created',
+  {
+    description: 'Number of monitoring artifacts created during investigation',
+  },
+);
+
+// ---------------------------------------------------------------------------
+
+// EntryPoint type (matches the model's entryPoint discriminator)
+export type EntryPoint = {
   type: 'trace' | 'alert' | 'standalone';
   traceId?: any;
   alertId?: any;
-}
+};
+
+// ---------------------------------------------------------------------------
+// System Prompt Builders
+// ---------------------------------------------------------------------------
 
 export function buildSystemPrompt({
   schemaPrompt,
@@ -30,7 +87,7 @@ export function buildSystemPrompt({
 
 ## Available Tools
 
-You have 7 tools to query observability data:
+You have tools to query observability data and create monitoring artifacts:
 - **searchTraces**: Find traces by service, time range, status, or duration
 - **getTraceDetail**: Get the full span tree for a specific trace
 - **searchLogs**: Search log entries by text, service, and severity
@@ -38,6 +95,13 @@ You have 7 tools to query observability data:
 - **findSimilarErrors**: Find historically similar error patterns
 - **getServiceMap**: Get service dependency graph with error rates
 - **getSessionReplay**: Get session replay data linked to a trace
+- **createSavedSearch**: Create a saved search for recurring patterns
+- **createDashboard**: Create a dashboard to visualize trends
+- **createAlert**: Create an alert to monitor a discovered pattern
+- **retrieveMemory**: Search past investigation findings
+- **getBaselineMetrics**: Compare current metrics against historical baselines
+- **getServiceHealthScore**: Get computed health scores for all services
+- **getActiveAlerts**: See what alerts are currently firing
 
 ## Database Schema
 
@@ -53,6 +117,156 @@ ${schemaPrompt}
 6. **Time ranges** — if the user doesn't specify, default to the last 30 minutes around the investigation's anchor point.${entryContext}`;
 }
 
+// ---------------------------------------------------------------------------
+// Phase-specific system prompts
+// ---------------------------------------------------------------------------
+
+export function buildPlanSystemPrompt({
+  schemaPrompt,
+  triggerDescription,
+  memoryContext,
+}: {
+  schemaPrompt: string;
+  triggerDescription: string;
+  memoryContext: string;
+}) {
+  return `You are the PLANNING phase of a structured investigation cycle.
+
+## Context
+${triggerDescription}
+
+## Past Investigation Memory
+${memoryContext}
+
+## Database Schema
+${schemaPrompt}
+
+## Your Job
+Produce a structured investigation plan:
+
+1. **Hypotheses** — 2-4 specific hypotheses about what might be wrong, ordered by likelihood × impact
+2. **Evidence Plan** — Which tools to call, in what order, to validate/refute each hypothesis
+3. **Success Criteria** — What would confirm or rule out each hypothesis
+4. **Abort Conditions** — When to stop investigating (e.g., "if all services show normal baselines, skip to summarize")
+
+## Constraints
+- Maximum 8 tool calls total for the execute phase
+- Prioritize hypotheses by likelihood × impact
+- If past investigations found the same pattern, note it — this may be a recurring issue
+- If no anomalies are detected in the scan, recommend skipping directly to summarize
+
+Format your response as a structured plan. Be specific about which services, time ranges, and metrics to check.`;
+}
+
+export function buildExecuteSystemPrompt({
+  plan,
+  schemaPrompt,
+}: {
+  plan: string;
+  schemaPrompt: string;
+}) {
+  return `You are the EXECUTION phase of a structured investigation cycle.
+
+## Investigation Plan
+${plan}
+
+## Database Schema
+${schemaPrompt}
+
+## Your Job
+1. Execute the evidence plan by calling the appropriate tools
+2. After each tool call, note whether the evidence supports, refutes, or is inconclusive for each hypothesis
+3. If you find something unexpected, you may revise the plan — but explain why
+4. Stop when: all hypotheses have sufficient evidence, OR you've used 8 tool calls
+
+Format your response as:
+- EVIDENCE: [tool_name] → [key finding] → [supports/refutes/inconclusive] for [hypothesis N]
+- REVISED PLAN: [if applicable]
+- READY FOR VERIFICATION: [yes/no + reason]
+
+Be concise. Focus on recording evidence, not explaining what the tools do.`;
+}
+
+export function buildVerifySystemPrompt({
+  evidenceLog,
+  schemaPrompt,
+}: {
+  evidenceLog: string;
+  schemaPrompt: string;
+}) {
+  return `You are the VERIFICATION phase. Someone else executed an investigation and reached conclusions.
+
+## Evidence Log to Verify
+${evidenceLog}
+
+## Database Schema
+${schemaPrompt}
+
+## Your Job
+For each finding in the evidence log, try to **disprove** it using independent data:
+
+1. If the finding was based on logs, check traces — do they tell the same story?
+2. If the finding was based on one service, check dependent services — is the problem upstream or downstream?
+3. If the finding was based on a 1-hour window, check 3-hour and 24-hour windows — is this a spike or a trend?
+4. If the finding cites a specific error, use findSimilarErrors — has this happened before? Was it resolved?
+
+For each finding, produce a verdict:
+- **CONFIRMED** — Independent evidence supports the finding
+- **WEAKENED** — Some evidence contradicts or casts doubt
+- **INCONCLUSIVE** — Not enough data to verify
+
+If you find that a finding is WEAKENED, suggest what the correct conclusion might be.
+Be skeptical. Your job is to catch false positives, not confirm them.`;
+}
+
+export function buildSummarizeSystemPrompt({
+  plan,
+  evidenceLog,
+  verificationVerdicts,
+  schemaPrompt,
+}: {
+  plan: string;
+  evidenceLog: string;
+  verificationVerdicts: string;
+  schemaPrompt: string;
+}) {
+  return `You are the SUMMARIZATION phase. You have the full investigation record.
+
+## Investigation Record
+- Plan: ${plan}
+- Evidence: ${evidenceLog}
+- Verification: ${verificationVerdicts}
+
+## Database Schema
+${schemaPrompt}
+
+## Your Job
+
+1. **Executive Summary** — 2-3 sentences: what happened, what caused it, how confident are we
+2. **Findings Table**:
+   | Hypothesis | Evidence | Verdict | Confidence |
+3. **Root Cause** — If confirmed, describe the root cause with evidence citations
+4. **Timeline** — When did this start? When did it peak? Is it ongoing?
+5. **Recommendations** — What should the team do? (actionable, specific)
+6. **Monitoring Actions** — What artifacts should be created to catch this earlier next time?
+   - Saved searches for the specific error pattern
+   - Dashboard tiles visualizing the degraded metric
+   - Alerts with thresholds based on the observed anomaly
+
+## Confidence Levels
+- HIGH: Multiple independent sources confirm, verification CONFIRMED
+- MEDIUM: Single source confirms, verification INCONCLUSIVE
+- LOW: Evidence is weak or verification WEAKENED
+
+If confidence is LOW, explicitly say "I'm not confident in these findings" and suggest what additional data would help.
+
+Use the createSavedSearch, createDashboard, and createAlert tools to set up monitoring for anything worth tracking ongoing.`;
+}
+
+// ---------------------------------------------------------------------------
+// Message conversion
+// ---------------------------------------------------------------------------
+
 export function convertMessagesToAIFormat(
   messages: IInvestigationMessage[],
 ): Array<{ role: 'user' | 'assistant'; content: string }> {
@@ -67,6 +281,132 @@ export function convertMessagesToAIFormat(
 function getInvestigationModel(): LanguageModel {
   return getAIModel();
 }
+
+// ---------------------------------------------------------------------------
+// Single-phase agent runner
+// ---------------------------------------------------------------------------
+
+interface PhaseResult {
+  text: string;
+  toolCallCount: number;
+  toolCalls: { name: string; args: unknown; result: unknown }[];
+}
+
+export async function runAgentPhase({
+  messages,
+  systemPrompt,
+  connection,
+  teamId,
+  userId,
+  maxSteps = 10,
+  phaseName = 'unknown',
+  onTextDelta,
+  onToolCall,
+}: {
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  systemPrompt: string;
+  connection: { host: string; username: string; password: string };
+  teamId: string;
+  userId: string;
+  maxSteps?: number;
+  phaseName?: string;
+  onTextDelta?: (delta: string) => void;
+  onToolCall?: (toolName: string, args: unknown, result: unknown) => void;
+}): Promise<PhaseResult> {
+  return investigationTracer.startActiveSpan(
+    `investigation.${phaseName}`,
+    async span => {
+      span.setAttributes({
+        'hyperdx.investigation.team.id': teamId,
+        'hyperdx.investigation.phase': phaseName,
+        'hyperdx.investigation.max_steps': maxSteps,
+      });
+
+      const start = performance.now();
+      const model = getInvestigationModel();
+      const tools = createInvestigationTools({
+        connection,
+        teamId,
+        userId,
+      }) as ToolSet;
+
+      const result = streamText({
+        model,
+        system: systemPrompt,
+        messages,
+        tools,
+        stopWhen: stepCountIs(maxSteps),
+        experimental_telemetry: { isEnabled: true },
+      });
+
+      let fullText = '';
+      let toolCallCount = 0;
+      const allToolCalls: { name: string; args: unknown; result: unknown }[] =
+        [];
+
+      try {
+        for await (const part of result.fullStream) {
+          switch (part.type) {
+            case 'text-delta':
+              fullText += part.text;
+              onTextDelta?.(part.text);
+              break;
+            case 'tool-call':
+              toolCallCount++;
+              span.addEvent('tool_call', {
+                'tool.name': part.toolName,
+                'tool.args': JSON.stringify(part.input).slice(0, 500),
+              });
+              break;
+            case 'tool-result':
+              allToolCalls.push({
+                name: part.toolName,
+                args: part.input,
+                result: part.output,
+              });
+              toolCallCounter.add(1, {
+                'hyperdx.investigation.team.id': teamId,
+                'hyperdx.investigation.tool.name': part.toolName,
+                'hyperdx.investigation.phase': phaseName,
+              });
+              onToolCall?.(part.toolName, part.input, part.output);
+              break;
+          }
+        }
+
+        span.setAttribute(
+          'hyperdx.investigation.tool_call_count',
+          toolCallCount,
+        );
+        span.setAttribute(
+          'hyperdx.investigation.output_length',
+          fullText.length,
+        );
+
+        return { text: fullText, toolCallCount, toolCalls: allToolCalls };
+      } catch (err) {
+        span.recordException(err as Error);
+        span.setStatus({
+          code: 2, // ERROR
+          message: (err as Error).message,
+        });
+        throw err;
+      } finally {
+        const duration = performance.now() - start;
+        span.setAttribute('hyperdx.investigation.phase.duration_ms', duration);
+        phaseDurationHistogram.record(duration, {
+          'hyperdx.investigation.phase': phaseName,
+          'hyperdx.investigation.team.id': teamId,
+        });
+        span.end();
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Legacy single-shot agent (backward compatible)
+// ---------------------------------------------------------------------------
 
 export async function runInvestigationAgent({
   messages,
@@ -87,42 +427,314 @@ export async function runInvestigationAgent({
   onToolCall?: (toolName: string, args: unknown, result: unknown) => void;
   onFinish?: (text: string) => void;
 }) {
-  const model = getInvestigationModel();
-  const tools = createInvestigationTools({ connection, teamId, userId });
-
-  const result = streamText({
-    model,
-    system: systemPrompt,
+  const result = await runAgentPhase({
     messages,
-    tools,
-    stopWhen: stepCountIs(10),
-    experimental_telemetry: { isEnabled: true },
+    systemPrompt,
+    connection,
+    teamId,
+    userId,
+    maxSteps: 10,
+    onTextDelta,
+    onToolCall,
   });
 
-  let fullText = '';
-  const allToolCalls: { name: string; args: unknown; result: unknown }[] = [];
+  onFinish?.(result.text);
 
-  for await (const part of result.fullStream) {
-    switch (part.type) {
-      case 'text-delta':
-        fullText += part.text;
-        onTextDelta?.(part.text);
-        break;
-      case 'tool-call':
-        // Will be handled by tool-result for the result
-        break;
-      case 'tool-result':
-        allToolCalls.push({
-          name: part.toolName,
-          args: part.input,
-          result: part.output,
+  return { text: result.text, toolCalls: result.toolCalls };
+}
+
+// ---------------------------------------------------------------------------
+// Multi-phase investigation cycle orchestrator
+// ---------------------------------------------------------------------------
+
+export interface InvestigationCycleInput {
+  triggerDescription: string;
+  triggerType: 'health_scan' | 'alert' | 'trend_review' | 'standalone';
+  schemaPrompt: string;
+  memoryContext: string;
+  connection: { host: string; username: string; password: string };
+  teamId: string;
+  userId: string;
+  onPhaseUpdate?: (phase: LoopPhase, output: string) => void;
+}
+
+export interface InvestigationCycleResult {
+  plan: string;
+  evidence: string;
+  verification: string;
+  summary: string;
+  confidence: 'high' | 'medium' | 'low';
+  phaseHistory: ILoopState['phaseHistory'];
+}
+
+export async function runInvestigationCycle({
+  triggerDescription,
+  triggerType,
+  schemaPrompt,
+  memoryContext,
+  connection,
+  teamId,
+  userId,
+  onPhaseUpdate,
+}: InvestigationCycleInput): Promise<InvestigationCycleResult> {
+  return investigationTracer.startActiveSpan(
+    'investigation.cycle',
+    async cycleSpan => {
+      cycleSpan.setAttributes({
+        'hyperdx.investigation.team.id': teamId,
+        'hyperdx.investigation.trigger.type': triggerType,
+        'hyperdx.investigation.trigger.description': triggerDescription,
+      });
+
+      const cycleStart = performance.now();
+      const phaseHistory: ILoopState['phaseHistory'] = [];
+
+      try {
+        // ----- Phase 1: PLAN -----
+        const planPrompt = buildPlanSystemPrompt({
+          schemaPrompt,
+          triggerDescription,
+          memoryContext,
         });
-        onToolCall?.(part.toolName, part.input, part.output);
-        break;
-    }
+
+        const planMessages = [
+          {
+            role: 'user' as const,
+            content: `Plan an investigation: ${triggerDescription}`,
+          },
+        ];
+
+        const planResult = await runAgentPhase({
+          messages: planMessages,
+          systemPrompt: planPrompt,
+          connection,
+          teamId,
+          userId,
+          maxSteps: 3,
+          phaseName: 'plan',
+        });
+
+        phaseHistory.push({
+          phase: 'plan',
+          input: triggerDescription,
+          output: planResult.text,
+          toolCalls: planResult.toolCallCount,
+          completedAt: new Date(),
+        });
+        onPhaseUpdate?.('plan', planResult.text);
+
+        // ----- Phase 2: EXECUTE -----
+        const executePrompt = buildExecuteSystemPrompt({
+          plan: planResult.text,
+          schemaPrompt,
+        });
+
+        const executeMessages = [
+          {
+            role: 'user' as const,
+            content:
+              'Execute the investigation plan. Call tools to gather evidence.',
+          },
+        ];
+
+        const executeResult = await runAgentPhase({
+          messages: executeMessages,
+          systemPrompt: executePrompt,
+          connection,
+          teamId,
+          userId,
+          maxSteps: 8,
+          phaseName: 'execute',
+        });
+
+        phaseHistory.push({
+          phase: 'execute',
+          input: planResult.text,
+          output: executeResult.text,
+          toolCalls: executeResult.toolCallCount,
+          completedAt: new Date(),
+        });
+        onPhaseUpdate?.('execute', executeResult.text);
+
+        // ----- Phase 3: VERIFY -----
+        const verifyPrompt = buildVerifySystemPrompt({
+          evidenceLog: executeResult.text,
+          schemaPrompt,
+        });
+
+        const verifyMessages = [
+          {
+            role: 'user' as const,
+            content:
+              'Verify the investigation findings. Try to disprove each conclusion using independent data.',
+          },
+        ];
+
+        const verifyResult = await runAgentPhase({
+          messages: verifyMessages,
+          systemPrompt: verifyPrompt,
+          connection,
+          teamId,
+          userId,
+          maxSteps: 6,
+          phaseName: 'verify',
+        });
+
+        phaseHistory.push({
+          phase: 'verify',
+          input: executeResult.text,
+          output: verifyResult.text,
+          toolCalls: verifyResult.toolCallCount,
+          completedAt: new Date(),
+        });
+        onPhaseUpdate?.('verify', verifyResult.text);
+
+        // ----- Phase 4: SUMMARIZE -----
+        const summarizePrompt = buildSummarizeSystemPrompt({
+          plan: planResult.text,
+          evidenceLog: executeResult.text,
+          verificationVerdicts: verifyResult.text,
+          schemaPrompt,
+        });
+
+        const summarizeMessages = [
+          {
+            role: 'user' as const,
+            content:
+              'Synthesize the investigation findings into a structured report. Create monitoring artifacts for anything worth tracking ongoing.',
+          },
+        ];
+
+        const summarizeResult = await runAgentPhase({
+          messages: summarizeMessages,
+          systemPrompt: summarizePrompt,
+          connection,
+          teamId,
+          userId,
+          maxSteps: 5,
+          phaseName: 'summarize',
+        });
+
+        phaseHistory.push({
+          phase: 'summarize',
+          input: verifyResult.text,
+          output: summarizeResult.text,
+          toolCalls: summarizeResult.toolCallCount,
+          completedAt: new Date(),
+        });
+        onPhaseUpdate?.('summarize', summarizeResult.text);
+
+        // Determine confidence from verification verdicts
+        const confidence = determineConfidence(verifyResult.text);
+
+        // Extract artifact count from summary
+        const artifactCount = countArtifactsInSummary(summarizeResult.text);
+
+        // Record cycle-level metrics
+        const cycleDuration = performance.now() - cycleStart;
+        cycleDurationHistogram.record(cycleDuration, {
+          'hyperdx.investigation.team.id': teamId,
+          'hyperdx.investigation.trigger.type': triggerType,
+          'hyperdx.investigation.confidence': confidence,
+        });
+
+        cycleCompleteCounter.add(1, {
+          'hyperdx.investigation.team.id': teamId,
+          'hyperdx.investigation.trigger.type': triggerType,
+          'hyperdx.investigation.confidence': confidence,
+        });
+
+        // Record artifact creation counts
+        for (const [type, count] of Object.entries(artifactCount)) {
+          if (count > 0) {
+            artifactsCreatedCounter.add(count, {
+              'hyperdx.investigation.team.id': teamId,
+              'hyperdx.investigation.artifact.type': type,
+            });
+          }
+        }
+
+        // Set cycle span attributes
+        cycleSpan.setAttributes({
+          'hyperdx.investigation.confidence': confidence,
+          'hyperdx.investigation.cycle.duration_ms': cycleDuration,
+          'hyperdx.investigation.plan.tool_calls': planResult.toolCallCount,
+          'hyperdx.investigation.execute.tool_calls':
+            executeResult.toolCallCount,
+          'hyperdx.investigation.verify.tool_calls': verifyResult.toolCallCount,
+          'hyperdx.investigation.summarize.tool_calls':
+            summarizeResult.toolCallCount,
+          'hyperdx.investigation.artifacts.created': Object.values(
+            artifactCount,
+          ).reduce((a, b) => a + b, 0),
+        });
+
+        return {
+          plan: planResult.text,
+          evidence: executeResult.text,
+          verification: verifyResult.text,
+          summary: summarizeResult.text,
+          confidence,
+          phaseHistory,
+        };
+      } catch (err) {
+        cycleSpan.recordException(err as Error);
+        cycleSpan.setStatus({
+          code: 2, // ERROR
+          message: (err as Error).message,
+        });
+        throw err;
+      } finally {
+        cycleSpan.end();
+      }
+    },
+  );
+}
+
+/**
+ * Extract confidence level from verification output.
+ * Heuristic: look for CONFIRMED/WEAKENED/INCONCLUSIVE keywords.
+ */
+function determineConfidence(
+  verificationText: string,
+): 'high' | 'medium' | 'low' {
+  const lower = verificationText.toLowerCase();
+  const confirmedCount = (lower.match(/confirmed/g) || []).length;
+  const weakenedCount = (lower.match(/weakened/g) || []).length;
+  const inconclusiveCount = (lower.match(/inconclusive/g) || []).length;
+
+  if (weakenedCount > 0) return 'low';
+  if (inconclusiveCount > confirmedCount) return 'medium';
+  if (confirmedCount >= 2 && weakenedCount === 0) return 'high';
+  return 'medium';
+}
+
+/**
+ * Count artifacts created in the summary by type.
+ * Parses patterns like "created saved search: X (ID: Y)".
+ */
+function countArtifactsInSummary(summary: string): Record<string, number> {
+  const counts: Record<string, number> = {
+    savedSearch: 0,
+    dashboard: 0,
+    alert: 0,
+  };
+
+  const savedSearchPattern =
+    /created (?:saved search|advanced dashboard):\s*[^(]*\(ID:\s*[a-f0-9]+\)/gi;
+  const dashboardPattern =
+    /created (?:advanced )?dashboard:\s*[^(]*\(ID:\s*[a-f0-9]+\)/gi;
+  const alertPattern = /created alert:\s*[^(]*\(ID:\s*[a-f0-9]+\)/gi;
+
+  for (const match of summary.matchAll(savedSearchPattern)) {
+    counts.savedSearch++;
+  }
+  for (const match of summary.matchAll(dashboardPattern)) {
+    counts.dashboard++;
+  }
+  for (const match of summary.matchAll(alertPattern)) {
+    counts.alert++;
   }
 
-  onFinish?.(fullText);
-
-  return { text: fullText, toolCalls: allToolCalls };
+  return counts;
 }

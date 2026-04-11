@@ -4,9 +4,7 @@ import Router, { useRouter } from 'next/router';
 import cx from 'classnames';
 import HyperDX from '@hyperdx/browser';
 import { isBuilderSavedChartConfig } from '@hyperdx/common-utils/dist/guards';
-import {
-  SavedSearchListApiResponse,
-} from '@hyperdx/common-utils/dist/types';
+import { SavedSearchListApiResponse } from '@hyperdx/common-utils/dist/types';
 import {
   ActionIcon,
   Anchor,

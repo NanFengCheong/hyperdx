@@ -25,6 +25,29 @@ export interface IInvestigationExport {
   createdAt: Date;
 }
 
+export type LoopPhase =
+  | 'plan'
+  | 'execute'
+  | 'verify'
+  | 'summarize'
+  | 'complete';
+
+export interface ILoopPhaseHistory {
+  phase: LoopPhase;
+  input: string;
+  output: string;
+  toolCalls: number;
+  completedAt: Date;
+}
+
+export interface ILoopState {
+  currentPhase: LoopPhase;
+  plan: string | null;
+  evidence: string | null;
+  verification: string | null;
+  phaseHistory: ILoopPhaseHistory[];
+}
+
 export interface IInvestigation {
   _id: ObjectId;
   team: ObjectId;
@@ -40,6 +63,7 @@ export interface IInvestigation {
   summary?: string;
   sharedWith?: ObjectId[];
   exports?: IInvestigationExport[];
+  loopState?: ILoopState;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -76,6 +100,36 @@ const ExportSchema = new Schema(
   { _id: false },
 );
 
+const LoopPhaseHistorySchema = new Schema(
+  {
+    phase: {
+      type: String,
+      enum: ['plan', 'execute', 'verify', 'summarize', 'complete'],
+      required: true,
+    },
+    input: { type: String, required: true },
+    output: { type: String, required: true },
+    toolCalls: { type: Number, default: 0 },
+    completedAt: { type: Date, default: Date.now },
+  },
+  { _id: false },
+);
+
+const LoopStateSchema = new Schema(
+  {
+    currentPhase: {
+      type: String,
+      enum: ['plan', 'execute', 'verify', 'summarize', 'complete'],
+      default: 'plan',
+    },
+    plan: { type: String, default: null },
+    evidence: { type: String, default: null },
+    verification: { type: String, default: null },
+    phaseHistory: { type: [LoopPhaseHistorySchema], default: [] },
+  },
+  { _id: false },
+);
+
 const InvestigationSchema = new Schema<IInvestigation>(
   {
     team: { type: Schema.Types.ObjectId, ref: 'Team', required: true },
@@ -99,6 +153,7 @@ const InvestigationSchema = new Schema<IInvestigation>(
     summary: { type: String },
     sharedWith: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     exports: { type: [ExportSchema], default: undefined },
+    loopState: { type: LoopStateSchema, default: () => ({}) },
   },
   { timestamps: true },
 );

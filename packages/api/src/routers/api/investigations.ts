@@ -2,27 +2,30 @@ import express from 'express';
 import { z } from 'zod';
 import { validateRequest } from 'zod-express-middleware';
 
+import { getConnectionById } from '@/controllers/connection';
 import {
   addExport,
   appendMessage,
+  createAlertInvestigation,
   createInvestigation,
   deleteInvestigation,
   getInvestigation,
   listInvestigations,
   updateInvestigation,
 } from '@/controllers/investigation';
+import { updateInvestigation as updateInv } from '@/controllers/investigation';
 import {
   buildSystemPrompt,
   convertMessagesToAIFormat,
   runInvestigationAgent,
+  runInvestigationCycle,
 } from '@/controllers/investigation-agent';
-import { getConnectionById } from '@/controllers/connection';
 import {
   buildSchemaPrompt,
   fetchClickHouseSchema,
 } from '@/controllers/investigation-tools/schema';
-import { getNonNullUserWithTeam } from '@/middleware/auth';
 import { getSource } from '@/controllers/sources';
+import { getNonNullUserWithTeam } from '@/middleware/auth';
 import { objectIdSchema } from '@/utils/zod';
 
 const router = express.Router();
@@ -386,6 +389,194 @@ router.post(
       res.json(updated);
     } catch (e) {
       next(e);
+    }
+  },
+);
+
+// GET /investigations/:id/loop-state — Get the current loop state of an investigation
+router.get('/:id/loop-state', async (req, res, next) => {
+  try {
+    const { teamId } = getNonNullUserWithTeam(req as any);
+    const investigation = await getInvestigation({
+      teamId: teamId.toString(),
+      investigationId: req.params.id,
+    });
+
+    if (!investigation) {
+      return res.status(404).json({ error: 'Investigation not found' });
+    }
+
+    res.json({
+      loopState: investigation.loopState || null,
+      status: investigation.status,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// PATCH /investigations/:id/summary — Update investigation summary
+router.patch(
+  '/:id/summary',
+  validateRequest({
+    body: z.object({
+      summary: z.string().min(1),
+    }),
+  }),
+  async (req, res, next) => {
+    try {
+      const { teamId } = getNonNullUserWithTeam(req as any);
+      const updated = await updateInvestigation({
+        teamId: teamId.toString(),
+        investigationId: req.params.id,
+        updates: { summary: req.body.summary },
+      });
+
+      if (!updated) {
+        return res.status(404).json({ error: 'Investigation not found' });
+      }
+
+      res.json(updated);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// POST /investigations/from-alert — Create investigation from an alert
+router.post(
+  '/from-alert',
+  validateRequest({
+    body: z.object({
+      alertId: z.string().min(1),
+      sourceId: objectIdSchema.optional(),
+    }),
+  }),
+  async (req, res, next) => {
+    try {
+      const { teamId, userId } = getNonNullUserWithTeam(req as any);
+      const { alertId } = req.body;
+
+      const investigation = await createAlertInvestigation({
+        teamId: teamId.toString(),
+        userId: userId.toString(),
+        alertId,
+      });
+
+      res.status(201).json(investigation);
+    } catch (e) {
+      if ((e as Error).message === 'Alert not found') {
+        return res.status(404).json({ error: 'Alert not found' });
+      }
+      next(e);
+    }
+  },
+);
+
+// POST /investigations/:id/run-cycle — Trigger a multi-phase investigation cycle via SSE
+router.post(
+  '/:id/run-cycle',
+  validateRequest({
+    body: z.object({
+      triggerDescription: z.string().min(1).max(500),
+      triggerType: z
+        .enum(['health_scan', 'alert', 'trend_review', 'standalone'])
+        .default('standalone'),
+      sourceId: objectIdSchema,
+    }),
+  }),
+  async (req, res, next) => {
+    try {
+      const { teamId, userId } = getNonNullUserWithTeam(req as any);
+      const { triggerDescription, triggerType, sourceId } = req.body;
+      const investigationId = req.params.id;
+
+      const investigation = await getInvestigation({
+        teamId: teamId.toString(),
+        investigationId,
+      });
+      if (!investigation) {
+        return res.status(404).json({ error: 'Investigation not found' });
+      }
+
+      const source = await getSource(teamId.toString(), sourceId);
+      if (!source) {
+        return res.status(404).json({ error: 'Source not found' });
+      }
+      const connection = await getConnectionById(
+        teamId.toString(),
+        source.connection.toString(),
+        true,
+      );
+      if (!connection) {
+        return res.status(404).json({ error: 'Connection not found' });
+      }
+
+      const schema = await fetchClickHouseSchema(
+        teamId.toString(),
+        source.connection.toString(),
+      );
+      const schemaPrompt = buildSchemaPrompt(schema);
+
+      // SSE setup
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders();
+
+      const result = await runInvestigationCycle({
+        triggerDescription,
+        triggerType: triggerType ?? 'standalone',
+        schemaPrompt,
+        memoryContext: '',
+        connection: {
+          host: connection.host,
+          username: connection.username,
+          password: connection.password,
+        },
+        teamId: teamId.toString(),
+        userId: userId.toString(),
+        onPhaseUpdate: (phase, output) => {
+          res.write(
+            `data: ${JSON.stringify({
+              type: 'phase',
+              phase,
+              output,
+            })}\n\n`,
+          );
+        },
+      });
+
+      // Save the results
+      await updateInv({
+        teamId: teamId.toString(),
+        investigationId,
+        updates: {
+          summary: result.summary,
+          status: result.confidence === 'high' ? 'resolved' : 'active',
+        },
+      });
+
+      res.write(
+        `data: ${JSON.stringify({
+          type: 'complete',
+          confidence: result.confidence,
+          summary: result.summary,
+        })}\n\n`,
+      );
+      res.end();
+    } catch (e) {
+      if (res.headersSent) {
+        res.write(
+          `data: ${JSON.stringify({
+            type: 'error',
+            message: (e as Error).message,
+          })}\n\n`,
+        );
+        res.end();
+      } else {
+        next(e);
+      }
     }
   },
 );
