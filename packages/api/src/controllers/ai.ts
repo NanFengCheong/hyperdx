@@ -344,5 +344,5 @@ function getOpenAIModel(): LanguageModel {
     ...(Object.keys(headers).length > 0 && { headers }),
   });
 
-  return openai.responses(config.AI_MODEL_NAME);
+  return openai(config.AI_MODEL_NAME);
 }

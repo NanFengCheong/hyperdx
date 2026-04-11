@@ -33,14 +33,29 @@ function normalizeAIResponse(raw: unknown): unknown {
 
   const obj = raw as Record<string, unknown>;
 
-  // Map "series" → "select" when "select" is missing
+  // Map snake_case keys → camelCase
+  if (obj.display_type && !obj.displayType) {
+    obj.displayType = obj.display_type;
+  }
+  if (obj.group_by && !obj.groupBy) {
+    obj.groupBy = obj.group_by;
+  }
+  if (obj.time_range && !obj.timeRange) {
+    obj.timeRange = obj.time_range;
+  }
+
+  // Map "series" or "queries" → "select"
   const items = obj.select ?? obj.series ?? obj.queries;
-  if (Array.isArray(items) && !obj.select) {
+  if (Array.isArray(items) && (!obj.select || !Array.isArray(obj.select))) {
     obj.select = items.map((item: Record<string, unknown>) => {
       const aggFn =
-        item.aggregationFunction ?? item.aggregateFunction ?? 'count';
+        item.aggregationFunction ??
+        item.aggregateFunction ??
+        item.aggregation_function ??
+        item.aggregate_function ??
+        'count';
 
-      const property = item.property ?? item.field ?? '';
+      const property = item.property ?? item.field ?? item.column ?? '';
 
       // Flatten a "conditions" array into a single SQL condition string
       let condition = item.condition;
@@ -66,8 +81,8 @@ function normalizeAIResponse(raw: unknown): unknown {
         ...(condition ? { condition } : {}),
       };
     });
-    delete obj.series;
-    delete obj.queries;
+    delete (obj as any).series;
+    delete (obj as any).queries;
   }
 
   // Normalize timeRange from object {from, to} to a descriptive string
@@ -94,28 +109,39 @@ function normalizeAIResponse(raw: unknown): unknown {
 /**
  * Try to extract a valid config from raw AI text output. Attempts in order:
  * 1. Extract JSON from markdown code blocks
- * 2. Parse the raw text as JSON directly
+ * 2. Try the substring between the first { and last }
+ * 3. Parse the raw text as JSON directly
  * Each attempt applies normalization before schema validation.
  */
 function tryParseAIResponse(
   rawText: string,
 ): z.infer<typeof AssistantLineTableConfigSchema> | null {
-  const candidates: string[] = [];
+  const candidates: Set<string> = new Set();
 
-  // Try markdown-wrapped JSON first
-  const jsonMatch = rawText.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-  if (jsonMatch) {
-    candidates.push(jsonMatch[1]);
+  // Try markdown-wrapped JSON first (handle multiple blocks)
+  const jsonMatch = rawText.matchAll(/```(?:json)?\s*\n?([\s\S]*?)\n?```/g);
+  for (const match of jsonMatch) {
+    candidates.add(match[1].trim());
+  }
+
+  // Try the substring from the first { to the last }
+  const firstBrace = rawText.indexOf('{');
+  const lastBrace = rawText.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    candidates.add(rawText.substring(firstBrace, lastBrace + 1));
   }
 
   // Try raw text as JSON
-  candidates.push(rawText.trim());
+  candidates.add(rawText.trim());
 
   for (const candidate of candidates) {
     try {
       const parsed = JSON.parse(candidate);
       const normalized = normalizeAIResponse(parsed);
-      return AssistantLineTableConfigSchema.parse(normalized);
+      const result = AssistantLineTableConfigSchema.safeParse(normalized);
+      if (result.success) {
+        return result.data;
+      }
     } catch {
       // continue to next candidate
     }
@@ -240,11 +266,14 @@ Example — count of error logs in the past 2 hours:
             `AI Provider Error. Status: ${err.statusCode}. Message: ${err.message}`,
           );
         }
-        if (NoObjectGeneratedError.isInstance(err)) {
-          // Some models (e.g. Qwen via DashScope) wrap JSON in markdown
-          // code blocks or return structurally different JSON. Try to
-          // extract, normalize, and parse the response before giving up.
-          const rawText = err.text;
+
+        // Catch AI SDK's parsing error and attempt a more robust extraction/normalization.
+        // We check for NoObjectGeneratedError and its string name for compatibility across versions.
+        if (
+          NoObjectGeneratedError.isInstance(err) ||
+          (err as any).name === 'AI_NoObjectGeneratedError'
+        ) {
+          const rawText = (err as any).text;
           if (rawText) {
             const parsed = tryParseAIResponse(rawText);
             if (parsed) {
@@ -258,6 +287,12 @@ Example — count of error logs in the past 2 hours:
               message:
                 'AI response could not be parsed or normalized into a valid chart config',
               rawText: rawText.slice(0, 500),
+              finishReason: (err as any).finishReason,
+            });
+          } else {
+            logger.warn({
+              message: 'No text output from AI model',
+              finishReason: (err as any).finishReason,
             });
           }
           throw new Api500Error(
