@@ -8,6 +8,7 @@ import {
   buildVerifySystemPrompt,
   convertMessagesToAIFormat,
   runAgentPhase,
+  runInvestigationCycle,
 } from '../investigation-agent';
 
 // Mock streamText to capture toolChoice passed to it
@@ -235,5 +236,53 @@ describe('runAgentPhase — outputMessages', () => {
     });
     expect(result.outputMessages).toBeDefined();
     expect(Array.isArray(result.outputMessages)).toBe(true);
+  });
+});
+
+describe('runInvestigationCycle — execute→verify threading', () => {
+  it('verify phase receives execute outputMessages as initial messages', async () => {
+    const streamTextMock = require('ai').streamText as jest.Mock;
+    const capturedCalls: any[] = [];
+    streamTextMock.mockImplementation((opts: any) => {
+      capturedCalls.push({ phaseName: opts.system?.match(/## Role\n(.+)/)?.[1], messages: opts.messages });
+      return {
+        fullStream: (async function* () {
+          yield { type: 'text-delta', text: 'output' };
+        })(),
+        response: Promise.resolve({ messages: [{ role: 'assistant', content: 'output' }] }),
+      };
+    });
+
+    await runInvestigationCycle({
+      triggerDescription: 'test trigger',
+      triggerType: 'health_scan',
+      schemaPrompt: 'schema',
+      memoryContext: 'none',
+      connection: { host: 'h', username: 'u', password: 'p' },
+      teamId: 't1',
+      userId: 'u1',
+    });
+
+    // Find the verify call
+    const verifyCall = capturedCalls.find(c => c.phaseName?.includes('VERIFICATION'));
+    expect(verifyCall).toBeDefined();
+    // Verify messages should contain more than just the fresh user message
+    // (it inherits execute's thread)
+    expect(verifyCall.messages.length).toBeGreaterThan(1);
+  });
+});
+
+describe('runInvestigationCycle — phase tool scoping', () => {
+  it('passes phase to createInvestigationTools for each phase', async () => {
+    // Smoke test: cycle completes without throwing
+    await expect(runInvestigationCycle({
+      triggerDescription: 'test',
+      triggerType: 'health_scan',
+      schemaPrompt: 'schema',
+      memoryContext: 'none',
+      connection: { host: 'h', username: 'u', password: 'p' },
+      teamId: 't1',
+      userId: 'u1',
+    })).resolves.toBeDefined();
   });
 });

@@ -406,10 +406,15 @@ export async function runAgentPhase({
 
       const start = performance.now();
       const model = getInvestigationModel();
+      const validPhases = ['plan', 'execute', 'verify', 'summarize'] as const;
+      const phase = validPhases.includes(phaseName as any)
+        ? (phaseName as 'plan' | 'execute' | 'verify' | 'summarize')
+        : undefined;
       const tools = createInvestigationTools({
         connection,
         teamId,
         userId,
+        phase,
       }) as ToolSet;
 
       const result = streamText({
@@ -764,6 +769,7 @@ export async function runInvestigationCycle({
           phaseName: 'execute',
           investigationId,
           callIndexOffset: toolCallIndex,
+          forceFirstStep: true,
           onToolEvent: event => {
             toolCallLog.push({
               callIndex: event.callIndex,
@@ -824,6 +830,7 @@ export async function runInvestigationCycle({
         });
 
         const verifyMessages = [
+          ...executeResult.outputMessages,
           {
             role: 'user' as const,
             content:
@@ -854,6 +861,7 @@ export async function runInvestigationCycle({
           phaseName: 'verify',
           investigationId,
           callIndexOffset: toolCallIndex,
+          forceFirstStep: true,
           onToolEvent: event => {
             toolCallLog.push({
               callIndex: event.callIndex,
