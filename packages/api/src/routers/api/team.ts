@@ -477,23 +477,28 @@ router.get('/tags', async (req, res: TeamTagsExpRes, next) => {
 
 // ─── Group Routes ────────────────────────────────────────────────
 
-router.get('/groups', async (req, res, next) => {
-  try {
-    const teamId = req.user?.team;
-    if (teamId == null) {
-      return res.status(401).json({ message: 'Unauthorized' });
+router.get(
+  '/groups',
+  requirePermission('roles:view'),
+  async (req, res, next) => {
+    try {
+      const teamId = req.user?.team;
+      if (teamId == null) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      const groups = await Group.find({ teamId }).sort({ createdAt: -1 });
+      res.json({
+        data: groups.map(g => g.toJSON()),
+      });
+    } catch (e) {
+      next(e);
     }
-    const groups = await Group.find({ teamId }).sort({ createdAt: -1 });
-    res.json({
-      data: groups.map(g => g.toJSON()),
-    });
-  } catch (e) {
-    next(e);
-  }
-});
+  },
+);
 
 router.post(
   '/group',
+  requirePermission('roles:edit'),
   validateRequest({
     body: z.object({
       name: z.string().min(1).max(100),
@@ -535,6 +540,7 @@ router.post(
 
 router.patch(
   '/group/:id',
+  requirePermission('roles:edit'),
   validateRequest({
     params: z.object({
       id: objectIdSchema,
@@ -580,6 +586,7 @@ router.patch(
 
 router.delete(
   '/group/:id',
+  requirePermission('roles:delete'),
   validateRequest({
     params: z.object({
       id: objectIdSchema,
@@ -1016,7 +1023,7 @@ router.get(
 
 router.post(
   '/notification-log/:id/retry',
-  requirePermission('roles:manage'),
+  requirePermission('roles:edit'),
   async (req, res, next) => {
     try {
       const { teamId } = getNonNullUserWithTeam(req);

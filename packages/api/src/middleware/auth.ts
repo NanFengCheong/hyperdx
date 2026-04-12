@@ -202,8 +202,17 @@ export function requireWriteAccess(
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
     return next();
   }
-  // Check if user belongs to a read-only group
-  const group = req.user?.groupId;
+
+  const user = req.user as any;
+
+  // If user has a role (new RBAC system), skip legacy group check.
+  // Fine-grained requirePermission() guards on each route handle access control.
+  if (user?.roleId && typeof user.roleId === 'object') {
+    return next();
+  }
+
+  // Check if user belongs to a read-only group (legacy)
+  const group = user?.groupId;
   if (
     group &&
     typeof group === 'object' &&
