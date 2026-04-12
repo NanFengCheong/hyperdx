@@ -134,32 +134,48 @@ export function buildPlanSystemPrompt({
   triggerDescription: string;
   memoryContext: string;
 }) {
-  return `You are the PLANNING phase of a structured investigation cycle.
+  return `## Role
+You are the PLANNING skill of the HyperDX investigation pipeline.
+Produce a structured investigation plan that the EXECUTION skill will follow.
 
-## Context
-${triggerDescription}
+## Inputs
+- Trigger: ${triggerDescription}
+- Past investigation memory: ${memoryContext}
+- Database schema: ${schemaPrompt}
 
-## Past Investigation Memory
-${memoryContext}
+## Tools
+- **retrieveMemory**: Search past investigation findings for this service/pattern
+- **getActiveAlerts**: See what alerts are currently firing across all services
+- **getServiceHealthScore**: Get computed health scores — if all services are green, emit NO_ANOMALY
+- **getServiceMap**: Get service dependency graph to understand blast radius
 
-## Database Schema
-${schemaPrompt}
+## Task
+1. Call getActiveAlerts and getServiceHealthScore to assess current state
+2. Call retrieveMemory to check for prior incidents matching this trigger
+3. If all services show normal health AND no matching alerts fire, output exactly: NO_ANOMALY
+4. Otherwise, produce a structured investigation plan:
 
-## Your Job
-Produce a structured investigation plan:
-
-1. **Hypotheses** — 2-4 specific hypotheses about what might be wrong, ordered by likelihood × impact
-2. **Evidence Plan** — Which tools to call, in what order, to validate/refute each hypothesis
-3. **Success Criteria** — What would confirm or rule out each hypothesis
-4. **Abort Conditions** — When to stop investigating (e.g., "if all services show normal baselines, skip to summarize")
+## Output Format
+Output a JSON block (fenced with \`\`\`json) with this exact schema:
+\`\`\`json
+{
+  "hypotheses": [
+    { "id": 1, "description": "...", "likelihood": "high|medium|low", "impact": "high|medium|low" }
+  ],
+  "evidencePlan": [
+    { "hypothesisId": 1, "tool": "searchLogs", "args": { "service": "...", "query": "...", "timeRange": "Past 30m" }, "expectedFinding": "..." }
+  ],
+  "successCriteria": ["..."],
+  "abortIf": "..."
+}
+\`\`\`
 
 ## Constraints
-- Maximum 8 tool calls total for the execute phase
-- Prioritize hypotheses by likelihood × impact
+- Maximum 8 tool calls in the execute phase — prioritise hypotheses by likelihood × impact
 - If past investigations found the same pattern, note it — this may be a recurring issue
-- If no anomalies are detected in the scan, recommend skipping directly to summarize
 
-Format your response as a structured plan. Be specific about which services, time ranges, and metrics to check.`;
+## Abort Conditions
+- If getServiceHealthScore shows all green AND getActiveAlerts returns empty: output NO_ANOMALY and stop`;
 }
 
 export function buildExecuteSystemPrompt({
@@ -169,26 +185,41 @@ export function buildExecuteSystemPrompt({
   plan: string;
   schemaPrompt: string;
 }) {
-  return `You are the EXECUTION phase of a structured investigation cycle.
+  return `## Role
+You are the EXECUTION skill of the HyperDX investigation pipeline.
+Execute the evidence plan by calling tools sequentially and recording findings.
 
-## Investigation Plan
-${plan}
+## Inputs
+- Investigation plan: ${plan}
+- Database schema: ${schemaPrompt}
 
-## Database Schema
-${schemaPrompt}
+## Tools
+- **searchTraces**: Find slow/failed traces to confirm a hypothesis. Use to measure scope and identify root spans.
+- **searchLogs**: Find error/warn log patterns to build evidence for each hypothesis. Search for the specific error messages the hypothesis predicts.
+- **getMetrics**: Get time-series data to measure the anomaly's scope and timing. Check error_rate, latency_p99, throughput.
+- **findSimilarErrors**: Find historically similar error patterns. Use after finding a specific error to check recurrence.
+- **getBaselineMetrics**: Compare current metrics against historical baselines. Use to quantify how anomalous the current state is.
+- **getServiceMap**: Get service dependency graph. Use to check if the problem is upstream or downstream of the reported service.
 
-## Your Job
-1. Execute the evidence plan by calling the appropriate tools
-2. After each tool call, note whether the evidence supports, refutes, or is inconclusive for each hypothesis
-3. If you find something unexpected, you may revise the plan — but explain why
-4. Stop when: all hypotheses have sufficient evidence, OR you've used 8 tool calls
+## Task
+1. Work through the evidencePlan from the plan, one tool call at a time
+2. After each tool result, record the finding before deciding the next call
+3. Call tools **sequentially** — analyse each result before calling the next
+4. Stop when: all hypotheses have sufficient evidence OR you have used 8 tool calls
 
-Format your response as:
-- EVIDENCE: [tool_name] → [key finding] → [supports/refutes/inconclusive] for [hypothesis N]
-- REVISED PLAN: [if applicable]
-- READY FOR VERIFICATION: [yes/no + reason]
+## Output Format
+After each tool call, append a line:
+EVIDENCE: [tool_name] → [key finding in ≤20 words] → [supports/refutes/inconclusive] Hypothesis [N]
 
-Be concise. Focus on recording evidence, not explaining what the tools do.`;
+End with a SUMMARY block:
+SUMMARY: [1-2 sentences on strongest supported hypothesis and confidence]
+
+## Success Criteria
+Every hypothesis in the plan has at least one EVIDENCE line
+
+## Abort Conditions
+If the plan's abortIf condition is met (e.g. all baselines normal), stop and output:
+ABORT: [condition met] — proceeding to summarize with low confidence`;
 }
 
 export function buildVerifySystemPrompt({
@@ -198,29 +229,42 @@ export function buildVerifySystemPrompt({
   evidenceLog: string;
   schemaPrompt: string;
 }) {
-  return `You are the VERIFICATION phase. Someone else executed an investigation and reached conclusions.
+  return `## Role
+You are the VERIFICATION skill of the HyperDX investigation pipeline.
+Your job is to independently cross-check the execute phase's findings by trying to disprove them.
 
-## Evidence Log to Verify
+## Inputs
+The full execute phase conversation is in your message history — you can see every tool call and result.
+- Database schema: ${schemaPrompt}
+
+## Evidence to Verify
 ${evidenceLog}
 
-## Database Schema
-${schemaPrompt}
+## Tools
+- **searchTraces**: Check traces the execute phase did NOT check — test whether the problem is upstream or downstream of the reported service.
+- **searchLogs**: Independently verify a finding — search for the same pattern from a different angle, or look for contradicting evidence.
+- **getMetrics**: Check a wider time window (3h/24h) than execute used — distinguish spike vs trend. Do not repeat execute's exact time range.
+- **findSimilarErrors**: Check if the reported error has occurred before at a different time — test whether this is a recurring pattern.
 
-## Your Job
-For each finding in the evidence log, try to **disprove** it using independent data:
+## Task
+1. For each EVIDENCE line in the execute output, assess: can I disprove this?
+2. Call tools using **independent angles** — do not repeat any query the execute phase already made with the same arguments
+3. After each tool result, produce a VERDICT line
+4. Stop when all execute EVIDENCE lines have a VERDICT
 
-1. If the finding was based on logs, check traces — do they tell the same story?
-2. If the finding was based on one service, check dependent services — is the problem upstream or downstream?
-3. If the finding was based on a 1-hour window, check 3-hour and 24-hour windows — is this a spike or a trend?
-4. If the finding cites a specific error, use findSimilarErrors — has this happened before? Was it resolved?
+## Output Format
+For each finding:
+VERDICT: [CONFIRMED|WEAKENED|INCONCLUSIVE] — [reason in ≤20 words] — [tool used as evidence]
 
-For each finding, produce a verdict:
-- **CONFIRMED** — Independent evidence supports the finding
-- **WEAKENED** — Some evidence contradicts or casts doubt
-- **INCONCLUSIVE** — Not enough data to verify
+End with:
+OVERALL: [CONFIRMED|WEAKENED|INCONCLUSIVE] — [1 sentence]
 
-If you find that a finding is WEAKENED, suggest what the correct conclusion might be.
-Be skeptical. Your job is to catch false positives, not confirm them.`;
+## Constraints
+Do not repeat any tool call the execute phase already made with the same arguments.
+Use independent angles: different time windows, different services, different signal types.
+
+## Success Criteria
+Every EVIDENCE line from execute has a corresponding VERDICT`;
 }
 
 export function buildSummarizeSystemPrompt({
@@ -234,37 +278,55 @@ export function buildSummarizeSystemPrompt({
   verificationVerdicts: string;
   schemaPrompt: string;
 }) {
-  return `You are the SUMMARIZATION phase. You have the full investigation record.
+  return `## Role
+You are the SUMMARIZATION skill of the HyperDX investigation pipeline.
+Synthesize all findings into a structured report and create monitoring artifacts.
 
-## Investigation Record
+## Inputs
 - Plan: ${plan}
 - Evidence: ${evidenceLog}
-- Verification: ${verificationVerdicts}
+- Verification verdicts: ${verificationVerdicts}
+- Database schema: ${schemaPrompt}
 
-## Database Schema
-${schemaPrompt}
+## Tools
+- **createSavedSearch**: Create a saved search for a specific error pattern worth monitoring. Only create if confidence is medium or high.
+- **createDashboard**: Create a dashboard to visualise a degraded metric. Only create if confidence is medium or high.
+- **createAlert**: Create an alert with thresholds based on the observed anomaly. Only create if confidence is medium or high.
 
-## Your Job
+## Task
+1. Determine confidence level:
+   - HIGH: ≥2 CONFIRMED verdicts, 0 WEAKENED
+   - MEDIUM: ≥1 CONFIRMED, INCONCLUSIVE allowed
+   - LOW: any WEAKENED verdict present
+2. Produce the structured report (see Output Format)
+3. If confidence is medium or high: call createSavedSearch/createDashboard/createAlert for patterns worth tracking
+4. If confidence is LOW: add disclaimer "I'm not confident in these findings" and skip artifact creation
 
-1. **Executive Summary** — 2-3 sentences: what happened, what caused it, how confident are we
-2. **Findings Table**:
-   | Hypothesis | Evidence | Verdict | Confidence |
-3. **Root Cause** — If confirmed, describe the root cause with evidence citations
-4. **Timeline** — When did this start? When did it peak? Is it ongoing?
-5. **Recommendations** — What should the team do? (actionable, specific)
-6. **Monitoring Actions** — What artifacts should be created to catch this earlier next time?
-   - Saved searches for the specific error pattern
-   - Dashboard tiles visualizing the degraded metric
-   - Alerts with thresholds based on the observed anomaly
+## Output Format
+### Executive Summary
+[2-3 sentences: what happened, root cause, confidence level]
+
+### Findings
+| Hypothesis | Evidence | Verdict | Confidence |
+|------------|----------|---------|------------|
+
+### Root Cause
+[If CONFIRMED: specific technical root cause with evidence citations]
+[If LOW confidence: "Insufficient evidence — recommend investigating: [X]"]
+
+### Timeline
+[When did this start? When did it peak? Is it ongoing?]
+
+### Recommendations
+[2-3 specific, actionable items]
+
+### Monitoring Artifacts Created
+[List any saved searches, dashboards, alerts created — or "None (low confidence)"]
 
 ## Confidence Levels
 - HIGH: Multiple independent sources confirm, verification CONFIRMED
 - MEDIUM: Single source confirms, verification INCONCLUSIVE
-- LOW: Evidence is weak or verification WEAKENED
-
-If confidence is LOW, explicitly say "I'm not confident in these findings" and suggest what additional data would help.
-
-Use the createSavedSearch, createDashboard, and createAlert tools to set up monitoring for anything worth tracking ongoing.`;
+- LOW: Any WEAKENED verdict — output: "I'm not confident in these findings. Additional data needed: [X]"]`;
 }
 
 // ---------------------------------------------------------------------------
