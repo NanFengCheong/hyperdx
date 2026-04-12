@@ -286,3 +286,40 @@ describe('runInvestigationCycle — phase tool scoping', () => {
     })).resolves.toBeDefined();
   });
 });
+
+describe('runInvestigationCycle — NO_ANOMALY early exit', () => {
+  it('skips execute/verify/summarize phases when plan emits NO_ANOMALY', async () => {
+    const streamTextMock = require('ai').streamText as jest.Mock;
+    const originalImpl = streamTextMock.getMockImplementation();
+    let callCount = 0;
+    streamTextMock.mockImplementation(() => {
+      callCount++;
+      const isFirstCall = callCount === 1;
+      return {
+        fullStream: (async function* () {
+          yield { type: 'text-delta', text: isFirstCall ? 'NO_ANOMALY' : 'output' };
+        })(),
+        response: Promise.resolve({ messages: [] }),
+      };
+    });
+
+    try {
+      const result = await runInvestigationCycle({
+        triggerDescription: 'test',
+        triggerType: 'health_scan',
+        schemaPrompt: 'schema',
+        memoryContext: 'none',
+        connection: { host: 'h', username: 'u', password: 'p' },
+        teamId: 't1',
+        userId: 'u1',
+      });
+
+      // Only plan phase ran (1 streamText call)
+      expect(callCount).toBe(1);
+      expect(result.confidence).toBe('low');
+      expect(result.summary).toMatch(/NO_ANOMALY|no anomaly/i);
+    } finally {
+      streamTextMock.mockImplementation(originalImpl);
+    }
+  });
+});

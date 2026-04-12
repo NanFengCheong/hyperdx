@@ -732,6 +732,41 @@ export async function runInvestigationCycle({
           });
         }
 
+        // Check for NO_ANOMALY — skip remaining phases
+        if (planResult.text.includes('NO_ANOMALY')) {
+          const cycleDuration = performance.now() - cycleStart;
+          cycleDurationHistogram.record(cycleDuration, {
+            'hyperdx.investigation.team.id': teamId,
+            'hyperdx.investigation.trigger.type': triggerType,
+            'hyperdx.investigation.confidence': 'low',
+          });
+          cycleCompleteCounter.add(1, {
+            'hyperdx.investigation.team.id': teamId,
+            'hyperdx.investigation.trigger.type': triggerType,
+            'hyperdx.investigation.confidence': 'low',
+          });
+
+          if (investigationId) {
+            investigationEventBus.emitDebugEvent({
+              type: 'investigation_complete',
+              investigationId,
+              confidence: 'low',
+              timestamp: Date.now(),
+            });
+          }
+
+          return {
+            plan: planResult.text,
+            evidence: '',
+            verification: '',
+            summary: 'NO_ANOMALY: All services healthy, no active alerts. No investigation needed.',
+            confidence: 'low' as const,
+            phaseHistory,
+            toolCallLog,
+            thinkingLog,
+          };
+        }
+
         // ----- Phase 2: EXECUTE -----
         const executePrompt = buildExecuteSystemPrompt({
           plan: planResult.text,
