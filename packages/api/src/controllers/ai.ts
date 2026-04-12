@@ -324,12 +324,7 @@ function getOpenAIModel(): LanguageModel {
     throw new Error('No API key defined for OpenAI provider. Set AI_API_KEY.');
   }
 
-  if (!config.AI_MODEL_NAME) {
-    throw new Error(
-      'No model name configured for OpenAI provider. Set AI_MODEL_NAME ' +
-        '(e.g. "gpt-4o", "claude-sonnet-4-5-20250929" for LiteLLM proxies).',
-    );
-  }
+  const modelName = config.AI_MODEL_NAME || 'qwen-plus-latest';
 
   const headers: Record<string, string> = config.AI_REQUEST_HEADERS
     ? parseJSON<Record<string, string>>(
@@ -344,5 +339,5 @@ function getOpenAIModel(): LanguageModel {
     ...(Object.keys(headers).length > 0 && { headers }),
   });
 
-  return openai(config.AI_MODEL_NAME);
+  return openai(modelName);
 }

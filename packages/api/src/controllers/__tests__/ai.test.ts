@@ -173,14 +173,14 @@ describe('openai provider', () => {
     );
   });
 
-  it('throws when no model name is set', () => {
+  it('defaults to qwen-plus-latest when no model name is set', () => {
     setConfig({
       AI_PROVIDER: 'openai',
       AI_API_KEY: 'sk-test',
     });
-    expect(() => getAIModel()).toThrow(
-      'No model name configured for OpenAI provider. Set AI_MODEL_NAME',
-    );
+    // Should not throw — defaults to qwen-plus-latest instead of requiring AI_MODEL_NAME
+    expect(() => getAIModel()).not.toThrow();
+    expect(mockCreateOpenAI).toHaveBeenCalled();
   });
 
   it('creates provider with minimal config', () => {
