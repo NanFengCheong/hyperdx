@@ -1,4 +1,5 @@
 import { initSDK } from '@hyperdx/node-opentelemetry/build/src/otel';
+// eslint-disable-next-line n/no-extraneous-import -- Express instrumentation is a dev peer dependency used for tracing
 import { ExpressLayerType } from '@opentelemetry/instrumentation-express';
 
 initSDK({

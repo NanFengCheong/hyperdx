@@ -23,7 +23,7 @@
  *   ENABLE_THINKING=true npx jest ...
  */
 
-const https = require('https');
+import * as https from 'https';
 
 // ---------------------------------------------------------------------------
 // Configuration

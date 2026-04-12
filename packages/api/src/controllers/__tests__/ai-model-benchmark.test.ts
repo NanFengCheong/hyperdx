@@ -11,10 +11,7 @@
  */
 
 import { AssistantLineTableConfigSchema } from '@hyperdx/common-utils/dist/types';
-
-// Use native https (jest.setup.ts mocks global.fetch, so we bypass it)
-
-const https = require('https');
+import * as https from 'https';
 
 // ---------------------------------------------------------------------------
 // Configuration

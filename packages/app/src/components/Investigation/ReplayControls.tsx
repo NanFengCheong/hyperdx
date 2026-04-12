@@ -34,7 +34,7 @@ export function ReplayControls({
     <Group gap="xs" mb="sm" wrap="nowrap">
       <Tooltip label={isPaused ? 'Resume' : 'Pause'}>
         <ActionIcon
-          variant="light"
+          variant="secondary"
           size="sm"
           onClick={isPaused ? onResume : onPause}
         >

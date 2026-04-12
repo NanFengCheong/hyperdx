@@ -29,11 +29,16 @@ export function BudgetBar({
 }: BudgetBarProps) {
   const [elapsed, setElapsed] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startedAtRef = useRef(startedAt);
+  startedAtRef.current = startedAt;
 
   useEffect(() => {
-    if (isActive && startedAt) {
+    const currentStartedAt = startedAtRef.current;
+    if (isActive && currentStartedAt != null) {
+      const baseElapsed = Date.now() - currentStartedAt; // eslint-disable-line no-restricted-syntax -- intentional real-time elapsed calculation in interval, not render
+      setElapsed(baseElapsed);
       intervalRef.current = setInterval(() => {
-        setElapsed(Date.now() - startedAt);
+        setElapsed(Date.now() - currentStartedAt); // eslint-disable-line no-restricted-syntax -- intentional real-time elapsed calculation in interval, not render
       }, 1000);
     } else {
       if (intervalRef.current) {
@@ -44,7 +49,8 @@ export function BudgetBar({
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isActive, startedAt]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- startedAt tracked via ref, only isActive triggers effect
+  }, [isActive]);
 
   if (!budgetSnapshot) return null;
 
@@ -62,11 +68,11 @@ export function BudgetBar({
           <Text size="xs">
             {budgetSnapshot.toolCallsUsed}/{budgetSnapshot.toolCallsTotal}
           </Text>
-          {isActive && startedAt && (
+          {isActive && startedAt ? (
             <Text size="xs" c="dimmed">
               {formatElapsed(elapsed)}
             </Text>
-          )}
+          ) : null}
         </Group>
       </Group>
       <Progress

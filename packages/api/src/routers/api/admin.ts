@@ -518,7 +518,7 @@ router.put('/clickhouse-retention/settings', async (req, res, next) => {
 // GET /admin/clickhouse-retention/status — current ClickHouse disk usage
 router.get('/clickhouse-retention/status', async (req, res, next) => {
   try {
-    const { CLICKHOUSE_HOST } = await import('../../config');
+    const { CLICKHOUSE_HOST } = await import('../../config.js');
     const url = new URL(CLICKHOUSE_HOST);
 
     const tables = [
