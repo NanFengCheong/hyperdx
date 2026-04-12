@@ -9,6 +9,7 @@ import {
   buildSystemPrompt,
   buildVerifySystemPrompt,
   convertMessagesToAIFormat,
+  countArtifactsInSummary,
   runAgentPhase,
   runInvestigationCycle,
 } from '../investigation-agent';
@@ -143,7 +144,6 @@ describe('buildExecuteSystemPrompt', () => {
 describe('buildVerifySystemPrompt', () => {
   it('declares VERIFICATION role', () => {
     const p = buildVerifySystemPrompt({
-      evidenceLog: EVIDENCE,
       schemaPrompt: SCHEMA,
     });
     expect(p).toMatch(/## Role/);
@@ -151,14 +151,12 @@ describe('buildVerifySystemPrompt', () => {
   });
   it('instructs independent angles (no repeated queries)', () => {
     const p = buildVerifySystemPrompt({
-      evidenceLog: EVIDENCE,
       schemaPrompt: SCHEMA,
     });
     expect(p).toMatch(/Do not repeat/i);
   });
   it('specifies VERDICT output format with three states', () => {
     const p = buildVerifySystemPrompt({
-      evidenceLog: EVIDENCE,
       schemaPrompt: SCHEMA,
     });
     expect(p).toMatch(/CONFIRMED/);
@@ -333,5 +331,38 @@ describe('runInvestigationCycle — NO_ANOMALY early exit', () => {
     } finally {
       streamTextMock.mockImplementation(originalImpl);
     }
+  });
+});
+
+describe('countArtifactsInSummary', () => {
+  it('counts advanced dashboard only in dashboard, not savedSearch', () => {
+    const summary =
+      'I created advanced dashboard: Error Overview (ID: abc123def456)';
+    const counts = countArtifactsInSummary(summary);
+    expect(counts.dashboard).toBe(1);
+    expect(counts.savedSearch).toBe(0);
+  });
+
+  it('counts saved search correctly', () => {
+    const summary =
+      'I created saved search: High Latency Spans (ID: aaa111bbb222)';
+    const counts = countArtifactsInSummary(summary);
+    expect(counts.savedSearch).toBe(1);
+    expect(counts.dashboard).toBe(0);
+    expect(counts.alert).toBe(0);
+  });
+
+  it('counts a mix of all three artifact types correctly', () => {
+    const summary = [
+      'created saved search: Error Logs (ID: aaa111bbb222)',
+      'created advanced dashboard: Overview (ID: ccc333ddd444)',
+      'created dashboard: Simple Board (ID: eee555fff666)',
+      'created alert: High Error Rate (ID: 999888777666)',
+      'created saved search: Slow Queries (ID: 111222333444)',
+    ].join('\n');
+    const counts = countArtifactsInSummary(summary);
+    expect(counts.savedSearch).toBe(2);
+    expect(counts.dashboard).toBe(2);
+    expect(counts.alert).toBe(1);
   });
 });

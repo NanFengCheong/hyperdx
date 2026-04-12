@@ -223,10 +223,8 @@ ABORT: [condition met] — proceeding to summarize with low confidence`;
 }
 
 export function buildVerifySystemPrompt({
-  evidenceLog,
   schemaPrompt,
 }: {
-  evidenceLog: string;
   schemaPrompt: string;
 }) {
   return `## Role
@@ -234,11 +232,8 @@ You are the VERIFICATION skill of the HyperDX investigation pipeline.
 Your job is to independently cross-check the execute phase's findings by trying to disprove them.
 
 ## Inputs
-The full execute phase conversation is in your message history — you can see every tool call and result.
+The full execute phase conversation is in your message history — you can see every tool call, result, and EVIDENCE line directly.
 - Database schema: ${schemaPrompt}
-
-## Evidence to Verify
-${evidenceLog}
 
 ## Tools
 - **searchTraces**: Check traces the execute phase did NOT check — test whether the problem is upstream or downstream of the reported service.
@@ -641,26 +636,49 @@ export async function runInvestigationCycle({
       const TOTAL_BUDGET = 22; // plan(3) + execute(8) + verify(6) + summarize(5)
       let toolCallIndex = 0;
 
-      try {
-        // ----- Phase 1: PLAN -----
-        const planPrompt = buildPlanSystemPrompt({
-          schemaPrompt,
-          triggerDescription,
-          memoryContext,
-        });
-
-        const planMessages = [
-          {
-            role: 'user' as const,
-            content: `Plan an investigation: ${triggerDescription}`,
-          },
-        ];
+      // Helper: runs a single phase with full event-bus tracking, history,
+      // thinking-log, and tool-call-log bookkeeping.  Mutates the closure
+      // arrays in place and returns the PhaseResult + updated toolCallIndex.
+      async function runPhaseWithTracking({
+        phaseName,
+        prompt,
+        messages: phaseMessages,
+        maxSteps,
+        phaseInput,
+        forceFirstStep,
+      }: {
+        phaseName: LoopPhase;
+        prompt: string;
+        messages: ModelMessage[];
+        maxSteps: number;
+        phaseInput: string;
+        forceFirstStep?: boolean;
+      }): Promise<{ result: PhaseResult; newToolCallIndex: number }> {
+        const remainingBudget = TOTAL_BUDGET - toolCallIndex;
+        if (remainingBudget <= 0) {
+          const skipped: PhaseResult = {
+            text: `SKIPPED: Budget exhausted before ${phaseName} phase.`,
+            toolCallCount: 0,
+            toolCalls: [],
+            outputMessages: phaseMessages,
+          };
+          phaseHistory.push({
+            phase: phaseName,
+            input: phaseInput,
+            output: skipped.text,
+            toolCalls: 0,
+            completedAt: new Date(),
+          });
+          onPhaseUpdate?.(phaseName, skipped.text);
+          return { result: skipped, newToolCallIndex: toolCallIndex };
+        }
+        const cappedMaxSteps = Math.min(maxSteps, remainingBudget);
 
         if (investigationId) {
           investigationEventBus.emitDebugEvent({
             type: 'phase_start',
             investigationId,
-            phase: 'plan',
+            phase: phaseName,
             budgetSnapshot: {
               toolCallsUsed: toolCallIndex,
               toolCallsTotal: TOTAL_BUDGET,
@@ -669,20 +687,21 @@ export async function runInvestigationCycle({
           });
         }
 
-        const planResult = await runAgentPhase({
-          messages: planMessages,
-          systemPrompt: planPrompt,
+        const result = await runAgentPhase({
+          messages: phaseMessages,
+          systemPrompt: prompt,
           connection,
           teamId,
           userId,
-          maxSteps: 3,
-          phaseName: 'plan',
+          maxSteps: cappedMaxSteps,
+          phaseName,
           investigationId,
           callIndexOffset: toolCallIndex,
+          forceFirstStep,
           onToolEvent: event => {
             toolCallLog.push({
               callIndex: event.callIndex,
-              phase: 'plan',
+              phase: phaseName,
               tool: event.tool,
               args: event.args as Record<string, unknown>,
               result: event.result,
@@ -692,45 +711,70 @@ export async function runInvestigationCycle({
           },
         });
 
-        toolCallIndex += planResult.toolCallCount;
+        toolCallIndex += result.toolCallCount;
         phaseHistory.push({
-          phase: 'plan',
-          input: triggerDescription,
-          output: planResult.text,
-          toolCalls: planResult.toolCallCount,
+          phase: phaseName,
+          input: phaseInput,
+          output: result.text,
+          toolCalls: result.toolCallCount,
           completedAt: new Date(),
         });
-        onPhaseUpdate?.('plan', planResult.text);
+        onPhaseUpdate?.(phaseName, result.text);
         phaseHistory[phaseHistory.length - 1].summaryText =
-          planResult.text.slice(0, 200);
+          result.text.slice(0, 200);
+
         if (investigationId) {
           investigationEventBus.emitDebugEvent({
             type: 'phase_end',
             investigationId,
-            phase: 'plan',
-            summaryText: planResult.text.slice(0, 200),
-            toolCallCount: planResult.toolCallCount,
+            phase: phaseName,
+            summaryText: result.text.slice(0, 200),
+            toolCallCount: result.toolCallCount,
             budgetSnapshot: {
               toolCallsUsed: toolCallIndex,
               toolCallsTotal: TOTAL_BUDGET,
             },
             timestamp: Date.now(),
           });
-          const planThinking: IThinkingEntry = {
-            phase: 'plan',
-            tokenCount: Math.floor(planResult.text.length / 4),
-            content: planResult.text,
+          const thinking: IThinkingEntry = {
+            phase: phaseName,
+            tokenCount: Math.floor(result.text.length / 4),
+            content: result.text,
           };
-          thinkingLog.push(planThinking);
+          thinkingLog.push(thinking);
           investigationEventBus.emitDebugEvent({
             type: 'thinking',
             investigationId,
-            phase: 'plan',
-            tokenCount: planThinking.tokenCount,
-            content: planThinking.content,
+            phase: phaseName,
+            tokenCount: thinking.tokenCount,
+            content: thinking.content,
             timestamp: Date.now(),
           });
         }
+
+        return { result, newToolCallIndex: toolCallIndex };
+      }
+
+      try {
+        // ----- Phase 1: PLAN -----
+        const planPrompt = buildPlanSystemPrompt({
+          schemaPrompt,
+          triggerDescription,
+          memoryContext,
+        });
+
+        const { result: planResult } = await runPhaseWithTracking({
+          phaseName: 'plan',
+          prompt: planPrompt,
+          messages: [
+            {
+              role: 'user' as const,
+              content: `Plan an investigation: ${triggerDescription}`,
+            },
+          ],
+          maxSteps: 3,
+          phaseInput: triggerDescription,
+        });
 
         // Check for NO_ANOMALY — skip remaining phases
         if (planResult.text.includes('NO_ANOMALY')) {
@@ -774,182 +818,41 @@ export async function runInvestigationCycle({
           schemaPrompt,
         });
 
-        const executeMessages = [
-          {
-            role: 'user' as const,
-            content:
-              'Execute the investigation plan. Call tools to gather evidence.',
-          },
-        ];
-
-        if (investigationId) {
-          investigationEventBus.emitDebugEvent({
-            type: 'phase_start',
-            investigationId,
-            phase: 'execute',
-            budgetSnapshot: {
-              toolCallsUsed: toolCallIndex,
-              toolCallsTotal: TOTAL_BUDGET,
-            },
-            timestamp: Date.now(),
-          });
-        }
-
-        const executeResult = await runAgentPhase({
-          messages: executeMessages,
-          systemPrompt: executePrompt,
-          connection,
-          teamId,
-          userId,
-          maxSteps: 8,
+        const { result: executeResult } = await runPhaseWithTracking({
           phaseName: 'execute',
-          investigationId,
-          callIndexOffset: toolCallIndex,
-          forceFirstStep: true,
-          onToolEvent: event => {
-            toolCallLog.push({
-              callIndex: event.callIndex,
-              phase: 'execute',
-              tool: event.tool,
-              args: event.args as Record<string, unknown>,
-              result: event.result,
-              error: event.error,
-              durationMs: event.durationMs,
-            });
-          },
-        });
-
-        toolCallIndex += executeResult.toolCallCount;
-        phaseHistory.push({
-          phase: 'execute',
-          input: planResult.text,
-          output: executeResult.text,
-          toolCalls: executeResult.toolCallCount,
-          completedAt: new Date(),
-        });
-        onPhaseUpdate?.('execute', executeResult.text);
-        phaseHistory[phaseHistory.length - 1].summaryText =
-          executeResult.text.slice(0, 200);
-        if (investigationId) {
-          investigationEventBus.emitDebugEvent({
-            type: 'phase_end',
-            investigationId,
-            phase: 'execute',
-            summaryText: executeResult.text.slice(0, 200),
-            toolCallCount: executeResult.toolCallCount,
-            budgetSnapshot: {
-              toolCallsUsed: toolCallIndex,
-              toolCallsTotal: TOTAL_BUDGET,
+          prompt: executePrompt,
+          messages: [
+            {
+              role: 'user' as const,
+              content:
+                'Execute the investigation plan. Call tools to gather evidence.',
             },
-            timestamp: Date.now(),
-          });
-          const executeThinking: IThinkingEntry = {
-            phase: 'execute',
-            tokenCount: Math.floor(executeResult.text.length / 4),
-            content: executeResult.text,
-          };
-          thinkingLog.push(executeThinking);
-          investigationEventBus.emitDebugEvent({
-            type: 'thinking',
-            investigationId,
-            phase: 'execute',
-            tokenCount: executeThinking.tokenCount,
-            content: executeThinking.content,
-            timestamp: Date.now(),
-          });
-        }
+          ],
+          maxSteps: 8,
+          phaseInput: planResult.text,
+          forceFirstStep: true,
+        });
 
         // ----- Phase 3: VERIFY -----
         const verifyPrompt = buildVerifySystemPrompt({
-          evidenceLog: executeResult.text,
           schemaPrompt,
         });
 
-        const verifyMessages = [
-          ...executeResult.outputMessages,
-          {
-            role: 'user' as const,
-            content:
-              'Verify the investigation findings. Try to disprove each conclusion using independent data.',
-          },
-        ];
-
-        if (investigationId) {
-          investigationEventBus.emitDebugEvent({
-            type: 'phase_start',
-            investigationId,
-            phase: 'verify',
-            budgetSnapshot: {
-              toolCallsUsed: toolCallIndex,
-              toolCallsTotal: TOTAL_BUDGET,
-            },
-            timestamp: Date.now(),
-          });
-        }
-
-        const verifyResult = await runAgentPhase({
-          messages: verifyMessages,
-          systemPrompt: verifyPrompt,
-          connection,
-          teamId,
-          userId,
-          maxSteps: 6,
+        const { result: verifyResult } = await runPhaseWithTracking({
           phaseName: 'verify',
-          investigationId,
-          callIndexOffset: toolCallIndex,
-          forceFirstStep: true,
-          onToolEvent: event => {
-            toolCallLog.push({
-              callIndex: event.callIndex,
-              phase: 'verify',
-              tool: event.tool,
-              args: event.args as Record<string, unknown>,
-              result: event.result,
-              error: event.error,
-              durationMs: event.durationMs,
-            });
-          },
-        });
-
-        toolCallIndex += verifyResult.toolCallCount;
-        phaseHistory.push({
-          phase: 'verify',
-          input: executeResult.text,
-          output: verifyResult.text,
-          toolCalls: verifyResult.toolCallCount,
-          completedAt: new Date(),
-        });
-        onPhaseUpdate?.('verify', verifyResult.text);
-        phaseHistory[phaseHistory.length - 1].summaryText =
-          verifyResult.text.slice(0, 200);
-        if (investigationId) {
-          investigationEventBus.emitDebugEvent({
-            type: 'phase_end',
-            investigationId,
-            phase: 'verify',
-            summaryText: verifyResult.text.slice(0, 200),
-            toolCallCount: verifyResult.toolCallCount,
-            budgetSnapshot: {
-              toolCallsUsed: toolCallIndex,
-              toolCallsTotal: TOTAL_BUDGET,
+          prompt: verifyPrompt,
+          messages: [
+            ...executeResult.outputMessages,
+            {
+              role: 'user' as const,
+              content:
+                'Verify the investigation findings. Try to disprove each conclusion using independent data.',
             },
-            timestamp: Date.now(),
-          });
-          const verifyThinking: IThinkingEntry = {
-            phase: 'verify',
-            tokenCount: Math.floor(verifyResult.text.length / 4),
-            content: verifyResult.text,
-          };
-          thinkingLog.push(verifyThinking);
-          investigationEventBus.emitDebugEvent({
-            type: 'thinking',
-            investigationId,
-            phase: 'verify',
-            tokenCount: verifyThinking.tokenCount,
-            content: verifyThinking.content,
-            timestamp: Date.now(),
-          });
-        }
+          ],
+          maxSteps: 6,
+          phaseInput: executeResult.text,
+          forceFirstStep: true,
+        });
 
         // ----- Phase 4: SUMMARIZE -----
         const summarizePrompt = buildSummarizeSystemPrompt({
@@ -959,89 +862,19 @@ export async function runInvestigationCycle({
           schemaPrompt,
         });
 
-        const summarizeMessages = [
-          {
-            role: 'user' as const,
-            content:
-              'Synthesize the investigation findings into a structured report. Create monitoring artifacts for anything worth tracking ongoing.',
-          },
-        ];
-
-        if (investigationId) {
-          investigationEventBus.emitDebugEvent({
-            type: 'phase_start',
-            investigationId,
-            phase: 'summarize',
-            budgetSnapshot: {
-              toolCallsUsed: toolCallIndex,
-              toolCallsTotal: TOTAL_BUDGET,
-            },
-            timestamp: Date.now(),
-          });
-        }
-
-        const summarizeResult = await runAgentPhase({
-          messages: summarizeMessages,
-          systemPrompt: summarizePrompt,
-          connection,
-          teamId,
-          userId,
-          maxSteps: 5,
+        const { result: summarizeResult } = await runPhaseWithTracking({
           phaseName: 'summarize',
-          investigationId,
-          callIndexOffset: toolCallIndex,
-          onToolEvent: event => {
-            toolCallLog.push({
-              callIndex: event.callIndex,
-              phase: 'summarize',
-              tool: event.tool,
-              args: event.args as Record<string, unknown>,
-              result: event.result,
-              error: event.error,
-              durationMs: event.durationMs,
-            });
-          },
-        });
-
-        toolCallIndex += summarizeResult.toolCallCount;
-        phaseHistory.push({
-          phase: 'summarize',
-          input: verifyResult.text,
-          output: summarizeResult.text,
-          toolCalls: summarizeResult.toolCallCount,
-          completedAt: new Date(),
-        });
-        onPhaseUpdate?.('summarize', summarizeResult.text);
-        phaseHistory[phaseHistory.length - 1].summaryText =
-          summarizeResult.text.slice(0, 200);
-        if (investigationId) {
-          investigationEventBus.emitDebugEvent({
-            type: 'phase_end',
-            investigationId,
-            phase: 'summarize',
-            summaryText: summarizeResult.text.slice(0, 200),
-            toolCallCount: summarizeResult.toolCallCount,
-            budgetSnapshot: {
-              toolCallsUsed: toolCallIndex,
-              toolCallsTotal: TOTAL_BUDGET,
+          prompt: summarizePrompt,
+          messages: [
+            {
+              role: 'user' as const,
+              content:
+                'Synthesize the investigation findings into a structured report. Create monitoring artifacts for anything worth tracking ongoing.',
             },
-            timestamp: Date.now(),
-          });
-          const summarizeThinking: IThinkingEntry = {
-            phase: 'summarize',
-            tokenCount: Math.floor(summarizeResult.text.length / 4),
-            content: summarizeResult.text,
-          };
-          thinkingLog.push(summarizeThinking);
-          investigationEventBus.emitDebugEvent({
-            type: 'thinking',
-            investigationId,
-            phase: 'summarize',
-            tokenCount: summarizeThinking.tokenCount,
-            content: summarizeThinking.content,
-            timestamp: Date.now(),
-          });
-        }
+          ],
+          maxSteps: 5,
+          phaseInput: verifyResult.text,
+        });
 
         // Determine confidence from verification verdicts
         const confidence = determineConfidence(verifyResult.text);
@@ -1147,7 +980,7 @@ function determineConfidence(
 
   if (weakenedCount > 0) return 'low';
   if (inconclusiveCount > confirmedCount) return 'medium';
-  if (confirmedCount >= 2 && weakenedCount === 0) return 'high';
+  if (confirmedCount >= 2) return 'high';
   return 'medium';
 }
 
@@ -1155,7 +988,7 @@ function determineConfidence(
  * Count artifacts created in the summary by type.
  * Parses patterns like "created saved search: X (ID: Y)".
  */
-function countArtifactsInSummary(summary: string): Record<string, number> {
+export function countArtifactsInSummary(summary: string): Record<string, number> {
   const counts: Record<string, number> = {
     savedSearch: 0,
     dashboard: 0,
@@ -1163,7 +996,7 @@ function countArtifactsInSummary(summary: string): Record<string, number> {
   };
 
   const savedSearchPattern =
-    /created (?:saved search|advanced dashboard):\s*[^(]*\(ID:\s*[a-f0-9]+\)/gi;
+    /created saved search:\s*[^(]*\(ID:\s*[a-f0-9]+\)/gi;
   const dashboardPattern =
     /created (?:advanced )?dashboard:\s*[^(]*\(ID:\s*[a-f0-9]+\)/gi;
   const alertPattern = /created alert:\s*[^(]*\(ID:\s*[a-f0-9]+\)/gi;
