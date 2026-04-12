@@ -1,5 +1,5 @@
 import opentelemetry, { Counter, Histogram, metrics } from '@opentelemetry/api';
-import type { CoreMessage, LanguageModel, ToolSet } from 'ai';
+import type { LanguageModel, ModelMessage, ToolSet } from 'ai';
 import { stepCountIs, streamText } from 'ai';
 import { performance } from 'perf_hooks';
 
@@ -356,7 +356,7 @@ interface PhaseResult {
   text: string;
   toolCallCount: number;
   toolCalls: { name: string; args: unknown; result: unknown }[];
-  outputMessages: CoreMessage[];
+  outputMessages: ModelMessage[];
 }
 
 export async function runAgentPhase({
@@ -374,7 +374,7 @@ export async function runAgentPhase({
   onToolCall,
   onToolEvent,
 }: {
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  messages: ModelMessage[];
   systemPrompt: string;
   connection: { host: string; username: string; password: string };
   teamId: string;
@@ -517,7 +517,7 @@ export async function runAgentPhase({
         );
 
         const responseMessages = await result.response;
-        const outputMessages: CoreMessage[] = [
+        const outputMessages: ModelMessage[] = [
           ...messages,
           ...(responseMessages.messages ?? []),
         ];
@@ -562,7 +562,7 @@ export async function runInvestigationAgent({
   onToolCall,
   onFinish,
 }: {
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  messages: ModelMessage[];
   systemPrompt: string;
   connection: { host: string; username: string; password: string };
   teamId: string;
@@ -759,7 +759,8 @@ export async function runInvestigationCycle({
             plan: planResult.text,
             evidence: '',
             verification: '',
-            summary: 'NO_ANOMALY: All services healthy, no active alerts. No investigation needed.',
+            summary:
+              'NO_ANOMALY: All services healthy, no active alerts. No investigation needed.',
             confidence: 'low' as const,
             phaseHistory,
             toolCallLog,

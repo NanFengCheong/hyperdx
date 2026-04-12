@@ -1,3 +1,5 @@
+import { streamText } from 'ai';
+
 import type { IInvestigationMessage } from '@/models/investigation';
 
 import {
@@ -241,16 +243,21 @@ describe('runAgentPhase — outputMessages', () => {
 
 describe('runInvestigationCycle — execute→verify threading', () => {
   it('verify phase receives execute outputMessages as initial messages', async () => {
-    const streamTextMock = require('ai').streamText as jest.Mock;
-    const capturedCalls: any[] = [];
+    const streamTextMock = jest.mocked(streamText);
+    const capturedCalls: Array<{ isVerify: boolean; messages: unknown[] }> = [];
     streamTextMock.mockImplementation((opts: any) => {
-      capturedCalls.push({ phaseName: opts.system?.match(/## Role\n(.+)/)?.[1], messages: opts.messages });
+      capturedCalls.push({
+        isVerify: opts.system?.includes('VERIFICATION'),
+        messages: opts.messages,
+      });
       return {
         fullStream: (async function* () {
           yield { type: 'text-delta', text: 'output' };
         })(),
-        response: Promise.resolve({ messages: [{ role: 'assistant', content: 'output' }] }),
-      };
+        response: Promise.resolve({
+          messages: [{ role: 'assistant', content: 'output' }],
+        }),
+      } as any;
     });
 
     await runInvestigationCycle({
@@ -264,32 +271,34 @@ describe('runInvestigationCycle — execute→verify threading', () => {
     });
 
     // Find the verify call
-    const verifyCall = capturedCalls.find(c => c.phaseName?.includes('VERIFICATION'));
+    const verifyCall = capturedCalls.find(c => c.isVerify);
     expect(verifyCall).toBeDefined();
     // Verify messages should contain more than just the fresh user message
     // (it inherits execute's thread)
-    expect(verifyCall.messages.length).toBeGreaterThan(1);
+    expect(verifyCall!.messages.length).toBeGreaterThan(1);
   });
 });
 
 describe('runInvestigationCycle — phase tool scoping', () => {
   it('passes phase to createInvestigationTools for each phase', async () => {
     // Smoke test: cycle completes without throwing
-    await expect(runInvestigationCycle({
-      triggerDescription: 'test',
-      triggerType: 'health_scan',
-      schemaPrompt: 'schema',
-      memoryContext: 'none',
-      connection: { host: 'h', username: 'u', password: 'p' },
-      teamId: 't1',
-      userId: 'u1',
-    })).resolves.toBeDefined();
+    await expect(
+      runInvestigationCycle({
+        triggerDescription: 'test',
+        triggerType: 'health_scan',
+        schemaPrompt: 'schema',
+        memoryContext: 'none',
+        connection: { host: 'h', username: 'u', password: 'p' },
+        teamId: 't1',
+        userId: 'u1',
+      }),
+    ).resolves.toBeDefined();
   });
 });
 
 describe('runInvestigationCycle — NO_ANOMALY early exit', () => {
   it('skips execute/verify/summarize phases when plan emits NO_ANOMALY', async () => {
-    const streamTextMock = require('ai').streamText as jest.Mock;
+    const streamTextMock = jest.mocked(streamText);
     const originalImpl = streamTextMock.getMockImplementation();
     let callCount = 0;
     streamTextMock.mockImplementation(() => {
@@ -297,10 +306,13 @@ describe('runInvestigationCycle — NO_ANOMALY early exit', () => {
       const isFirstCall = callCount === 1;
       return {
         fullStream: (async function* () {
-          yield { type: 'text-delta', text: isFirstCall ? 'NO_ANOMALY' : 'output' };
+          yield {
+            type: 'text-delta',
+            text: isFirstCall ? 'NO_ANOMALY' : 'output',
+          };
         })(),
         response: Promise.resolve({ messages: [] }),
-      };
+      } as any;
     });
 
     try {
