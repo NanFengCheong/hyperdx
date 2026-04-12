@@ -591,7 +591,7 @@ export async function runAgentPhase({
 
   // After loop, extract output messages:
   const responseMessages = await result.response;
-  const outputMessages: CoreMessage[] = [
+  const outputMessages = [
     ...messages,
     ...(responseMessages.messages ?? []),
   ];
@@ -600,7 +600,24 @@ export async function runAgentPhase({
 }
 ```
 
-> Note: `result.response` is a Promise in Vercel AI SDK v4 — await it after the stream to get `messages`. Import `CoreMessage` from `'ai'`.
+> Note: `result.response` is a Promise in Vercel AI SDK v4 — await it after the stream to get `messages`. Do NOT type `outputMessages` as `CoreMessage[]` — `CoreMessage` is not exported from `ai` v4. Use `ResponseMessage` (exported from `'ai'`) for the tail, or leave the array inferred. The `messages` param on `runAgentPhase` must also accept `ResponseMessage` items (SDK response messages have structured `content` arrays, not plain strings). Widen the `messages` param type to `Parameters<typeof streamText>[0]['messages']` to match exactly what `streamText` accepts.
+
+Update `PhaseResult` interface:
+```typescript
+import type { ResponseMessage } from 'ai';
+
+interface PhaseResult {
+  text: string;
+  toolCallCount: number;
+  toolCalls: { name: string; args: unknown; result: unknown }[];
+  outputMessages: Array<Parameters<typeof streamText>[0]['messages'][number]>;
+}
+```
+
+And widen `runAgentPhase` `messages` param:
+```typescript
+messages: Parameters<typeof streamText>[0]['messages'];  // accepts both plain and ResponseMessage shapes
+```
 
 ### Step 4: Run tests
 
@@ -633,7 +650,8 @@ describe('runInvestigationCycle — execute→verify threading', () => {
     const streamTextMock = require('ai').streamText as jest.Mock;
     const capturedCalls: any[] = [];
     streamTextMock.mockImplementation(async (opts: any) => {
-      capturedCalls.push({ phaseName: opts.system?.match(/## Role\n(.+)/)?.[1], messages: opts.messages });
+      // Use direct string include instead of fragile regex on role line
+      capturedCalls.push({ isVerify: opts.system?.includes('VERIFICATION'), messages: opts.messages });
       return {
         fullStream: (async function* () {
           yield { type: 'text-delta', text: 'output' };
@@ -653,7 +671,7 @@ describe('runInvestigationCycle — execute→verify threading', () => {
     });
 
     // Find the verify call
-    const verifyCall = capturedCalls.find(c => c.phaseName?.includes('VERIFICATION'));
+    const verifyCall = capturedCalls.find(c => c.isVerify);
     expect(verifyCall).toBeDefined();
     // Verify messages should contain more than just the fresh user message
     // (it inherits execute's thread)
@@ -807,6 +825,11 @@ Add to `investigation-agent.test.ts`:
 ```typescript
 describe('runInvestigationCycle — NO_ANOMALY early exit', () => {
   it('skips execute/verify/summarize phases when plan emits NO_ANOMALY', async () => {
+    // Mock investigationEventBus to prevent side-effect throws
+    jest.mock('@/utils/investigationEventBus', () => ({
+      investigationEventBus: { emitDebugEvent: jest.fn() },
+    }));
+
     const streamTextMock = require('ai').streamText as jest.Mock;
     let callCount = 0;
     streamTextMock.mockImplementation(async () => {
