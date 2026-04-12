@@ -1004,7 +1004,7 @@ function DataRetentionPanel() {
 // ---------------------------------------------------------------------------
 const DEFAULT_PI_SETTINGS = {
   enabled: false,
-  modelName: '',
+  modelName: 'qwen-plus-latest',
   modelBaseUrl: '',
   maxRunsPerTeamHour: 4,
   reopenAfterHours: 24,
@@ -1115,7 +1115,7 @@ function ProactiveInvestigationsPanel() {
         <Group grow>
           <TextInput
             label="Model name"
-            placeholder="e.g. qwen3-235b-a22b"
+            placeholder="e.g. qwen-plus-latest"
             value={form.modelName}
             onChange={e =>
               setForm(f => ({ ...f, modelName: e.currentTarget.value }))
