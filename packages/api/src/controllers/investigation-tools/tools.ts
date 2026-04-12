@@ -11,6 +11,32 @@ import { SavedSearch } from '@/models/savedSearch';
 import { Source } from '@/models/source';
 import logger from '@/utils/logger';
 
+type InvestigationPhase = 'plan' | 'execute' | 'verify' | 'summarize';
+
+const PHASE_TOOLS: Record<InvestigationPhase, string[]> = {
+  plan: [
+    'retrieveMemory',
+    'getActiveAlerts',
+    'getServiceHealthScore',
+    'getServiceMap',
+  ],
+  execute: [
+    'searchTraces',
+    'searchLogs',
+    'getMetrics',
+    'findSimilarErrors',
+    'getBaselineMetrics',
+    'getServiceMap',
+  ],
+  verify: [
+    'searchTraces',
+    'searchLogs',
+    'getMetrics',
+    'findSimilarErrors',
+  ],
+  summarize: ['createSavedSearch', 'createDashboard', 'createAlert'],
+};
+
 // ---------------------------------------------------------------------------
 // Tool execution wrapper with OTel tracing
 // ---------------------------------------------------------------------------
@@ -319,10 +345,12 @@ export function createInvestigationTools({
   connection,
   teamId,
   userId,
+  phase,
 }: {
   connection: { host: string; username: string; password: string };
   teamId: string;
   userId: string;
+  phase?: InvestigationPhase;
 }) {
   const client = new ClickhouseClient({
     host: connection.host,
@@ -1226,7 +1254,7 @@ export function createInvestigationTools({
     teamId,
   });
 
-  return {
+  const allTools = {
     searchTraces,
     getTraceDetail,
     searchLogs,
@@ -1243,6 +1271,14 @@ export function createInvestigationTools({
     getServiceHealthScore,
     getActiveAlerts,
   };
+
+  if (phase) {
+    const allowed = new Set(PHASE_TOOLS[phase]);
+    return Object.fromEntries(
+      Object.entries(allTools).filter(([name]) => allowed.has(name)),
+    );
+  }
+  return allTools;
 }
 
 // Re-export individual tool references for testing
