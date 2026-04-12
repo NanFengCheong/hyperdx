@@ -100,7 +100,10 @@ export async function listInvestigations({
   );
   const enrichedData = data.map(inv => {
     if (inv.entryPoint?.type === 'proactive') {
-      return { ...inv, recurrenceCount: memoryMap.get(inv._id.toString()) ?? 0 };
+      return {
+        ...inv,
+        recurrenceCount: memoryMap.get(inv._id.toString()) ?? 0,
+      };
     }
     return inv;
   });

@@ -28,12 +28,7 @@ const PHASE_TOOLS: Record<InvestigationPhase, string[]> = {
     'getBaselineMetrics',
     'getServiceMap',
   ],
-  verify: [
-    'searchTraces',
-    'searchLogs',
-    'getMetrics',
-    'findSimilarErrors',
-  ],
+  verify: ['searchTraces', 'searchLogs', 'getMetrics', 'findSimilarErrors'],
   summarize: ['createSavedSearch', 'createDashboard', 'createAlert'],
 };
 

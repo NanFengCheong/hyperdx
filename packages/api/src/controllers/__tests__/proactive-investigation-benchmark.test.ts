@@ -38,11 +38,11 @@ const MAX_GATHER_ROUNDS = 6; // max tool-call rounds before forcing report
 const MODELS_TO_TEST: string[] = (
   process.env.BENCHMARK_MODELS ??
   [
-    'qwen3-max',          // Most capable reasoning model
-    'qwen3-235b-a22b',    // Largest open-source MoE (plan's reference model)
-    'qwen3.5-plus',       // Latest balanced model (Qwen3.5 series)
-    'qwen3-coder-plus',   // Best tool-calling capability
-    'qwen-plus-latest',   // Stable plus tier baseline
+    'qwen3-max', // Most capable reasoning model
+    'qwen3-235b-a22b', // Largest open-source MoE (plan's reference model)
+    'qwen3.5-plus', // Latest balanced model (Qwen3.5 series)
+    'qwen3-coder-plus', // Best tool-calling capability
+    'qwen-plus-latest', // Stable plus tier baseline
   ].join(',')
 ).split(',');
 
@@ -64,14 +64,27 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'searchLogs',
-      description: 'Search recent log entries for a service. Returns matching log lines with timestamps and levels.',
+      description:
+        'Search recent log entries for a service. Returns matching log lines with timestamps and levels.',
       parameters: {
         type: 'object',
         properties: {
-          service: { type: 'string', description: 'Service name to search logs for' },
-          query: { type: 'string', description: 'Search keyword or error message fragment' },
-          timeRange: { type: 'string', description: 'Time range, e.g. "Past 30m", "Past 1h"' },
-          limit: { type: 'number', description: 'Max number of log entries (default 20)' },
+          service: {
+            type: 'string',
+            description: 'Service name to search logs for',
+          },
+          query: {
+            type: 'string',
+            description: 'Search keyword or error message fragment',
+          },
+          timeRange: {
+            type: 'string',
+            description: 'Time range, e.g. "Past 30m", "Past 1h"',
+          },
+          limit: {
+            type: 'number',
+            description: 'Max number of log entries (default 20)',
+          },
         },
         required: ['service', 'query', 'timeRange'],
       },
@@ -81,13 +94,21 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'queryMetrics',
-      description: 'Query time-series metrics for a service. Supported metrics: error_rate, latency_p99, latency_p50, throughput, cpu_usage, memory_usage.',
+      description:
+        'Query time-series metrics for a service. Supported metrics: error_rate, latency_p99, latency_p50, throughput, cpu_usage, memory_usage.',
       parameters: {
         type: 'object',
         properties: {
           service: { type: 'string', description: 'Service name' },
-          metric: { type: 'string', description: 'Metric name: error_rate | latency_p99 | latency_p50 | throughput | cpu_usage | memory_usage' },
-          timeRange: { type: 'string', description: 'Time range, e.g. "Past 30m", "Past 2h"' },
+          metric: {
+            type: 'string',
+            description:
+              'Metric name: error_rate | latency_p99 | latency_p50 | throughput | cpu_usage | memory_usage',
+          },
+          timeRange: {
+            type: 'string',
+            description: 'Time range, e.g. "Past 30m", "Past 2h"',
+          },
         },
         required: ['service', 'metric', 'timeRange'],
       },
@@ -97,14 +118,25 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'searchTraces',
-      description: 'Search distributed traces and spans for a service. Useful for finding slow or failed requests.',
+      description:
+        'Search distributed traces and spans for a service. Useful for finding slow or failed requests.',
       parameters: {
         type: 'object',
         properties: {
           service: { type: 'string', description: 'Service name' },
-          status: { type: 'string', enum: ['error', 'ok', 'all'], description: 'Span status filter (default: error)' },
-          minDurationMs: { type: 'number', description: 'Minimum span duration in milliseconds' },
-          timeRange: { type: 'string', description: 'Time range, e.g. "Past 30m"' },
+          status: {
+            type: 'string',
+            enum: ['error', 'ok', 'all'],
+            description: 'Span status filter (default: error)',
+          },
+          minDurationMs: {
+            type: 'number',
+            description: 'Minimum span duration in milliseconds',
+          },
+          timeRange: {
+            type: 'string',
+            description: 'Time range, e.g. "Past 30m"',
+          },
         },
         required: ['service', 'timeRange'],
       },
@@ -114,7 +146,8 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'getActiveAlerts',
-      description: 'Get all currently firing alerts for the team. Returns alert names, thresholds, and current values.',
+      description:
+        'Get all currently firing alerts for the team. Returns alert names, thresholds, and current values.',
       parameters: {
         type: 'object',
         properties: {},
@@ -126,13 +159,23 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'searchPastInvestigations',
-      description: 'Search historical investigation memory for similar past incidents on this service.',
+      description:
+        'Search historical investigation memory for similar past incidents on this service.',
       parameters: {
         type: 'object',
         properties: {
-          service: { type: 'string', description: 'Service name to search history for' },
-          symptom: { type: 'string', description: 'Symptom or error description to search for' },
-          fingerprint: { type: 'string', description: 'Optional fingerprint hash to match exactly' },
+          service: {
+            type: 'string',
+            description: 'Service name to search history for',
+          },
+          symptom: {
+            type: 'string',
+            description: 'Symptom or error description to search for',
+          },
+          fingerprint: {
+            type: 'string',
+            description: 'Optional fingerprint hash to match exactly',
+          },
         },
         required: ['service', 'symptom'],
       },
@@ -143,15 +186,39 @@ const TOOL_DEFINITIONS = [
 // ---------------------------------------------------------------------------
 // Mock tool result factory
 // ---------------------------------------------------------------------------
-function getMockToolResult(toolName: string, args: Record<string, unknown>): unknown {
+function getMockToolResult(
+  toolName: string,
+  args: Record<string, unknown>,
+): unknown {
   switch (toolName) {
     case 'searchLogs':
       return {
         hits: [
-          { timestamp: '2026-04-12T04:01:23Z', level: 'error', message: 'Connection timeout to postgres-primary:5432 after 5000ms', service: args.service },
-          { timestamp: '2026-04-12T04:01:45Z', level: 'error', message: 'Connection timeout to postgres-primary:5432 after 5000ms', service: args.service },
-          { timestamp: '2026-04-12T04:02:01Z', level: 'error', message: 'Max connection pool size exceeded (100/100 connections active)', service: args.service },
-          { timestamp: '2026-04-12T04:02:18Z', level: 'error', message: 'Failed to acquire DB connection after 30s wait', service: args.service },
+          {
+            timestamp: '2026-04-12T04:01:23Z',
+            level: 'error',
+            message: 'Connection timeout to postgres-primary:5432 after 5000ms',
+            service: args.service,
+          },
+          {
+            timestamp: '2026-04-12T04:01:45Z',
+            level: 'error',
+            message: 'Connection timeout to postgres-primary:5432 after 5000ms',
+            service: args.service,
+          },
+          {
+            timestamp: '2026-04-12T04:02:01Z',
+            level: 'error',
+            message:
+              'Max connection pool size exceeded (100/100 connections active)',
+            service: args.service,
+          },
+          {
+            timestamp: '2026-04-12T04:02:18Z',
+            level: 'error',
+            message: 'Failed to acquire DB connection after 30s wait',
+            service: args.service,
+          },
         ],
         total: 847,
       };
@@ -160,19 +227,75 @@ function getMockToolResult(toolName: string, args: Record<string, unknown>): unk
         metric: args.metric,
         service: args.service,
         data: [
-          { time: '2026-04-12T03:30:00Z', value: args.metric === 'error_rate' ? 0.005 : args.metric === 'latency_p99' ? 120 : 450 },
-          { time: '2026-04-12T03:45:00Z', value: args.metric === 'error_rate' ? 0.006 : args.metric === 'latency_p99' ? 125 : 448 },
-          { time: '2026-04-12T04:00:00Z', value: args.metric === 'error_rate' ? 0.12 : args.metric === 'latency_p99' ? 5230 : 52 },
-          { time: '2026-04-12T04:15:00Z', value: args.metric === 'error_rate' ? 0.115 : args.metric === 'latency_p99' ? 5180 : 48 },
+          {
+            time: '2026-04-12T03:30:00Z',
+            value:
+              args.metric === 'error_rate'
+                ? 0.005
+                : args.metric === 'latency_p99'
+                  ? 120
+                  : 450,
+          },
+          {
+            time: '2026-04-12T03:45:00Z',
+            value:
+              args.metric === 'error_rate'
+                ? 0.006
+                : args.metric === 'latency_p99'
+                  ? 125
+                  : 448,
+          },
+          {
+            time: '2026-04-12T04:00:00Z',
+            value:
+              args.metric === 'error_rate'
+                ? 0.12
+                : args.metric === 'latency_p99'
+                  ? 5230
+                  : 52,
+          },
+          {
+            time: '2026-04-12T04:15:00Z',
+            value:
+              args.metric === 'error_rate'
+                ? 0.115
+                : args.metric === 'latency_p99'
+                  ? 5180
+                  : 48,
+          },
         ],
-        insight: 'Spike began at 04:00 UTC, coinciding with DB connection pool saturation',
+        insight:
+          'Spike began at 04:00 UTC, coinciding with DB connection pool saturation',
       };
     case 'searchTraces':
       return {
         spans: [
-          { traceId: 'abc123', spanName: 'ProcessPayment', durationMs: 5230, status: 'error', rootError: 'db: connection timeout', dbSystem: 'postgresql', dbOperation: 'SELECT' },
-          { traceId: 'abc124', spanName: 'ProcessPayment', durationMs: 5210, status: 'error', rootError: 'db: connection timeout', dbSystem: 'postgresql', dbOperation: 'INSERT' },
-          { traceId: 'abc125', spanName: 'ProcessPayment', durationMs: 5195, status: 'error', rootError: 'db: connection pool exhausted (100/100)', dbSystem: 'postgresql' },
+          {
+            traceId: 'abc123',
+            spanName: 'ProcessPayment',
+            durationMs: 5230,
+            status: 'error',
+            rootError: 'db: connection timeout',
+            dbSystem: 'postgresql',
+            dbOperation: 'SELECT',
+          },
+          {
+            traceId: 'abc124',
+            spanName: 'ProcessPayment',
+            durationMs: 5210,
+            status: 'error',
+            rootError: 'db: connection timeout',
+            dbSystem: 'postgresql',
+            dbOperation: 'INSERT',
+          },
+          {
+            traceId: 'abc125',
+            spanName: 'ProcessPayment',
+            durationMs: 5195,
+            status: 'error',
+            rootError: 'db: connection pool exhausted (100/100)',
+            dbSystem: 'postgresql',
+          },
         ],
         total: 312,
         p99DurationMs: 5230,
@@ -180,8 +303,20 @@ function getMockToolResult(toolName: string, args: Record<string, unknown>): unk
     case 'getActiveAlerts':
       return {
         alerts: [
-          { name: 'payment-service error rate > 5%', state: 'ALERT', threshold: 0.05, currentValue: 0.12, firedAt: '2026-04-12T04:00:47Z' },
-          { name: 'postgres-primary connection pool > 90%', state: 'ALERT', threshold: 0.9, currentValue: 1.0, firedAt: '2026-04-12T03:59:12Z' },
+          {
+            name: 'payment-service error rate > 5%',
+            state: 'ALERT',
+            threshold: 0.05,
+            currentValue: 0.12,
+            firedAt: '2026-04-12T04:00:47Z',
+          },
+          {
+            name: 'postgres-primary connection pool > 90%',
+            state: 'ALERT',
+            threshold: 0.9,
+            currentValue: 1.0,
+            firedAt: '2026-04-12T03:59:12Z',
+          },
         ],
       };
     case 'searchPastInvestigations':
@@ -190,7 +325,8 @@ function getMockToolResult(toolName: string, args: Record<string, unknown>): unk
           {
             date: '2026-03-15',
             service: args.service,
-            rootCause: 'DB connection pool exhaustion during high-traffic event',
+            rootCause:
+              'DB connection pool exhaustion during high-traffic event',
             resolution: 'Increased max pool size from 50 to 200 in pg config',
             recurrenceCount: 2,
           },
@@ -244,7 +380,11 @@ type MessageRole = 'system' | 'user' | 'assistant' | 'tool';
 interface ApiMessage {
   role: MessageRole;
   content?: string | null;
-  tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>;
+  tool_calls?: Array<{
+    id: string;
+    type: string;
+    function: { name: string; arguments: string };
+  }>;
   tool_call_id?: string;
   name?: string;
 }
@@ -314,7 +454,11 @@ async function callAPI(
       message: {
         content?: string | null;
         reasoning_content?: string;
-        tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>;
+        tool_calls?: Array<{
+          id: string;
+          type: string;
+          function: { name: string; arguments: string };
+        }>;
       };
       finish_reason: string;
     }>;
@@ -328,11 +472,16 @@ async function callAPI(
   };
 
   const choice = data.choices?.[0];
-  if (!choice) throw new Error(`No choices in response: ${rawJson.slice(0, 300)}`);
+  if (!choice)
+    throw new Error(`No choices in response: ${rawJson.slice(0, 300)}`);
 
   const toolCalls = (choice.message.tool_calls ?? []).map(tc => {
     let args: Record<string, unknown> = {};
-    try { args = JSON.parse(tc.function.arguments); } catch { /* keep empty */ }
+    try {
+      args = JSON.parse(tc.function.arguments);
+    } catch {
+      /* keep empty */
+    }
     return { id: tc.id, name: tc.function.name, args };
   });
 
@@ -340,8 +489,10 @@ async function callAPI(
     content: choice.message.content ?? null,
     toolCalls,
     inputTokens: data.usage?.prompt_tokens ?? data.usage?.input_tokens ?? 0,
-    outputTokens: data.usage?.completion_tokens ?? data.usage?.output_tokens ?? 0,
-    reasoningTokens: data.usage?.completion_tokens_details?.reasoning_tokens ?? 0,
+    outputTokens:
+      data.usage?.completion_tokens ?? data.usage?.output_tokens ?? 0,
+    reasoningTokens:
+      data.usage?.completion_tokens_details?.reasoning_tokens ?? 0,
     finishReason: choice.finish_reason,
   };
 }
@@ -377,7 +528,10 @@ async function runInvestigation(modelName: string): Promise<InvestigationRun> {
 
   const messages: ApiMessage[] = [
     { role: 'system', content: SYSTEM_PROMPT },
-    { role: 'user', content: `Investigate: ${SCENARIO.trigger} on ${SCENARIO.service}. Start by forming hypotheses, then use your tools to gather evidence.` },
+    {
+      role: 'user',
+      content: `Investigate: ${SCENARIO.trigger} on ${SCENARIO.service}. Start by forming hypotheses, then use your tools to gather evidence.`,
+    },
   ];
 
   // Turn 1: hypothesize (free text, no tools yet)
@@ -387,7 +541,11 @@ async function runInvestigation(modelName: string): Promise<InvestigationRun> {
   run.totalReasoningTokens += hypoResult.reasoningTokens;
 
   messages.push({ role: 'assistant', content: hypoResult.content });
-  messages.push({ role: 'user', content: 'Good. Now use your tools to gather evidence. You MUST call at least 3 different tools to investigate.' });
+  messages.push({
+    role: 'user',
+    content:
+      'Good. Now use your tools to gather evidence. You MUST call at least 3 different tools to investigate.',
+  });
 
   // Turns 2-N: gather (enforce tool use)
   let gatherRounds = 0;
@@ -456,7 +614,9 @@ async function runInvestigation(modelName: string): Promise<InvestigationRun> {
         ['high', 'medium', 'low'].includes(obj.confidence as string) &&
         Array.isArray(obj.affectedServices) &&
         typeof obj.recommendation === 'string';
-    } catch { /* invalid JSON */ }
+    } catch {
+      /* invalid JSON */
+    }
   }
 
   return run;
@@ -491,12 +651,24 @@ describeIfKey('Proactive Investigation Agent — Tool Calling Benchmark', () => 
   const results: BenchmarkResult[] = [];
 
   afterAll(() => {
-    const W = { model: 28, time: 9, calls: 7, uniq: 6, rounds: 7, find: 6, inTok: 8, outTok: 8, reason: 8 };
+    const W = {
+      model: 28,
+      time: 9,
+      calls: 7,
+      uniq: 6,
+      rounds: 7,
+      find: 6,
+      inTok: 8,
+      outTok: 8,
+      reason: 8,
+    };
 
     console.log('\n' + '='.repeat(140));
     console.log('PROACTIVE INVESTIGATION — TOOL CALLING BENCHMARK');
     console.log(`Scenario: ${SCENARIO.trigger}`);
-    console.log(`Thinking: ${ENABLE_THINKING ? 'ON' : 'OFF'} | parallel_tool_calls: false | max gather rounds: ${MAX_GATHER_ROUNDS}`);
+    console.log(
+      `Thinking: ${ENABLE_THINKING ? 'ON' : 'OFF'} | parallel_tool_calls: false | max gather rounds: ${MAX_GATHER_ROUNDS}`,
+    );
     console.log('='.repeat(140));
     console.log(
       [
@@ -528,7 +700,8 @@ describeIfKey('Proactive Investigation Agent — Tool Calling Benchmark', () => 
     for (const r of sorted) {
       const rootSnip = r.error
         ? `ERROR: ${r.error.slice(0, 50)}`
-        : r.rootCause?.slice(0, 60) ?? (r.findingValid ? '(valid)' : 'NO FINDING');
+        : (r.rootCause?.slice(0, 60) ??
+          (r.findingValid ? '(valid)' : 'NO FINDING'));
       console.log(
         [
           r.model.padEnd(W.model),
@@ -546,7 +719,9 @@ describeIfKey('Proactive Investigation Agent — Tool Calling Benchmark', () => 
     }
 
     console.log('='.repeat(140));
-    console.log('\n📊 RANKED SUMMARY (tool diversity × 4 + finding × 30 + call breadth × 2):');
+    console.log(
+      '\n📊 RANKED SUMMARY (tool diversity × 4 + finding × 30 + call breadth × 2):',
+    );
     console.log('');
 
     const medals = ['🥇', '🥈', '🥉'];
@@ -559,13 +734,13 @@ describeIfKey('Proactive Investigation Agent — Tool Calling Benchmark', () => 
       const m = medals[i] ?? `  ${i + 1}.`;
       console.log(
         `  ${m} ${r.model.padEnd(W.model)} ` +
-        `score=${String(score).padStart(3)}  ` +
-        `tools=${r.uniqueToolsUsed}/${TOOL_DEFINITIONS.length} unique  ` +
-        `calls=${r.totalToolCalls}  ` +
-        `rounds=${r.gatherRounds}  ` +
-        `finding=${r.findingValid ? 'valid (' + r.confidence + ')' : 'MISSING'}  ` +
-        `${r.durationMs}ms  in=${r.totalInputTokens} out=${r.totalOutputTokens}` +
-        (r.totalReasoningTokens ? `  think=${r.totalReasoningTokens}` : ''),
+          `score=${String(score).padStart(3)}  ` +
+          `tools=${r.uniqueToolsUsed}/${TOOL_DEFINITIONS.length} unique  ` +
+          `calls=${r.totalToolCalls}  ` +
+          `rounds=${r.gatherRounds}  ` +
+          `finding=${r.findingValid ? 'valid (' + r.confidence + ')' : 'MISSING'}  ` +
+          `${r.durationMs}ms  in=${r.totalInputTokens} out=${r.totalOutputTokens}` +
+          (r.totalReasoningTokens ? `  think=${r.totalReasoningTokens}` : ''),
       );
     }
 
@@ -575,7 +750,9 @@ describeIfKey('Proactive Investigation Agent — Tool Calling Benchmark', () => 
       if (r.error) continue;
       const result = results.find(x => x.model === r.model);
       if (result) {
-        console.log(`  ${r.model}: [${r.model}] calls=${r.totalToolCalls} unique=${r.uniqueToolsUsed}`);
+        console.log(
+          `  ${r.model}: [${r.model}] calls=${r.totalToolCalls} unique=${r.uniqueToolsUsed}`,
+        );
       }
     }
     console.log('');
@@ -612,16 +789,20 @@ describeIfKey('Proactive Investigation Agent — Tool Calling Benchmark', () => 
 
       console.log(
         `\n[${modelName}] ${result.durationMs}ms | ` +
-        `tools=${run.totalToolCalls} calls, ${run.uniqueTools.size} unique [${[...run.uniqueTools].join(', ')}] | ` +
-        `finding=${run.findingValid ? 'valid' : 'MISSING'}`,
+          `tools=${run.totalToolCalls} calls, ${run.uniqueTools.size} unique [${[...run.uniqueTools].join(', ')}] | ` +
+          `finding=${run.findingValid ? 'valid' : 'MISSING'}`,
       );
       if (run.toolCallLog.length > 0) {
         run.toolCallLog.forEach((tc, i) => {
-          console.log(`  call ${i + 1}: ${tc.name}(${JSON.stringify(tc.args).slice(0, 80)})`);
+          console.log(
+            `  call ${i + 1}: ${tc.name}(${JSON.stringify(tc.args).slice(0, 80)})`,
+          );
         });
       }
       if (run.finding?.rootCause) {
-        console.log(`  rootCause: ${String(run.finding.rootCause).slice(0, 120)}`);
+        console.log(
+          `  rootCause: ${String(run.finding.rootCause).slice(0, 120)}`,
+        );
         console.log(`  confidence: ${run.finding.confidence}`);
       }
     } catch (err) {
