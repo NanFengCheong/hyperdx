@@ -1,5 +1,5 @@
 import opentelemetry, { Counter, Histogram, metrics } from '@opentelemetry/api';
-import type { LanguageModel, ToolSet } from 'ai';
+import type { CoreMessage, LanguageModel, ToolSet } from 'ai';
 import { stepCountIs, streamText } from 'ai';
 import { performance } from 'perf_hooks';
 
@@ -356,6 +356,7 @@ interface PhaseResult {
   text: string;
   toolCallCount: number;
   toolCalls: { name: string; args: unknown; result: unknown }[];
+  outputMessages: CoreMessage[];
 }
 
 export async function runAgentPhase({
@@ -368,6 +369,7 @@ export async function runAgentPhase({
   phaseName = 'unknown',
   investigationId,
   callIndexOffset = 0,
+  forceFirstStep = false,
   onTextDelta,
   onToolCall,
   onToolEvent,
@@ -381,6 +383,7 @@ export async function runAgentPhase({
   phaseName?: string;
   investigationId?: string;
   callIndexOffset?: number;
+  forceFirstStep?: boolean;
   onTextDelta?: (delta: string) => void;
   onToolCall?: (toolName: string, args: unknown, result: unknown) => void;
   onToolEvent?: (event: {
@@ -415,6 +418,7 @@ export async function runAgentPhase({
         messages,
         tools,
         stopWhen: stepCountIs(maxSteps),
+        ...(forceFirstStep ? { toolChoice: 'required' } : {}),
         experimental_telemetry: { isEnabled: true },
       });
 
@@ -507,7 +511,18 @@ export async function runAgentPhase({
           fullText.length,
         );
 
-        return { text: fullText, toolCallCount, toolCalls: allToolCalls };
+        const responseMessages = await result.response;
+        const outputMessages: CoreMessage[] = [
+          ...messages,
+          ...(responseMessages.messages ?? []),
+        ];
+
+        return {
+          text: fullText,
+          toolCallCount,
+          toolCalls: allToolCalls,
+          outputMessages,
+        };
       } catch (err) {
         span.recordException(err as Error);
         span.setStatus({
