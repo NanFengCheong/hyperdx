@@ -1108,25 +1108,28 @@ function ProactiveInvestigationsPanel() {
         <Switch
           label="Enable proactive investigations"
           checked={form.enabled}
-          onChange={e =>
-            setForm(f => ({ ...f, enabled: e.currentTarget.checked }))
-          }
+          onChange={e => {
+            const enabled = e.currentTarget.checked;
+            setForm(f => ({ ...f, enabled }));
+          }}
         />
         <Group grow>
           <TextInput
             label="Model name"
             placeholder="e.g. qwen-plus-latest"
             value={form.modelName}
-            onChange={e =>
-              setForm(f => ({ ...f, modelName: e.currentTarget.value }))
-            }
+            onChange={e => {
+              const modelName = e.currentTarget.value;
+              setForm(f => ({ ...f, modelName }));
+            }}
           />
           <TextInput
             label="Model base URL (optional)"
             value={form.modelBaseUrl}
-            onChange={e =>
-              setForm(f => ({ ...f, modelBaseUrl: e.currentTarget.value }))
-            }
+            onChange={e => {
+              const modelBaseUrl = e.currentTarget.value;
+              setForm(f => ({ ...f, modelBaseUrl }));
+            }}
           />
         </Group>
         <Text size="sm" c="dimmed">
