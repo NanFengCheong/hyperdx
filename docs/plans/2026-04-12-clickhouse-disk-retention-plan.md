@@ -225,10 +225,30 @@ async function dropPartition(
   );
 }
 
+export interface RetentionResult {
+  diskUsageBeforeGB: string;
+  diskUsageAfterGB: string;
+  freedGB: string;
+  maxDiskGB: number;
+  enabled: boolean;
+  partitionsDropped: number;
+  dropped: { table: string; partition: string; sizeMB: string }[];
+  dryRun: boolean;
+  skipped?: boolean;
+  reason?: string;
+}
+
 export default class ClickhouseRetentionTask
   implements HdxTask<ClickhouseRetentionTaskArgs>
 {
+  private _result: RetentionResult | null = null;
+
   constructor(private args: ClickhouseRetentionTaskArgs) {}
+
+  /** Access the result after execute() completes */
+  get result(): RetentionResult | null {
+    return this._result;
+  }
 
   async execute(): Promise<void> {
     const { dryRun } = this.args;
@@ -236,6 +256,18 @@ export default class ClickhouseRetentionTask
 
     if (!settings.enabled) {
       logger.info('clickhouseRetention: Disabled via settings, skipping');
+      this._result = {
+        diskUsageBeforeGB: '0',
+        diskUsageAfterGB: '0',
+        freedGB: '0',
+        maxDiskGB: settings.maxDiskGB,
+        enabled: false,
+        partitionsDropped: 0,
+        dropped: [],
+        dryRun,
+        skipped: true,
+        reason: 'disabled',
+      };
       return;
     }
 
@@ -255,6 +287,16 @@ export default class ClickhouseRetentionTask
         action: 'no_cleanup_needed',
         dryRun,
       });
+      this._result = {
+        diskUsageBeforeGB: totalBeforeGB,
+        diskUsageAfterGB: totalBeforeGB,
+        freedGB: '0',
+        maxDiskGB: settings.maxDiskGB,
+        enabled: true,
+        partitionsDropped: 0,
+        dropped: [],
+        dryRun,
+      };
       return;
     }
 
@@ -306,6 +348,23 @@ export default class ClickhouseRetentionTask
       `clickhouseRetention: ${dryRun ? '[DRY RUN] Would drop' : 'Dropped'} ${dropped.length} partition(s), freed ${freedGB} GB. Usage: ${totalBeforeGB} GB → ${totalAfterGB} GB`,
     );
 
+    const droppedSummary = dropped.map(d => ({
+      table: d.table,
+      partition: d.partition,
+      sizeMB: (d.sizeBytes / (1024 * 1024)).toFixed(1),
+    }));
+
+    this._result = {
+      diskUsageBeforeGB: totalBeforeGB,
+      diskUsageAfterGB: totalAfterGB,
+      freedGB,
+      maxDiskGB: settings.maxDiskGB,
+      enabled: true,
+      partitionsDropped: dropped.length,
+      dropped: droppedSummary,
+      dryRun,
+    };
+
     await writeAuditLog(
       dryRun
         ? 'clickhouse_retention.cleanup_dry_run'
@@ -316,11 +375,7 @@ export default class ClickhouseRetentionTask
         freedGB,
         maxDiskGB: settings.maxDiskGB,
         partitionsDropped: dropped.length,
-        dropped: dropped.map(d => ({
-          table: d.table,
-          partition: d.partition,
-          sizeMB: (d.sizeBytes / (1024 * 1024)).toFixed(1),
-        })),
+        dropped: droppedSummary,
         dryRun,
       },
     );
@@ -585,7 +640,7 @@ router.post('/clickhouse-retention/run', async (req, res, next) => {
 
     try {
       await task.execute();
-      res.json({ data: { ok: true, dryRun } });
+      res.json({ data: { ok: true, dryRun, ...task.result } });
     } finally {
       await task.asyncDispose();
     }
