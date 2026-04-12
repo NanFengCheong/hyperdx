@@ -14,6 +14,7 @@ import NotificationLog from '../../models/notificationLog';
 import PlatformSetting from '../../models/platformSetting';
 import Team from '../../models/team';
 import User from '../../models/user';
+import ClickhouseRetentionTask from '../../tasks/clickhouseRetention';
 import DataRetentionTask from '../../tasks/dataRetention';
 import { getTransporter } from '../../utils/emailService';
 import {
@@ -434,6 +435,184 @@ router.post('/data-retention/run', async (req, res, next) => {
 
     const task = new DataRetentionTask({
       taskName: 'data-retention' as any,
+      dryRun,
+    });
+
+    try {
+      await task.execute();
+      res.json({ data: { ok: true, dryRun } });
+    } finally {
+      await task.asyncDispose();
+    }
+  } catch (e) {
+    next(e);
+  }
+});
+
+// GET /admin/clickhouse-retention/settings — read config
+router.get('/clickhouse-retention/settings', async (req, res, next) => {
+  try {
+    const setting = await PlatformSetting.findOne({
+      key: 'clickhouseRetention',
+    });
+    const value = setting?.value as
+      | { maxDiskGB?: number; enabled?: boolean }
+      | undefined;
+    res.json({
+      data: {
+        maxDiskGB: value?.maxDiskGB ?? 100,
+        enabled: value?.enabled ?? true,
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// PUT /admin/clickhouse-retention/settings — update config
+const clickhouseRetentionSettingsSchema = z.object({
+  maxDiskGB: z.number().min(1).max(100000),
+  enabled: z.boolean(),
+});
+
+router.put('/clickhouse-retention/settings', async (req, res, next) => {
+  try {
+    const actor = req.user as any;
+    const parseResult = clickhouseRetentionSettingsSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({
+        message: 'Invalid settings',
+        errors: parseResult.error.errors,
+      });
+    }
+
+    const { maxDiskGB, enabled } = parseResult.data;
+
+    await PlatformSetting.findOneAndUpdate(
+      { key: 'clickhouseRetention' },
+      {
+        $set: {
+          value: { maxDiskGB, enabled },
+          updatedBy: actor._id,
+        },
+      },
+      { upsert: true, new: true },
+    );
+
+    await AuditLog.create({
+      teamId: actor._id,
+      actorId: actor._id,
+      actorEmail: actor.email,
+      action: 'clickhouse_retention.settings_updated',
+      targetType: 'PlatformSetting',
+      targetId: 'clickhouseRetention',
+      details: { maxDiskGB, enabled },
+    });
+
+    res.json({ data: { ok: true } });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// GET /admin/clickhouse-retention/status — current ClickHouse disk usage
+router.get('/clickhouse-retention/status', async (req, res, next) => {
+  try {
+    const { CLICKHOUSE_HOST } = await import('../../config');
+    const url = new URL(CLICKHOUSE_HOST);
+
+    const tables = [
+      'otel_logs',
+      'otel_traces',
+      'otel_metrics_gauge',
+      'otel_metrics_sum',
+      'otel_metrics_histogram',
+      'otel_metrics_exponential_histogram',
+      'otel_metrics_summary',
+      'hyperdx_sessions',
+    ];
+    const tableList = tables.map(t => `'${t}'`).join(',');
+
+    url.searchParams.set(
+      'query',
+      `SELECT table, sum(bytes_on_disk) as bytes, min(partition) as oldest_partition, max(partition) as newest_partition, count(DISTINCT partition) as partition_count FROM system.parts WHERE active = 1 AND table IN (${tableList}) GROUP BY table FORMAT JSON`,
+    );
+    const resp = await fetch(url.toString());
+    if (!resp.ok) {
+      return res.status(502).json({ message: 'Failed to query ClickHouse' });
+    }
+    const parsed = JSON.parse(await resp.text());
+
+    const tableStats = (parsed.data ?? []).map((row: any) => ({
+      table: row.table,
+      sizeGB: (Number(row.bytes) / (1024 * 1024 * 1024)).toFixed(2),
+      oldestPartition: row.oldest_partition,
+      newestPartition: row.newest_partition,
+      partitionCount: Number(row.partition_count),
+    }));
+
+    const totalBytes = (parsed.data ?? []).reduce(
+      (sum: number, row: any) => sum + Number(row.bytes),
+      0,
+    );
+
+    const setting = await PlatformSetting.findOne({
+      key: 'clickhouseRetention',
+    });
+    const value = setting?.value as
+      | { maxDiskGB?: number; enabled?: boolean }
+      | undefined;
+    const maxDiskGB = value?.maxDiskGB ?? 100;
+
+    res.json({
+      data: {
+        totalSizeGB: (totalBytes / (1024 * 1024 * 1024)).toFixed(2),
+        maxDiskGB,
+        enabled: value?.enabled ?? true,
+        usagePercent: (
+          (totalBytes / (maxDiskGB * 1024 * 1024 * 1024)) *
+          100
+        ).toFixed(1),
+        tables: tableStats,
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// POST /admin/clickhouse-retention/run — manual ClickHouse retention cleanup
+const clickhouseRetentionRunSchema = z.object({
+  dryRun: z.boolean().optional().default(false),
+});
+
+router.post('/clickhouse-retention/run', async (req, res, next) => {
+  try {
+    const actor = req.user as any;
+    const parseResult = clickhouseRetentionRunSchema.safeParse(req.body ?? {});
+    if (!parseResult.success) {
+      return res.status(400).json({
+        message: 'Invalid request body',
+        errors: parseResult.error.errors,
+      });
+    }
+
+    const { dryRun } = parseResult.data;
+
+    await AuditLog.create({
+      teamId: actor._id,
+      actorId: actor._id,
+      actorEmail: actor.email,
+      action: dryRun
+        ? 'clickhouse_retention.manual_dry_run'
+        : 'clickhouse_retention.manual_run',
+      targetType: 'System',
+      targetId: 'clickhouse-retention',
+      details: { triggeredBy: actor.email, dryRun },
+    });
+
+    const task = new ClickhouseRetentionTask({
+      taskName: 'clickhouse-retention' as any,
       dryRun,
     });
 

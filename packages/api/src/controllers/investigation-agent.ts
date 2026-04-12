@@ -720,8 +720,10 @@ export async function runInvestigationCycle({
           completedAt: new Date(),
         });
         onPhaseUpdate?.(phaseName, result.text);
-        phaseHistory[phaseHistory.length - 1].summaryText =
-          result.text.slice(0, 200);
+        phaseHistory[phaseHistory.length - 1].summaryText = result.text.slice(
+          0,
+          200,
+        );
 
         if (investigationId) {
           investigationEventBus.emitDebugEvent({
@@ -988,7 +990,9 @@ function determineConfidence(
  * Count artifacts created in the summary by type.
  * Parses patterns like "created saved search: X (ID: Y)".
  */
-export function countArtifactsInSummary(summary: string): Record<string, number> {
+export function countArtifactsInSummary(
+  summary: string,
+): Record<string, number> {
   const counts: Record<string, number> = {
     savedSearch: 0,
     dashboard: 0,

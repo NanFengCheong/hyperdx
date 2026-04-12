@@ -5,6 +5,7 @@ import { serializeError } from 'serialize-error';
 import { RUN_SCHEDULED_TASKS_EXTERNALLY } from '@/config';
 import CheckAlertTask from '@/tasks/checkAlerts';
 import CheckInactiveUsersTask from '@/tasks/checkInactiveUsers';
+import ClickhouseRetentionTask from '@/tasks/clickhouseRetention';
 import DataRetentionTask from '@/tasks/dataRetention';
 import {
   taskExecutionDurationGauge,
@@ -32,6 +33,8 @@ function createTask(argv: TaskArgs): HdxTask<TaskArgs> {
       return new DataRetentionTask(argv);
     case TaskName.PROACTIVE_INVESTIGATION:
       return new ProactiveInvestigationTask(argv);
+    case TaskName.CLICKHOUSE_RETENTION:
+      return new ClickhouseRetentionTask(argv);
     default:
       throw new Error(`Unknown task name ${taskName}`);
   }
@@ -80,6 +83,19 @@ if (!RUN_SCHEDULED_TASKS_EXTERNALLY) {
     logger.info('Data retention cron: daily at 3:00 AM MYT (19:00 UTC)');
     CronJob.from({
       cronTime: '0 19 * * *', // 19:00 UTC = 3:00 AM MYT
+      waitForCompletion: true,
+      onTick: async () => instrumentedMain(argv),
+      errorHandler: async err => {
+        console.error(err);
+      },
+      start: true,
+      timeZone: 'UTC',
+    });
+  } else if (argv.taskName === TaskName.CLICKHOUSE_RETENTION) {
+    // ClickHouse retention: daily at 3:30 AM MYT (19:30 UTC)
+    logger.info('ClickHouse retention cron: daily at 3:30 AM MYT (19:30 UTC)');
+    CronJob.from({
+      cronTime: '30 19 * * *', // 19:30 UTC = 3:30 AM MYT
       waitForCompletion: true,
       onTick: async () => instrumentedMain(argv),
       errorHandler: async err => {

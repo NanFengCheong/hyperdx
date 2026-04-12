@@ -6,6 +6,7 @@ export enum TaskName {
   CHECK_INACTIVE_USERS = 'check-inactive-users',
   DATA_RETENTION = 'data-retention',
   PROACTIVE_INVESTIGATION = 'proactive-investigation',
+  CLICKHOUSE_RETENTION = 'clickhouse-retention',
 }
 
 /**
@@ -46,12 +47,18 @@ const proactiveInvestigationTaskArgsSchema = z.object({
   teamId: z.string().optional(), // Run for a specific team if provided
 });
 
+const clickhouseRetentionTaskArgsSchema = z.object({
+  taskName: z.literal(TaskName.CLICKHOUSE_RETENTION),
+  dryRun: z.boolean().optional().default(false),
+});
+
 const taskArgsSchema = z.discriminatedUnion('taskName', [
   pingTaskArgsSchema,
   checkAlertsTaskArgsSchema,
   checkInactiveUsersTaskArgsSchema,
   dataRetentionTaskArgsSchema,
   proactiveInvestigationTaskArgsSchema,
+  clickhouseRetentionTaskArgsSchema,
 ]);
 
 export type PingTaskArgs = z.infer<typeof pingTaskArgsSchema>;
@@ -62,6 +69,9 @@ export type CheckInactiveUsersTaskArgs = z.infer<
 export type DataRetentionTaskArgs = z.infer<typeof dataRetentionTaskArgsSchema>;
 export type ProactiveInvestigationTaskArgs = z.infer<
   typeof proactiveInvestigationTaskArgsSchema
+>;
+export type ClickhouseRetentionTaskArgs = z.infer<
+  typeof clickhouseRetentionTaskArgsSchema
 >;
 export type TaskArgs = z.infer<typeof taskArgsSchema>;
 

@@ -200,7 +200,7 @@ export const buildOtelCollectorConfig = (
         database: '${env:HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE}',
         username: '${env:CLICKHOUSE_USER}',
         password: '${env:CLICKHOUSE_PASSWORD}',
-        ttl: '${env:HYPERDX_OTEL_EXPORTER_TABLES_TTL:-720h}',
+        ttl: '${env:HYPERDX_OTEL_EXPORTER_TABLES_TTL:-2160h}',
         logs_table_name: 'hyperdx_sessions',
         timeout: '5s',
         create_schema:
@@ -217,7 +217,7 @@ export const buildOtelCollectorConfig = (
         database: '${env:HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE}',
         username: '${env:CLICKHOUSE_USER}',
         password: '${env:CLICKHOUSE_PASSWORD}',
-        ttl: '${env:HYPERDX_OTEL_EXPORTER_TABLES_TTL:-720h}',
+        ttl: '${env:HYPERDX_OTEL_EXPORTER_TABLES_TTL:-2160h}',
         timeout: '5s',
         create_schema:
           '${env:HYPERDX_OTEL_EXPORTER_CREATE_LEGACY_SCHEMA:-false}',
