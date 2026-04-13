@@ -90,7 +90,7 @@ export default defineConfig({
         {
           // Full UI: Alerts + Dashboards. Not local mode; Alerts enabled;
           command: USE_DEV
-            ? `SERVER_URL=http://localhost:${API_PORT} PORT=${APP_PORT} NEXT_DIST_DIR=.next-e2e next dev --webpack`
+            ? `SERVER_URL=http://localhost:${API_PORT} PORT=${APP_PORT} NEXT_DIST_DIR=.next-e2e next dev`
             : `SERVER_URL=http://localhost:${API_PORT} PORT=${APP_PORT} NEXT_DIST_DIR=.next-e2e yarn build && SERVER_URL=http://localhost:${API_PORT} PORT=${APP_PORT} NEXT_DIST_DIR=.next-e2e yarn start`,
           port: parseInt(APP_PORT, 10),
           reuseExistingServer: !process.env.CI,
@@ -102,7 +102,7 @@ export default defineConfig({
     : {
         // Local mode: Frontend only
         command: USE_DEV
-          ? `NEXT_PUBLIC_IS_LOCAL_MODE=true PORT=${APP_LOCAL_PORT} NEXT_DIST_DIR=.next-e2e next dev --webpack`
+          ? `NEXT_PUBLIC_IS_LOCAL_MODE=true PORT=${APP_LOCAL_PORT} NEXT_DIST_DIR=.next-e2e next dev`
           : `NEXT_PUBLIC_IS_LOCAL_MODE=true NEXT_DIST_DIR=.next-e2e yarn build && NEXT_PUBLIC_IS_LOCAL_MODE=true PORT=${APP_LOCAL_PORT} NEXT_DIST_DIR=.next-e2e yarn start`,
         port: parseInt(APP_LOCAL_PORT, 10),
         reuseExistingServer: !process.env.CI,
