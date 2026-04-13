@@ -15,20 +15,23 @@ import mongoose from 'mongoose';
 import Role from '../models/role';
 
 async function seedSystemRoles() {
-  for (const [key, def] of Object.entries(SYSTEM_ROLES)) {
-    const exists = await Role.findOne({
-      teamId: null,
-      name: def.name,
-      isSystem: true,
-    });
-    if (!exists) {
-      await Role.create({
-        name: def.name,
-        teamId: null,
-        permissions: [...def.permissions],
-        dataScopes: [...def.dataScopes],
-        isSystem: true,
-      });
+  for (const [, def] of Object.entries(SYSTEM_ROLES)) {
+    const result = await Role.findOneAndUpdate(
+      { teamId: null, name: def.name, isSystem: true },
+      {
+        $set: {
+          permissions: [...def.permissions],
+          dataScopes: [...def.dataScopes],
+        },
+        $setOnInsert: {
+          name: def.name,
+          teamId: null,
+          isSystem: true,
+        },
+      },
+      { upsert: true, new: true },
+    );
+    if (result.isNew) {
       console.log(`Created system role: ${def.name}`);
     }
   }

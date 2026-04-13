@@ -4,7 +4,6 @@ import cx from 'classnames';
 import {
   Avatar,
   Badge,
-  Button,
   Group,
   Menu,
   Paper,
@@ -24,6 +23,7 @@ import {
   IconKeyboard,
   IconLogout,
   IconSettings,
+  IconUser,
   IconUserCog,
 } from '@tabler/icons-react';
 
@@ -139,6 +139,16 @@ export const AppNavUserMenu = ({
         >
           User Preferences
         </Menu.Item>
+        {!IS_LOCAL_MODE && (
+          <Menu.Item
+            data-testid="user-profile-menu-item"
+            href="/profile"
+            component={Link}
+            leftSection={<IconUser size={16} />}
+          >
+            User Profile
+          </Menu.Item>
+        )}
         {logoutUrl && (
           <>
             <Menu.Divider />
