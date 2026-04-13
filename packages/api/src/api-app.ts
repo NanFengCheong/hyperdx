@@ -108,7 +108,7 @@ app.use(
   requireWriteAccess,
   routers.dashboardRouter,
 );
-app.use('/me', isUserAuthenticated, routers.meRouter);
+app.use('/me', routers.meRouter);
 app.use('/team', isUserAuthenticated, requireWriteAccess, routers.teamRouter);
 app.use(
   '/webhooks',

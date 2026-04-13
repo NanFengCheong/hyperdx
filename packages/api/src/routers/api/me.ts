@@ -8,10 +8,10 @@ import { sendJson } from '@/utils/serialization';
 
 const router = express.Router();
 
-router.get('/', async (req, res: express.Response<MeApiResponse>, next) => {
+router.get('/', async (req, res: express.Response<MeApiResponse | null>, next) => {
   try {
     if (req.user == null) {
-      throw new Api404Error('Request without user found');
+      return res.json(null);
     }
 
     const {
