@@ -663,9 +663,14 @@ router.patch(
 router.get('/roles', async (req, res, next) => {
   try {
     const { teamId } = getNonNullUserWithTeam(req);
+    // Filter out system roles from the team members role dropdown
+    // System roles (like Super Admin) should only be managed via Admin page
     const roles = await Role.find({
       $or: [{ teamId }, { teamId: null, isSystem: true }],
-    }).sort({ isSystem: -1, name: 1 });
+    })
+      .where('name')
+      .ne('Super Admin')
+      .sort({ isSystem: -1, name: 1 });
     res.json({ data: roles });
   } catch (e) {
     next(e);
