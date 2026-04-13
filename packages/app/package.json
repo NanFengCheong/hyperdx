@@ -86,7 +86,7 @@
     "react-resizable": "^3.0.4",
     "recharts": "^2.12.7",
     "rrweb": "2.0.0-alpha.8",
-    "sass": "^1.54.8",
+    "sass": "^1.99.0",
     "serialize-query-params": "^2.0.2",
     "sql-formatter": "^15.7.2",
     "sqlstring": "^2.3.3",
