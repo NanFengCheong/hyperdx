@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-api
+  namespace: hyperdx
+  labels:
+    app.kubernetes.io/name: app-api
+    app.kubernetes.io/part-of: hyperdx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: app-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: app-api
+        app.kubernetes.io/part-of: hyperdx
+    spec:
+      imagePullSecrets:
+        - name: acr-pull-secret
+      containers:
+        - name: app-api
+          image: alphareds.azurecr.io/hyperdx:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: api
+            - containerPort: 8080
+              name: app
+            - containerPort: 4320
+              name: opamp
+          envFrom:
+            - configMapRef:
+                name: hyperdx-config
+          env:
+            - name: HYPERDX_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hyperdx-secrets
+                  key: HYPERDX_API_KEY
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hyperdx-secrets
+                  key: OIDC_CLIENT_SECRET
+            - name: SMTP_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: hyperdx-secrets
+                  key: SMTP_PASS
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: api
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: api
+            initialDelaySeconds: 10
+            periodSeconds: 10

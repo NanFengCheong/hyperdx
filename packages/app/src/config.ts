@@ -18,6 +18,9 @@ export const HDX_COLLECTOR_URL =
   process.env.NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT ??
   process.env.OTEL_EXPORTER_OTLP_ENDPOINT ??
   'http://localhost:4318';
+export const HDX_INTERNAL_COLLECTOR_URL =
+  process.env.HDX_INTERNAL_COLLECTOR_URL ??
+  'http://otel-collector:4318';
 export const IS_DEV = NODE_ENV === 'development';
 
 export const IS_OSS = process.env.NEXT_PUBLIC_IS_OSS ?? 'true' === 'true';

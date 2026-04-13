@@ -1,0 +1,216 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hyperdx-config
+  namespace: hyperdx
+data:
+  # App / API
+  HYPERDX_API_PORT: "8000"
+  HYPERDX_APP_PORT: "8080"
+  HYPERDX_APP_URL: "https://hyperdx.alphareds.com"
+  HYPERDX_LOG_LEVEL: "info"
+  HYPERDX_OPAMP_PORT: "4320"
+  MONGO_URI: "mongodb://mongodb:27017/hyperdx"
+  SERVER_URL: "http://127.0.0.1:8000"
+  FRONTEND_URL: "https://hyperdx.alphareds.com"
+  IS_LOCAL_APP_MODE: "REQUIRED_AUTH"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318"
+  HDX_INTERNAL_COLLECTOR_URL: "http://otel-collector.hyperdx.svc.cluster.local:4318"
+  NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT: ""
+  OTEL_SERVICE_NAME: "hdx-oss-app"
+  USAGE_STATS_ENABLED: "false"
+  OPAMP_PORT: "4320"
+  # SMTP
+  SMTP_HOST: "smtpdm-ap-southeast-1.aliyun.com"
+  SMTP_PORT: "465"
+  SMTP_SECURE: "true"
+  SMTP_USER: "orbyte-notification@email.alphareds.com"
+  SMTP_FROM: "orbyte-notification@email.alphareds.com"
+  SMTP_FROM_NAME: "HyperDX"
+  # OIDC (Azure AD)
+  OIDC_ISSUER: "https://login.microsoftonline.com/7c3a2f70-cbef-4d18-b100-ee3e95b2cba3/v2.0"
+  OIDC_CLIENT_ID: "fbd90980-84b4-4d63-b9cf-c4c053c30ec1"
+  OIDC_CALLBACK_URL: "https://hyperdx.alphareds.com/api/auth/oidc/callback"
+  OIDC_SCOPE: "openid profile email"
+  OIDC_ALLOWED_DOMAINS: ""
+  # ClickHouse
+  CLICKHOUSE_ENDPOINT: "tcp://clickhouse:9000?dial_timeout=10s"
+  HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE: "default"
+  CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+  # OTel Collector
+  OPAMP_SERVER_URL: "http://app-api:4320"
+  HYPERDX_OTEL_EXPORTER_CREATE_LEGACY_SCHEMA: "true"
+  # Default connections and sources (injected into app)
+  DEFAULT_CONNECTIONS: '[{"name":"Local ClickHouse","host":"http://clickhouse:8123","username":"default","password":""}]'
+  DEFAULT_SOURCES: '[{"from":{"databaseName":"default","tableName":"otel_logs"},"kind":"log","timestampValueExpression":"TimestampTime","name":"Logs","displayedTimestampValueExpression":"Timestamp","implicitColumnExpression":"Body","serviceNameExpression":"ServiceName","bodyExpression":"Body","eventAttributesExpression":"LogAttributes","resourceAttributesExpression":"ResourceAttributes","defaultTableSelectExpression":"Timestamp,ServiceName,SeverityText,Body","severityTextExpression":"SeverityText","traceIdExpression":"TraceId","spanIdExpression":"SpanId","connection":"Local ClickHouse","traceSourceId":"Traces","sessionSourceId":"Sessions","metricSourceId":"Metrics"},{"from":{"databaseName":"default","tableName":"otel_traces"},"kind":"trace","timestampValueExpression":"Timestamp","name":"Traces","displayedTimestampValueExpression":"Timestamp","implicitColumnExpression":"SpanName","serviceNameExpression":"ServiceName","eventAttributesExpression":"SpanAttributes","resourceAttributesExpression":"ResourceAttributes","defaultTableSelectExpression":"Timestamp,ServiceName,StatusCode,round(Duration/1e6),SpanName","traceIdExpression":"TraceId","spanIdExpression":"SpanId","durationExpression":"Duration","durationPrecision":9,"parentSpanIdExpression":"ParentSpanId","spanNameExpression":"SpanName","spanKindExpression":"SpanKind","statusCodeExpression":"StatusCode","statusMessageExpression":"StatusMessage","connection":"Local ClickHouse","logSourceId":"Logs","sessionSourceId":"Sessions","metricSourceId":"Metrics"},{"from":{"databaseName":"default","tableName":""},"kind":"metric","timestampValueExpression":"TimeUnix","name":"Metrics","resourceAttributesExpression":"ResourceAttributes","metricTables":{"gauge":"otel_metrics_gauge","histogram":"otel_metrics_histogram","sum":"otel_metrics_sum"},"connection":"Local ClickHouse","logSourceId":"Logs","traceSourceId":"Traces","sessionSourceId":"Sessions"},{"from":{"databaseName":"default","tableName":"hyperdx_sessions"},"kind":"session","timestampValueExpression":"TimestampTime","name":"Sessions","displayedTimestampValueExpression":"Timestamp","implicitColumnExpression":"Body","serviceNameExpression":"ServiceName","bodyExpression":"Body","eventAttributesExpression":"LogAttributes","resourceAttributesExpression":"ResourceAttributes","defaultTableSelectExpression":"Timestamp,ServiceName,SeverityText,Body","severityTextExpression":"SeverityText","traceIdExpression":"TraceId","spanIdExpression":"SpanId","connection":"Local ClickHouse","logSourceId":"Logs","traceSourceId":"Traces","metricSourceId":"Metrics"}]'
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse-config
+  namespace: hyperdx
+data:
+  config.xml: |
+    <?xml version="1.0"?>
+    <clickhouse>
+        <logger>
+            <level>warning</level>
+            <console>true</console>
+            <log remove="remove" />
+            <errorlog remove="remove" />
+        </logger>
+        <listen_host>0.0.0.0</listen_host>
+        <http_port>8123</http_port>
+        <tcp_port>9000</tcp_port>
+        <interserver_http_host>clickhouse</interserver_http_host>
+        <interserver_http_port>9009</interserver_http_port>
+        <max_connections>256</max_connections>
+        <keep_alive_timeout>64</keep_alive_timeout>
+        <max_concurrent_queries>50</max_concurrent_queries>
+        <!-- Reduced for 4GB total RAM -->
+        <uncompressed_cache_size>134217728</uncompressed_cache_size>
+        <mark_cache_size>268435456</mark_cache_size>
+        <path>/var/lib/clickhouse/</path>
+        <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
+        <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+        <user_directories>
+            <users_xml>
+                <path>users.xml</path>
+            </users_xml>
+        </user_directories>
+        <default_profile>default</default_profile>
+        <default_database>default</default_database>
+        <timezone>UTC</timezone>
+        <mlock_executable>false</mlock_executable>
+        <prometheus>
+            <endpoint>/metrics</endpoint>
+            <port>9363</port>
+            <metrics>true</metrics>
+            <events>true</events>
+            <asynchronous_metrics>true</asynchronous_metrics>
+            <errors>true</errors>
+        </prometheus>
+        <query_log>
+            <database>system</database>
+            <table>query_log</table>
+            <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        </query_log>
+        <remote_servers>
+            <hdx_cluster>
+                <shard>
+                    <replica>
+                        <host>clickhouse</host>
+                        <port>9000</port>
+                    </replica>
+                </shard>
+            </hdx_cluster>
+        </remote_servers>
+        <distributed_ddl>
+            <path>/clickhouse/task_queue/ddl</path>
+        </distributed_ddl>
+        <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
+        <custom_settings_prefixes>hyperdx</custom_settings_prefixes>
+    </clickhouse>
+  users.xml: |
+    <?xml version="1.0"?>
+    <clickhouse>
+        <profiles>
+            <default>
+                <max_memory_usage>1073741824</max_memory_usage>
+                <use_uncompressed_cache>0</use_uncompressed_cache>
+                <load_balancing>in_order</load_balancing>
+                <log_queries>1</log_queries>
+            </default>
+        </profiles>
+        <users>
+            <default>
+                <password></password>
+                <profile>default</profile>
+                <networks>
+                    <ip>::/0</ip>
+                </networks>
+                <quota>default</quota>
+            </default>
+        </users>
+        <quotas>
+            <default>
+                <interval>
+                    <duration>3600</duration>
+                    <queries>0</queries>
+                    <errors>0</errors>
+                    <result_rows>0</result_rows>
+                    <read_rows>0</read_rows>
+                    <execution_time>0</execution_time>
+                </interval>
+            </default>
+        </quotas>
+    </clickhouse>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: hyperdx
+data:
+  config.yaml: |
+    processors:
+      transform:
+        log_statements:
+          - context: log
+            error_mode: ignore
+            statements:
+              - set(log.cache, ExtractPatterns(log.body, "(?P<0>(\\{.*\\}))")) where IsString(log.body)
+              - merge_maps(log.attributes, ParseJSON(log.cache["0"]), "upsert") where IsMap(log.cache)
+              - flatten(log.attributes) where IsMap(log.cache)
+              - merge_maps(log.attributes, log.body, "upsert") where IsMap(log.body)
+          - context: log
+            error_mode: ignore
+            conditions:
+              - severity_number == 0 and severity_text == ""
+            statements:
+              - set(log.cache["substr"], log.body.string) where Len(log.body.string) < 256
+              - set(log.cache["substr"], Substring(log.body.string, 0, 256)) where Len(log.body.string) >= 256
+              - set(log.cache, ExtractPatterns(log.cache["substr"], "(?i)(?P<0>\\b(alert|crit|emerg|fatal|error|err|warn|notice|debug|dbug|trace))"))
+              - set(log.severity_number, SEVERITY_NUMBER_FATAL) where IsMatch(log.cache["0"], "(?i)(alert|crit|emerg|fatal)")
+              - set(log.severity_text, "fatal") where log.severity_number == SEVERITY_NUMBER_FATAL
+              - set(log.severity_number, SEVERITY_NUMBER_ERROR) where IsMatch(log.cache["0"], "(?i)(error|err)")
+              - set(log.severity_text, "error") where log.severity_number == SEVERITY_NUMBER_ERROR
+              - set(log.severity_number, SEVERITY_NUMBER_WARN) where IsMatch(log.cache["0"], "(?i)(warn|notice)")
+              - set(log.severity_text, "warn") where log.severity_number == SEVERITY_NUMBER_WARN
+              - set(log.severity_number, SEVERITY_NUMBER_DEBUG) where IsMatch(log.cache["0"], "(?i)(debug|dbug)")
+              - set(log.severity_text, "debug") where log.severity_number == SEVERITY_NUMBER_DEBUG
+              - set(log.severity_number, SEVERITY_NUMBER_TRACE) where IsMatch(log.cache["0"], "(?i)(trace)")
+              - set(log.severity_text, "trace") where log.severity_number == SEVERITY_NUMBER_TRACE
+              - set(log.severity_text, "info") where log.severity_number == 0
+              - set(log.severity_number, SEVERITY_NUMBER_INFO) where log.severity_number == 0
+          - context: log
+            error_mode: ignore
+            statements:
+              - set(log.severity_text, ConvertCase(log.severity_text, "lower"))
+      resourcedetection:
+        detectors:
+          - env
+          - system
+          - docker
+        timeout: 5s
+        override: false
+      batch:
+      memory_limiter:
+        limit_mib: 200
+        spike_limit_mib: 64
+        check_interval: 5s
+    extensions:
+      health_check:
+        endpoint: :13133
+    service:
+      telemetry:
+        metrics:
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: '0.0.0.0'
+                    port: 8888
+        logs:
+          level: ${HYPERDX_LOG_LEVEL}
+      extensions: [health_check]

@@ -4,6 +4,7 @@ import {
   HDX_API_KEY,
   HDX_COLLECTOR_URL,
   HDX_EXPORTER_ENABLED,
+  HDX_INTERNAL_COLLECTOR_URL,
   HDX_SERVICE_NAME,
 } from '@/config';
 import type { NextApiConfigResponseData } from '@/types';
@@ -15,6 +16,7 @@ export default function handler(
   res.status(200).json({
     apiKey: HDX_EXPORTER_ENABLED ? HDX_API_KEY : undefined,
     collectorUrl: HDX_COLLECTOR_URL,
+    internalCollectorUrl: HDX_INTERNAL_COLLECTOR_URL,
     serviceName: HDX_SERVICE_NAME,
     appVersion: process.env.NEXT_PUBLIC_APP_VERSION,
   });

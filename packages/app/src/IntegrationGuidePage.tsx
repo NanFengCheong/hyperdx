@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Head from 'next/head';
 import {
   ActionIcon,
@@ -487,14 +487,26 @@ export default function IntegrationGuidePage() {
   const { data: team } = api.useTeam();
 
   const apiKey = team?.apiKey ?? '<YOUR_API_KEY>';
+  const [configData, setConfigData] = useState<{
+    collectorUrl?: string;
+    internalCollectorUrl?: string;
+  }>({});
+  useEffect(() => {
+    fetch('/api/config')
+      .then(res => res.json())
+      .then(data => setConfigData(data))
+      .catch(() => {});
+  }, []);
   const hostname =
     typeof window !== 'undefined' ? window.location.hostname : 'localhost';
   const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
-  const otelEndpoint = isLocal
-    ? 'http://localhost:4318'
-    : `${typeof window !== 'undefined' ? window.location.protocol : 'https:'}//${hostname}`;
+  const otelEndpoint =
+    configData.collectorUrl ??
+    (isLocal
+      ? 'http://localhost:4318'
+      : `${typeof window !== 'undefined' ? window.location.protocol : 'https:'}//${hostname}`);
   const internalEndpoint =
-    'http://msm-otel-collector.msm.svc.cluster.local:4318';
+    configData.internalCollectorUrl ?? 'http://otel-collector:4318';
 
   const platforms = useMemo(
     () => getPlatformConfig(apiKey, otelEndpoint),
