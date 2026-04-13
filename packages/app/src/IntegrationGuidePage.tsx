@@ -500,11 +500,9 @@ export default function IntegrationGuidePage() {
   const hostname =
     typeof window !== 'undefined' ? window.location.hostname : 'localhost';
   const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
-  const otelEndpoint =
-    configData.collectorUrl ??
-    (isLocal
-      ? 'http://localhost:4318'
-      : `${typeof window !== 'undefined' ? window.location.protocol : 'https:'}//${hostname}`);
+  const otelEndpoint = isLocal
+    ? 'http://localhost:4318'
+    : `${typeof window !== 'undefined' ? window.location.protocol : 'https:'}//${hostname}`;
   const internalEndpoint =
     configData.internalCollectorUrl ?? 'http://otel-collector:4318';
 
