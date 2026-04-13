@@ -9,11 +9,12 @@ import {
   Divider,
   Group,
   Modal,
+  Pill,
   Select,
   Stack,
   Table,
   Text,
-  TextInput,
+  Textarea,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconLock, IconUserPlus } from '@tabler/icons-react';
@@ -58,8 +59,10 @@ export default function TeamMembersSection() {
     refetch: refetchInvitations,
   } = api.useTeamInvitations();
 
-  const onSubmitTeamInviteForm = ({ email }: { email: string }) => {
-    sendTeamInviteAction(email);
+  const onSubmitTeamInviteForm = ({ emails }: { emails: string[] }) => {
+    for (const email of emails) {
+      sendTeamInviteAction(email);
+    }
     setTeamInviteModalShow(false);
   };
 
@@ -471,7 +474,7 @@ export default function TeamMembersSection() {
         centered
         onClose={() => setTeamInviteModalShow(false)}
         opened={teamInviteModalShow}
-        title="Invite Team Member"
+        title="Invite Team Members"
       >
         <InviteTeamMemberForm
           onSubmit={onSubmitTeamInviteForm}
@@ -532,34 +535,101 @@ export default function TeamMembersSection() {
   );
 }
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ANGLE_BRACKET_EMAIL_REGEX = /<([^>]+)>/;
+
+function parseEmails(input: string): string[] {
+  const tokens = input.split(/[;,\n]+/);
+  const emails: string[] = [];
+  const seen = new Set<string>();
+
+  for (const token of tokens) {
+    const trimmed = token.trim();
+    if (!trimmed) continue;
+
+    let email: string;
+    const match = trimmed.match(ANGLE_BRACKET_EMAIL_REGEX);
+    if (match) {
+      email = match[1].trim().toLowerCase();
+    } else {
+      email = trimmed.toLowerCase();
+    }
+
+    if (email && !seen.has(email)) {
+      seen.add(email);
+      emails.push(email);
+    }
+  }
+
+  return emails;
+}
+
 function InviteTeamMemberForm({
   isSubmitting,
   onSubmit,
 }: {
   isSubmitting?: boolean;
-  onSubmit: (arg0: { email: string }) => void;
+  onSubmit: (arg0: { emails: string[] }) => void;
 }) {
-  const [email, setEmail] = useState<string>('');
+  const [rawInput, setRawInput] = useState<string>('');
+
+  const parsedEmails = useMemo(() => parseEmails(rawInput), [rawInput]);
+  const validEmails = parsedEmails.filter(e => EMAIL_REGEX.test(e));
+  const invalidEmails = parsedEmails.filter(e => !EMAIL_REGEX.test(e));
 
   return (
     <form
       onSubmit={e => {
-        onSubmit({ email });
         e.preventDefault();
+        if (validEmails.length > 0) {
+          onSubmit({ emails: validEmails });
+        }
       }}
     >
       <Stack>
-        <TextInput
+        <Textarea
           data-testid="invite-email-input"
-          label="Email"
+          label="Email(s)"
           name="email"
-          type="email"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
+          value={rawInput}
+          onChange={e => setRawInput(e.target.value)}
           required
-          placeholder="you@company.com"
+          placeholder={
+            'you@company.com\nPaste multiple emails separated by , or ;\ne.g. Name <email@company.com>; Name <email@company.com>'
+          }
           withAsterisk={false}
+          minRows={3}
+          autosize
+          maxRows={8}
         />
+        {parsedEmails.length > 0 && (
+          <div>
+            <Text size="xs" c="dimmed" mb={4}>
+              {validEmails.length} email{validEmails.length !== 1 ? 's' : ''}{' '}
+              detected
+              {invalidEmails.length > 0 &&
+                ` (${invalidEmails.length} invalid)`}
+            </Text>
+            <Group gap={4} style={{ flexWrap: 'wrap' }}>
+              {parsedEmails.map(email => (
+                <Pill
+                  key={email}
+                  size="sm"
+                  style={
+                    !EMAIL_REGEX.test(email)
+                      ? {
+                          backgroundColor: 'var(--mantine-color-red-light)',
+                          color: 'var(--mantine-color-red-text)',
+                        }
+                      : undefined
+                  }
+                >
+                  {email}
+                </Pill>
+              ))}
+            </Group>
+          </div>
+        )}
         <div className="fs-8">
           The invite link will automatically expire after 30 days.
         </div>
@@ -567,9 +637,11 @@ function InviteTeamMemberForm({
           data-testid="send-invite-button"
           variant="primary"
           type="submit"
-          disabled={!email || isSubmitting}
+          disabled={validEmails.length === 0 || isSubmitting}
         >
-          Send Invite
+          {validEmails.length > 1
+            ? `Send ${validEmails.length} Invites`
+            : 'Send Invite'}
         </Button>
       </Stack>
     </form>
