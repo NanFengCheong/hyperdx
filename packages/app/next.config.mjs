@@ -28,12 +28,6 @@ const nextConfig = {
   basePath: basePath,
   experimental: {
     optimizePackageImports: [
-      '@mantine/core',
-      '@mantine/dates',
-      '@mantine/dropzone',
-      '@mantine/form',
-      '@mantine/hooks',
-      '@mantine/spotlight',
       '@tabler/icons-react',
       'date-fns',
       'lodash',
