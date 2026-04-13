@@ -33,7 +33,6 @@ const nextConfig = {
       '@mantine/dropzone',
       '@mantine/form',
       '@mantine/hooks',
-      '@mantine/notifications',
       '@mantine/spotlight',
       '@tabler/icons-react',
       'date-fns',
