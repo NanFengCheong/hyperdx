@@ -50,12 +50,10 @@ const nextConfig = {
   typescript: {
     tsconfigPath: 'tsconfig.build.json',
   },
-  // NOTE: Using Webpack instead of Turbopack (Next.js 16 default)
-  // Reason: Turbopack has CSS module parsing issues with nested :global syntax
-  // used in styles/SearchPage.module.scss and other SCSS files.
-  // The --webpack flag is added to dev and build scripts in package.json.
-  // TODO: Re-evaluate when Turbopack CSS module support improves
-  // Ignore otel pkgs warnings
+  // Turbopack is now the default (Next.js 16). The nested :global {} block
+  // in SearchPage.module.scss was rewritten to inline :global(.class) syntax.
+  turbopack: {},
+  // Ignore otel pkgs warnings (webpack-only, used when --webpack flag is passed)
   // https://github.com/open-telemetry/opentelemetry-js/issues/4173#issuecomment-1822938936
   webpack: (
     config,
