@@ -49,7 +49,6 @@ export function BudgetBar({
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- startedAt tracked via ref, only isActive triggers effect
   }, [isActive]);
 
   if (!budgetSnapshot) return null;

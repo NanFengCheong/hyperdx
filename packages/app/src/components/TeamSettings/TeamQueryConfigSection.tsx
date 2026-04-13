@@ -24,6 +24,7 @@ import {
   DEFAULT_QUERY_TIMEOUT,
   DEFAULT_SEARCH_ROW_LIMIT,
 } from '@/defaults';
+import { usePermission } from '@/hooks/usePermission';
 import { useBrandDisplayName } from '@/theme/ThemeProvider';
 
 type ClickhouseSettingType = 'number' | 'boolean';
@@ -62,7 +63,7 @@ function ClickhouseSettingForm({
 }: ClickhouseSettingFormProps) {
   const { data: me, refetch: refetchMe } = api.useMe();
   const updateClickhouseSettings = api.useUpdateClickhouseSettings();
-  const hasAdminAccess = true;
+  const canEditQuerySettings = usePermission('querysettings:edit');
   const [isEditing, setIsEditing] = useState(false);
   const currentValue = me?.team[settingKey];
 
@@ -131,7 +132,7 @@ function ClickhouseSettingForm({
           </Tooltip>
         )}
       </Group>
-      {isEditing && hasAdminAccess ? (
+      {isEditing && canEditQuerySettings ? (
         <form onSubmit={form.handleSubmit(onSubmit)}>
           <Group>
             {type === 'boolean' && displayValue ? (
@@ -203,7 +204,7 @@ function ClickhouseSettingForm({
               ? displayValue(currentValue, defaultValue)
               : currentValue?.toString() || 'Not set'}
           </Text>
-          {hasAdminAccess && (
+          {canEditQuerySettings && (
             <Button
               size="xs"
               variant="secondary"

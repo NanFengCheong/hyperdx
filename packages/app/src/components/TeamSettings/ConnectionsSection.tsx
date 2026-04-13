@@ -5,8 +5,14 @@ import { IconPencil, IconX } from '@tabler/icons-react';
 import { ConnectionForm } from '@/components/ConnectionForm';
 import { IS_CLICKHOUSE_BUILD, IS_LOCAL_MODE } from '@/config';
 import { useConnections } from '@/connection';
+import { usePermissions } from '@/contexts/PermissionContext';
 
 export default function ConnectionsSection() {
+  const { can } = usePermissions();
+  const canViewConnections = can('connections:view');
+  const canCreateConnections = can('connections:create');
+  const canEditConnections = can('connections:edit');
+  const canDeleteConnections = can('connections:delete');
   const { data: connections } = useConnections();
   const [editedConnectionId, setEditedConnectionId] = useState<string | null>(
     null,
@@ -41,6 +47,7 @@ export default function ConnectionsSection() {
                     variant="subtle"
                     onClick={() => setEditedConnectionId(connection.id)}
                     size="sm"
+                    disabled={!canEditConnections}
                   >
                     <IconPencil size={14} className="me-2" /> Edit
                   </Button>
@@ -62,7 +69,7 @@ export default function ConnectionsSection() {
                     setEditedConnectionId(null);
                   }}
                   showCancelButton={false}
-                  showDeleteButton
+                  showDeleteButton={canDeleteConnections}
                 />
               )}
               <Divider my="md" />
@@ -75,6 +82,7 @@ export default function ConnectionsSection() {
               data-testid="add-connection-button"
               variant="primary"
               onClick={() => setIsCreatingConnection(true)}
+              disabled={!canCreateConnections}
             >
               Add Connection
             </Button>

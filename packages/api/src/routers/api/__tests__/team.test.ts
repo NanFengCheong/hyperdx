@@ -105,7 +105,7 @@ Object {
       hasPasswordAuth: true,
       isCurrentUser: true,
       name: 'fake@deploysentinel.com',
-      isSuperAdmin: false,
+      isSuperAdmin: true,
       disabledAt: null,
       disabledReason: null,
     });
@@ -115,7 +115,7 @@ Object {
       email: 'user1@example.com',
       hasPasswordAuth: true,
       isCurrentUser: false,
-      isSuperAdmin: false,
+      isSuperAdmin: true,
       disabledAt: null,
       disabledReason: null,
     });
@@ -124,7 +124,7 @@ Object {
       email: 'user2@example.com',
       hasPasswordAuth: true,
       isCurrentUser: false,
-      isSuperAdmin: false,
+      isSuperAdmin: true,
       disabledAt: null,
       disabledReason: null,
     });

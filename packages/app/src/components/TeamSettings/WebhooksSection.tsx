@@ -10,6 +10,7 @@ import { notifications } from '@mantine/notifications';
 import { IconPencil, IconX } from '@tabler/icons-react';
 
 import api from '../../api';
+import { usePermissions } from '../../contexts/PermissionContext';
 import { useBrandDisplayName } from '../../theme/ThemeProvider';
 import { useConfirm } from '../../useConfirm';
 import {
@@ -77,6 +78,11 @@ function DeleteWebhookButton({
 }
 
 export default function WebhooksSection() {
+  const { can } = usePermissions();
+  const canViewWebhooks = can('webhooks:view');
+  const canCreateWebhooks = can('webhooks:create');
+  const canEditWebhooks = can('webhooks:edit');
+  const canDeleteWebhooks = can('webhooks:delete');
   const { data: webhookData, refetch: refetchWebhooks } = api.useWebhooks([
     WebhookService.Slack,
     WebhookService.Generic,
@@ -148,20 +154,26 @@ export default function WebhooksSection() {
                         <Group gap="xs">
                           {editedWebhookId !== webhook._id ? (
                             <>
-                              <Button
-                                variant="subtle"
-                                color="gray.4"
-                                onClick={() => setEditedWebhookId(webhook._id)}
-                                size="compact-xs"
-                                leftSection={<IconPencil size={14} />}
-                              >
-                                Edit
-                              </Button>
-                              <DeleteWebhookButton
-                                webhookId={webhook._id}
-                                webhookName={webhook.name}
-                                onSuccess={refetchWebhooks}
-                              />
+                              {canEditWebhooks && (
+                                <Button
+                                  variant="subtle"
+                                  color="gray.4"
+                                  onClick={() =>
+                                    setEditedWebhookId(webhook._id)
+                                  }
+                                  size="compact-xs"
+                                  leftSection={<IconPencil size={14} />}
+                                >
+                                  Edit
+                                </Button>
+                              )}
+                              {canDeleteWebhooks && (
+                                <DeleteWebhookButton
+                                  webhookId={webhook._id}
+                                  webhookName={webhook.name}
+                                  onSuccess={refetchWebhooks}
+                                />
+                              )}
                             </>
                           ) : (
                             <Button
@@ -200,6 +212,7 @@ export default function WebhooksSection() {
           data-testid="add-webhook-section-button"
           variant="secondary"
           onClick={openWebhookModal}
+          disabled={!canCreateWebhooks}
         >
           Add Webhook
         </Button>

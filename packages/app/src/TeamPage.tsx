@@ -25,6 +25,7 @@ import NotificationLogSection from './components/TeamSettings/NotificationLogSec
 import SourcesSection from './components/TeamSettings/SourcesSection';
 import TeamMembersSection from './components/TeamSettings/TeamMembersSection';
 import TeamQueryConfigSection from './components/TeamSettings/TeamQueryConfigSection';
+import { usePermission } from './hooks/usePermission';
 import { useBrandDisplayName } from './theme/ThemeProvider';
 import api from './api';
 import { withAppNav } from './layout';
@@ -55,7 +56,7 @@ export default function TeamPage() {
   const router = useRouter();
   const { data: team, refetch: refetchTeam, isLoading } = api.useTeam();
   const setTeamName = api.useSetTeamName();
-  const hasAdminAccess = true;
+  const canEditTeamName = usePermission('security:edit');
   const [isEditingTeamName, setIsEditingTeamName] = useState(false);
   const form = useForm<{ name: string }>({
     defaultValues: { name: team?.name },
@@ -264,7 +265,7 @@ export default function TeamPage() {
               <span data-testid="team-name-display">
                 {team?.name || 'My team'}
               </span>
-              {hasAdminAccess && (
+              {canEditTeamName && (
                 <Button
                   data-testid="team-name-change-button"
                   size="xs"

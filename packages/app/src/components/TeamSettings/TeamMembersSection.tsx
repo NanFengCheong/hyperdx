@@ -15,11 +15,13 @@ import {
   Table,
   Text,
   Textarea,
+  Tooltip,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconLock, IconUserPlus } from '@tabler/icons-react';
 
 import api from '@/api';
+import { usePermissions } from '@/contexts/PermissionContext';
 import { useBrandDisplayName } from '@/theme/ThemeProvider';
 
 function getDaysUntilDisable(
@@ -42,7 +44,10 @@ function getDaysLeftColor(daysLeft: number): string {
 
 export default function TeamMembersSection() {
   const brandName = useBrandDisplayName();
-  const hasAdminAccess = true;
+  const { can } = usePermissions();
+  const canInvite = can('members:invite');
+  const canRemove = can('members:remove');
+  const canAssignGroup = can('members:assign-group');
   // eslint-disable-next-line no-restricted-syntax
   const now = useMemo(() => Date.now(), []);
 
@@ -248,14 +253,26 @@ export default function TeamMembersSection() {
         <Card.Section withBorder py="sm" px="lg">
           <Group align="center" justify="space-between">
             <div className="fs-7">Team Members</div>
-            <Button
-              data-testid="invite-member-button"
-              variant="primary"
-              leftSection={<IconUserPlus size={16} />}
-              onClick={() => setTeamInviteModalShow(true)}
-            >
-              Invite Team Member
-            </Button>
+            {canInvite ? (
+              <Button
+                data-testid="invite-member-button"
+                variant="primary"
+                leftSection={<IconUserPlus size={16} />}
+                onClick={() => setTeamInviteModalShow(true)}
+              >
+                Invite Team Member
+              </Button>
+            ) : (
+              <Tooltip label="You don't have permission to invite members">
+                <Button
+                  variant="primary"
+                  leftSection={<IconUserPlus size={16} />}
+                  disabled
+                >
+                  Invite Team Member
+                </Button>
+              </Tooltip>
+            )}
           </Group>
         </Card.Section>
         <Card.Section>
@@ -360,7 +377,9 @@ export default function TeamMembersSection() {
                         size="xs"
                         data={roleOptions}
                         value={member.roleId || ''}
+                        disabled={!canAssignGroup}
                         onChange={value => {
+                          if (!canAssignGroup) return;
                           assignRole.mutate(
                             { userId: member._id, roleId: value || null },
                             {
@@ -405,7 +424,7 @@ export default function TeamMembersSection() {
                       />
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
-                      {!member.isCurrentUser && hasAdminAccess && (
+                      {!member.isCurrentUser && canRemove && (
                         <Group justify="flex-end" gap="8">
                           <Button
                             size="compact-sm"
@@ -445,7 +464,7 @@ export default function TeamMembersSection() {
                       </CopyToClipboard>
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
-                      {hasAdminAccess && (
+                      {canInvite && (
                         <Group justify="flex-end" gap="8">
                           <Button
                             size="compact-sm"
@@ -607,8 +626,7 @@ function InviteTeamMemberForm({
             <Text size="xs" c="dimmed" mb={4}>
               {validEmails.length} email{validEmails.length !== 1 ? 's' : ''}{' '}
               detected
-              {invalidEmails.length > 0 &&
-                ` (${invalidEmails.length} invalid)`}
+              {invalidEmails.length > 0 && ` (${invalidEmails.length} invalid)`}
             </Text>
             <Group gap={4} style={{ flexWrap: 'wrap' }}>
               {parsedEmails.map(email => (

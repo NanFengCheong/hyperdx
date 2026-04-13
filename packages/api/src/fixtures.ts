@@ -16,6 +16,8 @@ import { getTeam } from '@/controllers/team';
 import { findUserByEmail } from '@/controllers/user';
 import { mongooseConnection } from '@/models';
 import { AlertInterval, AlertSource, AlertThresholdType } from '@/models/alert';
+import Role from '@/models/role';
+import User from '@/models/user';
 import Server from '@/server';
 import logger from '@/utils/logger';
 import { MetricModel } from '@/utils/logParser';
@@ -220,6 +222,21 @@ export const getLoggedInAgent = async (server: MockServer) => {
   if (team === null || user === null) {
     throw Error('team or user not found');
   }
+
+  // Assign Admin role to test user so all permissions are granted in tests
+  const adminRole = await Role.findOne({
+    teamId: null,
+    name: 'Admin',
+    isSystem: true,
+  });
+  if (adminRole) {
+    await User.findByIdAndUpdate(user._id, { $set: { roleId: adminRole._id } });
+  }
+  // Also set isSuperAdmin as a fallback to ensure all permissions are granted
+  await User.findByIdAndUpdate(user._id, { $set: { isSuperAdmin: true } });
+
+  // Re-fetch user to get updated data
+  const updatedUser = await findUserByEmail(MOCK_USER.email);
 
   // login app
   await agent.post('/login/password').send(MOCK_USER).expect(302);

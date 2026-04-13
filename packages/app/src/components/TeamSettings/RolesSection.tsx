@@ -24,6 +24,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 
 import api from '@/api';
+import { usePermissions } from '@/contexts/PermissionContext';
 
 import PermissionPicker from './PermissionPicker';
 
@@ -41,6 +42,10 @@ const INITIAL_FORM_DATA: RoleFormData = {
 
 export default function RolesSection() {
   const queryClient = useQueryClient();
+  const { can } = usePermissions();
+  const canCreateRoles = can('roles:create');
+  const canEditRoles = can('roles:edit');
+  const canDeleteRoles = can('roles:delete');
 
   const { data: roles, isLoading: isLoadingRoles } = api.useTeamRoles();
 
@@ -227,6 +232,7 @@ export default function RolesSection() {
               variant="primary"
               leftSection={<IconShieldPlus size={16} />}
               onClick={openCreateModal}
+              disabled={!canCreateRoles}
             >
               New Custom Role
             </Button>
@@ -254,27 +260,31 @@ export default function RolesSection() {
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
                       <Group justify="flex-end" gap="8">
-                        <Button
-                          size="compact-sm"
-                          variant="danger"
-                          leftSection={<IconTrash size={14} />}
-                          onClick={() =>
-                            setDeleteConfirmation({
-                              id: role._id,
-                              name: role.name,
-                            })
-                          }
-                        >
-                          Delete
-                        </Button>
-                        <Button
-                          size="compact-sm"
-                          variant="secondary"
-                          leftSection={<IconPencil size={14} />}
-                          onClick={() => openEditModal(role)}
-                        >
-                          Edit
-                        </Button>
+                        {canDeleteRoles && (
+                          <Button
+                            size="compact-sm"
+                            variant="danger"
+                            leftSection={<IconTrash size={14} />}
+                            onClick={() =>
+                              setDeleteConfirmation({
+                                id: role._id,
+                                name: role.name,
+                              })
+                            }
+                          >
+                            Delete
+                          </Button>
+                        )}
+                        {canEditRoles && (
+                          <Button
+                            size="compact-sm"
+                            variant="secondary"
+                            leftSection={<IconPencil size={14} />}
+                            onClick={() => openEditModal(role)}
+                          >
+                            Edit
+                          </Button>
+                        )}
                       </Group>
                     </Table.Td>
                   </Table.Tr>

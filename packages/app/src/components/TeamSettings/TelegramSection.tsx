@@ -13,11 +13,13 @@ import { IconBrandTelegram } from '@tabler/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import api from '@/api';
+import { usePermission } from '@/hooks/usePermission';
 
 export default function TelegramSection() {
   const { data: configData, isLoading } = api.useTelegramConfig();
   const updateConfig = api.useUpdateTelegramConfig();
   const queryClient = useQueryClient();
+  const canManageIntegrations = usePermission('integrations:manage');
 
   const existing = configData?.data;
 
@@ -99,6 +101,7 @@ export default function TelegramSection() {
             variant="primary"
             onClick={handleSave}
             loading={updateConfig.isPending}
+            disabled={!canManageIntegrations}
           >
             Save
           </Button>

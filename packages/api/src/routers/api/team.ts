@@ -99,24 +99,29 @@ router.get('/', async (req, res: TeamApiExpRes, next) => {
 });
 
 type RotateApiKeyExpRes = express.Response<RotateApiKeyApiResponse>;
-router.patch('/apiKey', async (req, res: RotateApiKeyExpRes, next) => {
-  try {
-    const teamId = req.user?.team;
-    if (teamId == null) {
-      throw new Error(`User ${req.user?._id} not associated with a team`);
+router.patch(
+  '/apiKey',
+  requirePermission('apikeys:rotate'),
+  async (req, res: RotateApiKeyExpRes, next) => {
+    try {
+      const teamId = req.user?.team;
+      if (teamId == null) {
+        throw new Error(`User ${req.user?._id} not associated with a team`);
+      }
+      const team = await rotateTeamApiKey(teamId);
+      if (team?.apiKey == null) {
+        throw new Error(`Failed to rotate API key for team ${teamId}`);
+      }
+      res.json({ newApiKey: team.apiKey });
+    } catch (e) {
+      next(e);
     }
-    const team = await rotateTeamApiKey(teamId);
-    if (team?.apiKey == null) {
-      throw new Error(`Failed to rotate API key for team ${teamId}`);
-    }
-    res.json({ newApiKey: team.apiKey });
-  } catch (e) {
-    next(e);
-  }
-});
+  },
+);
 
 router.patch(
   '/name',
+  requirePermission('security:edit'),
   validateRequest({
     body: z.object({
       name: z.string().min(1).max(100),
@@ -139,6 +144,7 @@ router.patch(
 
 router.patch(
   '/clickhouse-settings',
+  requirePermission('querysettings:edit'),
   processRequest({
     body: TeamClickHouseSettingsSchema,
   }),
@@ -191,6 +197,7 @@ router.get('/telegram-config', async (req, res, next) => {
 // PUT /team/telegram-config
 router.put(
   '/telegram-config',
+  requirePermission('integrations:manage'),
   processRequest({
     body: TelegramConfigSchema,
   }),
@@ -231,6 +238,7 @@ router.put(
 
 router.post(
   '/invitation',
+  requirePermission('members:invite'),
   validateRequest({
     body: z.object({
       email: z.string().email(),
@@ -331,6 +339,7 @@ router.get('/invitations', async (req, res: TeamInviteExpressRes, next) => {
 
 router.delete(
   '/invitation/:id',
+  requirePermission('members:invite'),
   validateRequest({
     params: z.object({
       id: objectIdSchema,
@@ -404,6 +413,7 @@ router.get('/members', async (req, res: TeamMembersExpRes, next) => {
 
 router.delete(
   '/member/:id',
+  requirePermission('members:remove'),
   validateRequest({
     params: z.object({
       id: objectIdSchema,
@@ -411,18 +421,64 @@ router.delete(
   }),
   async (req, res, next) => {
     try {
+      const { teamId, userId, email } = getNonNullUserWithTeam(req);
       const userIdToDelete = req.params.id;
-      const teamId = req.user?.team;
-      if (teamId == null) {
-        throw new Error(`User ${req.user?._id} not associated with a team`);
+
+      // Prevent self-deletion
+      if (userIdToDelete === userId.toString()) {
+        return res
+          .status(400)
+          .json({ message: 'You cannot delete your own account' });
       }
 
-      const userIdRequestingDelete = req.user?._id;
-      if (!userIdRequestingDelete) {
-        throw new Error(`Requesting user has no id`);
+      // Fetch target user to check privileges
+      const targetUser = await User.findOne({
+        _id: userIdToDelete,
+        team: teamId,
+      }).populate('roleId');
+
+      if (!targetUser) {
+        return res.status(404).json({ message: 'User not found in team' });
       }
 
-      await deleteTeamMember(teamId, userIdToDelete, userIdRequestingDelete);
+      // Prevent deleting Super Admins
+      if ((targetUser as any).isSuperAdmin) {
+        return res
+          .status(403)
+          .json({ message: 'Super Admin users cannot be deleted' });
+      }
+
+      // Prevent deleting users with equal or higher privileges
+      // (users who also have members:remove permission)
+      const targetRole = (targetUser as any).roleId;
+      if (targetRole && typeof targetRole === 'object') {
+        const targetPermissions = resolvePermissions(
+          targetRole.permissions ?? [],
+          (targetUser as any).permissionOverrides?.grants ?? [],
+          (targetUser as any).permissionOverrides?.revokes ?? [],
+        );
+        if (
+          targetPermissions.includes('members:remove') ||
+          targetPermissions.includes('*:*')
+        ) {
+          return res.status(403).json({
+            message:
+              'Cannot delete users with equal or higher privileges. Use Admin panel if needed.',
+          });
+        }
+      }
+
+      await deleteTeamMember(teamId, userIdToDelete, userId);
+
+      await AuditLog.create({
+        teamId,
+        actorId: userId,
+        actorEmail: email,
+        action: 'member:removed',
+        targetType: 'user',
+        targetId: userIdToDelete,
+        details: { reason: 'manual_removal' },
+      });
 
       res.json({ message: 'User deleted' });
     } catch (e) {
@@ -619,6 +675,7 @@ router.delete(
 
 router.patch(
   '/member/:id/group',
+  requirePermission('members:assign-group'),
   validateRequest({
     params: z.object({
       id: objectIdSchema,
@@ -660,22 +717,26 @@ router.patch(
 
 // ─── Role Routes (RBAC) ─────────────────────────────────────────
 
-router.get('/roles', async (req, res, next) => {
-  try {
-    const { teamId } = getNonNullUserWithTeam(req);
-    // Filter out system roles from the team members role dropdown
-    // System roles (like Super Admin) should only be managed via Admin page
-    const roles = await Role.find({
-      $or: [{ teamId }, { teamId: null, isSystem: true }],
-    })
-      .where('name')
-      .ne('Super Admin')
-      .sort({ isSystem: -1, name: 1 });
-    res.json({ data: roles });
-  } catch (e) {
-    next(e);
-  }
-});
+router.get(
+  '/roles',
+  requirePermission('roles:view'),
+  async (req, res, next) => {
+    try {
+      const { teamId } = getNonNullUserWithTeam(req);
+      // Filter out system roles from the team members role dropdown
+      // System roles (like Super Admin) should only be managed via Admin page
+      const roles = await Role.find({
+        $or: [{ teamId }, { teamId: null, isSystem: true }],
+      })
+        .where('name')
+        .ne('Super Admin')
+        .sort({ isSystem: -1, name: 1 });
+      res.json({ data: roles });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
 
 router.post(
   '/role',
