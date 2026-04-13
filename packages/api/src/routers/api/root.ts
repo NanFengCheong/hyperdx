@@ -157,6 +157,14 @@ router.post('/login/password', (req, res, next) => {
     { failWithError: true, failureMessage: true },
     async (err: any, user: any, info: any) => {
       if (err || !user) {
+        // Custom passport callbacks bypass failureMessage handling,
+        // so manually populate session messages for handleAuthError
+        if (info?.message) {
+          req.session.messages = [
+            ...(req.session.messages ?? []),
+            info.message,
+          ];
+        }
         return handleAuthError(
           err || new Error(info?.message || 'authFail'),
           req,
