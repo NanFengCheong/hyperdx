@@ -109,7 +109,7 @@ app.use(
   routers.dashboardRouter,
 );
 app.use('/me', routers.meRouter);
-app.use('/team', isUserAuthenticated, requireWriteAccess, routers.teamRouter);
+app.use('/team', isUserAuthenticated, routers.teamRouter);
 app.use(
   '/webhooks',
   isUserAuthenticated,

@@ -112,7 +112,7 @@ export async function validateUserAccessKey(
   next();
 }
 
-export async function isUserAuthenticated(
+export function isUserAuthenticated(
   req: Request,
   res: Response,
   next: NextFunction,
@@ -147,11 +147,6 @@ export async function isUserAuthenticated(
       userId: req.user?._id.toString(),
       userEmail: req.user?.email,
     });
-
-    // Populate role for session-authenticated users
-    if (req.user && (req.user as any).roleId) {
-      await (req.user as any).populate('roleId');
-    }
 
     return next();
   }
