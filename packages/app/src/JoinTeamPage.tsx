@@ -42,12 +42,12 @@ export default function JoinTeam() {
                   You&apos;re all set!
                 </Title>
                 <Text c="dimmed" className="text-center">
-                  Your account has been created. A platform administrator will
-                  review your access and grant permissions shortly.
+                  Your account has been created with viewer access. You
+                  can log in immediately — no approval is needed.
                 </Text>
                 <Text c="dimmed" size="sm" className="text-center">
-                  You will receive a notification once your access has been
-                  approved.
+                  If you need greater permissions, please contact a platform
+                  administrator.
                 </Text>
                 <Button
                   component="a"
