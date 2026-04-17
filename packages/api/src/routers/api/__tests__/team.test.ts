@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 
 import { getLoggedInAgent, getServer } from '@/fixtures';
 import Alert, { AlertSource, AlertThresholdType } from '@/models/alert';
+import AuditLog from '@/models/auditLog';
 import TeamInvite from '@/models/teamInvite';
 import User from '@/models/user';
 
@@ -450,5 +451,17 @@ Array [
     expect(activeMember.disabledAt).toBeNull();
     expect(activeMember.disabledReason).toBeNull();
     expect(activeMember.lastLoginAt).toBeDefined();
+  });
+
+  describe('AuditLog indexes', () => {
+    it('has a (teamId, targetType, createdAt) compound index', async () => {
+      const indexes = await AuditLog.collection.indexes();
+      const found = indexes.find(
+        i =>
+          JSON.stringify(i.key) ===
+          JSON.stringify({ teamId: 1, targetType: 1, createdAt: -1 }),
+      );
+      expect(found).toBeDefined();
+    });
   });
 });

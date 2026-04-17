@@ -60,4 +60,7 @@ AuditLogSchema.index({ createdAt: -1 });
 // Actor email filter + date range + sort (GET /admin/audit-log?actorEmail=)
 AuditLogSchema.index({ actorEmail: 1, createdAt: -1 });
 
+// Team-scoped targetType filtering + sort (GET /team/audit-log?targetType=)
+AuditLogSchema.index({ teamId: 1, targetType: 1, createdAt: -1 });
+
 export default mongoose.model<IAuditLog>('AuditLog', AuditLogSchema);
