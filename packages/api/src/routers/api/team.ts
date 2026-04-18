@@ -1094,6 +1094,23 @@ router.get(
   },
 );
 
+router.get(
+  '/audit-log/actions',
+  requirePermission('roles:view'),
+  async (req, res, next) => {
+    try {
+      const { teamId } = getNonNullUserWithTeam(req);
+      const actions = await AuditLog.distinct('action', {
+        teamId,
+        action: { $regex: TEAM_SETTINGS_ACTION_REGEX },
+      });
+      res.json({ data: actions.sort() });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
 // ─── Notification Log Routes ────────────────────────────────────
 
 router.get(

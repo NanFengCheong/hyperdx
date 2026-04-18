@@ -663,4 +663,18 @@ Array [
       expect(res.body.totalCount).toBe(0);
     });
   });
+
+  describe('GET /team/audit-log/actions', () => {
+    it('returns only whitelisted distinct actions for the team', async () => {
+      const { agent, team, user } = await getLoggedInAgent(server);
+      await AuditLog.create([
+        { teamId: team._id, actorId: user._id, actorEmail: 'a@x', action: 'role:created', targetType: 'role', targetId: 'r1', details: {} },
+        { teamId: team._id, actorId: user._id, actorEmail: 'a@x', action: 'role:created', targetType: 'role', targetId: 'r2', details: {} },
+        { teamId: team._id, actorId: user._id, actorEmail: 'a@x', action: 'member:removed', targetType: 'user', targetId: 'u1', details: {} },
+        { teamId: team._id, actorId: user._id, actorEmail: 'a@x', action: 'superadmin:granted', targetType: 'user', targetId: 'u2', details: {} },
+      ]);
+      const res = await agent.get('/team/audit-log/actions').expect(200);
+      expect(res.body.data.sort()).toEqual(['member:removed', 'role:created']);
+    });
+  });
 });
