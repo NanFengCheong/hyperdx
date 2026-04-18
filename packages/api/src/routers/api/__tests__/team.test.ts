@@ -502,4 +502,45 @@ Array [
       expect(TEAM_SETTINGS_ACTION_REGEX.test(action)).toBe(false);
     });
   });
+
+  describe('GET /team/audit-log — whitelist', () => {
+    it('excludes non-team-settings actions (superadmin:*, notification_log.*)', async () => {
+      const { agent, team, user } = await getLoggedInAgent(server);
+
+      await AuditLog.create([
+        {
+          teamId: team._id,
+          actorId: user._id,
+          actorEmail: user.email,
+          action: 'member:removed',
+          targetType: 'user',
+          targetId: 'u1',
+          details: {},
+        },
+        {
+          teamId: team._id,
+          actorId: user._id,
+          actorEmail: user.email,
+          action: 'superadmin:granted',
+          targetType: 'user',
+          targetId: 'u2',
+          details: {},
+        },
+        {
+          teamId: team._id,
+          actorId: user._id,
+          actorEmail: user.email,
+          action: 'notification_log.retention_updated',
+          targetType: 'PlatformSetting',
+          targetId: 'x',
+          details: {},
+        },
+      ]);
+
+      const res = await agent.get('/team/audit-log').expect(200);
+      const actions = res.body.data.map((d: any) => d.action).sort();
+      expect(actions).toEqual(['member:removed']);
+      expect(res.body.totalCount).toBe(1);
+    });
+  });
 });

@@ -39,6 +39,7 @@ import {
 } from '@/controllers/user';
 import { requirePermission } from '@/middleware/auth';
 import AuditLog from '@/models/auditLog';
+import { TEAM_SETTINGS_ACTION_REGEX } from '@/models/auditLogWhitelist';
 import Group from '@/models/group';
 import NotificationLog from '@/models/notificationLog';
 import Role from '@/models/role';
@@ -1012,15 +1013,20 @@ router.get(
       const page = parseInt(req.query.page as string) || 0;
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
 
+      const filter: Record<string, any> = {
+        teamId,
+        action: { $regex: TEAM_SETTINGS_ACTION_REGEX },
+      };
+
       const [data, totalCount] = await Promise.all([
-        AuditLog.find({ teamId })
+        AuditLog.find(filter)
           .sort({ createdAt: -1 })
           .skip(page * limit)
           .limit(limit),
-        AuditLog.countDocuments({ teamId }),
+        AuditLog.countDocuments(filter),
       ]);
 
-      res.json({ data, totalCount });
+      res.json({ data, totalCount, page, limit });
     } catch (e) {
       next(e);
     }
