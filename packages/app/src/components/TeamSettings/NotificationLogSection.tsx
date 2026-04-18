@@ -276,6 +276,32 @@ export default function NotificationLogSection() {
                               <Text size="xs" fw={600} mb={4}>
                                 Payload:
                               </Text>
+                              {typeof entry.payload?.html === 'string' && (
+                                <Box mb="xs">
+                                  <Text size="xs" c="dimmed" mb={4}>
+                                    HTML Preview:
+                                  </Text>
+                                  <Box
+                                    style={{
+                                      border: '1px solid var(--mantine-color-dark-4)',
+                                      borderRadius: 4,
+                                      background: '#fff',
+                                    }}
+                                  >
+                                    <iframe
+                                      srcDoc={entry.payload.html}
+                                      sandbox=""
+                                      title="Notification HTML preview"
+                                      style={{
+                                        width: '100%',
+                                        height: 400,
+                                        border: 0,
+                                        display: 'block',
+                                      }}
+                                    />
+                                  </Box>
+                                </Box>
+                              )}
                               <Code block>
                                 {JSON.stringify(entry.payload, null, 2)}
                               </Code>
