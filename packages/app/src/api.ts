@@ -573,14 +573,48 @@ const api = {
         }).json(),
     });
   },
-  useTeamAuditLog(page = 0, limit = 50) {
+  useTeamAuditLog(
+    page = 0,
+    limit = 50,
+    filters?: {
+      actorEmail?: string;
+      action?: string;
+      targetType?: string;
+      targetId?: string;
+      fromDate?: string;
+      toDate?: string;
+      search?: string;
+    },
+  ) {
     return useQuery({
-      queryKey: ['team/audit-log', page, limit],
-      queryFn: () =>
-        hdxServer(`team/audit-log?page=${page}&limit=${limit}`).json<{
+      queryKey: ['team/audit-log', page, limit, filters],
+      queryFn: () => {
+        const params = new URLSearchParams({
+          page: String(page),
+          limit: String(limit),
+        });
+        if (filters?.actorEmail) params.set('actorEmail', filters.actorEmail);
+        if (filters?.action) params.set('action', filters.action);
+        if (filters?.targetType) params.set('targetType', filters.targetType);
+        if (filters?.targetId) params.set('targetId', filters.targetId);
+        if (filters?.fromDate) params.set('fromDate', filters.fromDate);
+        if (filters?.toDate) params.set('toDate', filters.toDate);
+        if (filters?.search) params.set('search', filters.search);
+        return hdxServer(`team/audit-log?${params}`).json<{
           data: any[];
           totalCount: number;
-        }>(),
+          page: number;
+          limit: number;
+        }>();
+      },
+    });
+  },
+  useTeamAuditLogActions() {
+    return useQuery({
+      queryKey: ['team/audit-log/actions'],
+      queryFn: () =>
+        hdxServer('team/audit-log/actions').json<{ data: string[] }>(),
+      staleTime: 60_000,
     });
   },
   useTeamNotificationLog(
