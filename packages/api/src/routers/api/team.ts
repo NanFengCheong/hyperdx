@@ -1057,6 +1057,28 @@ router.get(
         }
       }
 
+      if (req.query.action) {
+        const requested = String(req.query.action);
+        if (!TEAM_SETTINGS_ACTION_REGEX.test(requested)) {
+          return res.json({ data: [], totalCount: 0, page, limit });
+        }
+        filter.action = requested;
+      }
+
+      if (req.query.search) {
+        const escaped = escapeRegex(String(req.query.search));
+        const re = { $regex: escaped, $options: 'i' };
+        filter.$and = [
+          {
+            $or: [
+              { actorEmail: re },
+              { action: re },
+              { targetType: re },
+            ],
+          },
+        ];
+      }
+
       const [data, totalCount] = await Promise.all([
         AuditLog.find(filter)
           .sort({ createdAt: -1 })

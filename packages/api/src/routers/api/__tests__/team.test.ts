@@ -619,4 +619,48 @@ Array [
       expect(res.body.totalCount).toBe(0);
     });
   });
+
+  describe('GET /team/audit-log — action + search', () => {
+    it('filters by exact action when whitelisted', async () => {
+      const { agent, team, user } = await getLoggedInAgent(server);
+      await AuditLog.create([
+        { teamId: team._id, actorId: user._id, actorEmail: 'a@x', action: 'role:created', targetType: 'role', targetId: 'r1', details: {} },
+        { teamId: team._id, actorId: user._id, actorEmail: 'a@x', action: 'role:deleted', targetType: 'role', targetId: 'r1', details: {} },
+      ]);
+      const res = await agent.get('/team/audit-log?action=role:created').expect(200);
+      expect(res.body.totalCount).toBe(1);
+    });
+
+    it('returns empty when action is not whitelisted (no bypass)', async () => {
+      const { agent, team, user } = await getLoggedInAgent(server);
+      await AuditLog.create({
+        teamId: team._id, actorId: user._id, actorEmail: 'a@x',
+        action: 'superadmin:granted', targetType: 'user', targetId: 'u1', details: {},
+      });
+      const res = await agent.get('/team/audit-log?action=superadmin:granted').expect(200);
+      expect(res.body.totalCount).toBe(0);
+    });
+
+    it('search matches across actorEmail, action, targetType', async () => {
+      const { agent, team, user } = await getLoggedInAgent(server);
+      await AuditLog.create([
+        { teamId: team._id, actorId: user._id, actorEmail: 'alice@example.com', action: 'role:created', targetType: 'role', targetId: 'r1', details: {} },
+        { teamId: team._id, actorId: user._id, actorEmail: 'bob@example.com', action: 'webhook:created', targetType: 'webhook', targetId: 'w1', details: {} },
+      ]);
+      const hitsRole = await agent.get('/team/audit-log?search=role').expect(200);
+      expect(hitsRole.body.totalCount).toBe(1);
+      const hitsAlice = await agent.get('/team/audit-log?search=alice').expect(200);
+      expect(hitsAlice.body.totalCount).toBe(1);
+    });
+
+    it('search + whitelist composition (search hit on excluded entry returns empty)', async () => {
+      const { agent, team, user } = await getLoggedInAgent(server);
+      await AuditLog.create([
+        { teamId: team._id, actorId: user._id, actorEmail: 'a@x', action: 'role:created', targetType: 'role', targetId: 'r1', details: {} },
+        { teamId: team._id, actorId: user._id, actorEmail: 'a@x', action: 'superadmin:granted', targetType: 'user', targetId: 'u1', details: {} },
+      ]);
+      const res = await agent.get('/team/audit-log?search=granted').expect(200);
+      expect(res.body.totalCount).toBe(0);
+    });
+  });
 });
