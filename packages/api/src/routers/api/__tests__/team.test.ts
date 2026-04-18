@@ -543,4 +543,80 @@ Array [
       expect(res.body.totalCount).toBe(1);
     });
   });
+
+  describe('GET /team/audit-log — filters', () => {
+    const seed = async (team: any, user: any) =>
+      AuditLog.create([
+        {
+          teamId: team._id,
+          actorId: user._id,
+          actorEmail: 'alice@example.com',
+          action: 'role:created',
+          targetType: 'role',
+          targetId: 'r1',
+          details: { name: 'admin' },
+          createdAt: new Date('2026-04-15T10:00:00Z'),
+        },
+        {
+          teamId: team._id,
+          actorId: user._id,
+          actorEmail: 'bob@example.com',
+          action: 'member:removed',
+          targetType: 'user',
+          targetId: 'u1',
+          details: {},
+          createdAt: new Date('2026-04-16T10:00:00Z'),
+        },
+        {
+          teamId: team._id,
+          actorId: user._id,
+          actorEmail: 'alice@example.com',
+          action: 'role:deleted',
+          targetType: 'role',
+          targetId: 'r2',
+          details: { name: 'viewer' },
+          createdAt: new Date('2026-04-17T10:00:00Z'),
+        },
+      ]);
+
+    it('filters by actorEmail (case-insensitive regex)', async () => {
+      const { agent, team, user } = await getLoggedInAgent(server);
+      await seed(team, user);
+      const res = await agent.get('/team/audit-log?actorEmail=ALICE').expect(200);
+      expect(res.body.totalCount).toBe(2);
+      expect(res.body.data.every((d: any) => d.actorEmail === 'alice@example.com')).toBe(true);
+    });
+
+    it('filters by targetType (exact)', async () => {
+      const { agent, team, user } = await getLoggedInAgent(server);
+      await seed(team, user);
+      const res = await agent.get('/team/audit-log?targetType=role').expect(200);
+      expect(res.body.totalCount).toBe(2);
+    });
+
+    it('filters by targetId (exact)', async () => {
+      const { agent, team, user } = await getLoggedInAgent(server);
+      await seed(team, user);
+      const res = await agent.get('/team/audit-log?targetId=r1').expect(200);
+      expect(res.body.totalCount).toBe(1);
+      expect(res.body.data[0].action).toBe('role:created');
+    });
+
+    it('filters by fromDate/toDate (inclusive)', async () => {
+      const { agent, team, user } = await getLoggedInAgent(server);
+      await seed(team, user);
+      const res = await agent
+        .get('/team/audit-log?fromDate=2026-04-16T00:00:00Z&toDate=2026-04-16T23:59:59Z')
+        .expect(200);
+      expect(res.body.totalCount).toBe(1);
+      expect(res.body.data[0].action).toBe('member:removed');
+    });
+
+    it('escapes regex special chars in actorEmail', async () => {
+      const { agent, team, user } = await getLoggedInAgent(server);
+      await seed(team, user);
+      const res = await agent.get('/team/audit-log?actorEmail=.*').expect(200);
+      expect(res.body.totalCount).toBe(0);
+    });
+  });
 });

@@ -68,6 +68,22 @@ function getNonNullUserWithTeam(req: express.Request) {
   return { teamId, userId, email, user };
 }
 
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const auditLogQuerySchema = z.object({
+  page: z.coerce.number().int().min(0).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  actorEmail: z.string().max(200).optional(),
+  action: z.string().max(100).optional(),
+  targetType: z.string().max(50).optional(),
+  targetId: z.string().max(100).optional(),
+  fromDate: z.string().datetime().optional(),
+  toDate: z.string().datetime().optional(),
+  search: z.string().max(200).optional(),
+});
+
 type TeamApiExpRes = express.Response<TeamApiResponse>;
 router.get('/', async (req, res: TeamApiExpRes, next) => {
   try {
@@ -1007,16 +1023,39 @@ router.patch(
 router.get(
   '/audit-log',
   requirePermission('roles:view'),
+  validateRequest({ query: auditLogQuerySchema }),
   async (req, res, next) => {
     try {
       const { teamId } = getNonNullUserWithTeam(req);
-      const page = parseInt(req.query.page as string) || 0;
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const page = req.query.page ? Number(req.query.page) : 0;
+      const limit = req.query.limit ? Number(req.query.limit) : 50;
 
       const filter: Record<string, any> = {
         teamId,
         action: { $regex: TEAM_SETTINGS_ACTION_REGEX },
       };
+
+      if (req.query.actorEmail) {
+        filter.actorEmail = {
+          $regex: escapeRegex(String(req.query.actorEmail)),
+          $options: 'i',
+        };
+      }
+      if (req.query.targetType) {
+        filter.targetType = String(req.query.targetType);
+      }
+      if (req.query.targetId) {
+        filter.targetId = String(req.query.targetId);
+      }
+      if (req.query.fromDate || req.query.toDate) {
+        filter.createdAt = {};
+        if (req.query.fromDate) {
+          filter.createdAt.$gte = new Date(String(req.query.fromDate));
+        }
+        if (req.query.toDate) {
+          filter.createdAt.$lte = new Date(String(req.query.toDate));
+        }
+      }
 
       const [data, totalCount] = await Promise.all([
         AuditLog.find(filter)
