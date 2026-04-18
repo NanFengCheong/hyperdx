@@ -1070,11 +1070,7 @@ router.get(
         const re = { $regex: escaped, $options: 'i' };
         filter.$and = [
           {
-            $or: [
-              { actorEmail: re },
-              { action: re },
-              { targetType: re },
-            ],
+            $or: [{ actorEmail: re }, { action: re }, { targetType: re }],
           },
         ];
       }
