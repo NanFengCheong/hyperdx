@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import { getLoggedInAgent, getServer } from '@/fixtures';
 import Alert, { AlertSource, AlertThresholdType } from '@/models/alert';
 import AuditLog from '@/models/auditLog';
+import { TEAM_SETTINGS_ACTION_REGEX } from '@/models/auditLogWhitelist';
 import TeamInvite from '@/models/teamInvite';
 import User from '@/models/user';
 
@@ -466,11 +467,6 @@ Array [
   });
 
   describe('TEAM_SETTINGS_ACTION_REGEX', () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const {
-      TEAM_SETTINGS_ACTION_REGEX,
-    } = require('@/models/auditLogWhitelist');
-
     it.each([
       'member:removed',
       'member:reactivated',
@@ -582,15 +578,21 @@ Array [
     it('filters by actorEmail (case-insensitive regex)', async () => {
       const { agent, team, user } = await getLoggedInAgent(server);
       await seed(team, user);
-      const res = await agent.get('/team/audit-log?actorEmail=ALICE').expect(200);
+      const res = await agent
+        .get('/team/audit-log?actorEmail=ALICE')
+        .expect(200);
       expect(res.body.totalCount).toBe(2);
-      expect(res.body.data.every((d: any) => d.actorEmail === 'alice@example.com')).toBe(true);
+      expect(
+        res.body.data.every((d: any) => d.actorEmail === 'alice@example.com'),
+      ).toBe(true);
     });
 
     it('filters by targetType (exact)', async () => {
       const { agent, team, user } = await getLoggedInAgent(server);
       await seed(team, user);
-      const res = await agent.get('/team/audit-log?targetType=role').expect(200);
+      const res = await agent
+        .get('/team/audit-log?targetType=role')
+        .expect(200);
       expect(res.body.totalCount).toBe(2);
     });
 
@@ -606,7 +608,9 @@ Array [
       const { agent, team, user } = await getLoggedInAgent(server);
       await seed(team, user);
       const res = await agent
-        .get('/team/audit-log?fromDate=2026-04-16T00:00:00Z&toDate=2026-04-16T23:59:59Z')
+        .get(
+          '/team/audit-log?fromDate=2026-04-16T00:00:00Z&toDate=2026-04-16T23:59:59Z',
+        )
         .expect(200);
       expect(res.body.totalCount).toBe(1);
       expect(res.body.data[0].action).toBe('member:removed');
@@ -624,40 +628,101 @@ Array [
     it('filters by exact action when whitelisted', async () => {
       const { agent, team, user } = await getLoggedInAgent(server);
       await AuditLog.create([
-        { teamId: team._id, actorId: user._id, actorEmail: 'a@x', action: 'role:created', targetType: 'role', targetId: 'r1', details: {} },
-        { teamId: team._id, actorId: user._id, actorEmail: 'a@x', action: 'role:deleted', targetType: 'role', targetId: 'r1', details: {} },
+        {
+          teamId: team._id,
+          actorId: user._id,
+          actorEmail: 'a@x',
+          action: 'role:created',
+          targetType: 'role',
+          targetId: 'r1',
+          details: {},
+        },
+        {
+          teamId: team._id,
+          actorId: user._id,
+          actorEmail: 'a@x',
+          action: 'role:deleted',
+          targetType: 'role',
+          targetId: 'r1',
+          details: {},
+        },
       ]);
-      const res = await agent.get('/team/audit-log?action=role:created').expect(200);
+      const res = await agent
+        .get('/team/audit-log?action=role:created')
+        .expect(200);
       expect(res.body.totalCount).toBe(1);
     });
 
     it('returns empty when action is not whitelisted (no bypass)', async () => {
       const { agent, team, user } = await getLoggedInAgent(server);
       await AuditLog.create({
-        teamId: team._id, actorId: user._id, actorEmail: 'a@x',
-        action: 'superadmin:granted', targetType: 'user', targetId: 'u1', details: {},
+        teamId: team._id,
+        actorId: user._id,
+        actorEmail: 'a@x',
+        action: 'superadmin:granted',
+        targetType: 'user',
+        targetId: 'u1',
+        details: {},
       });
-      const res = await agent.get('/team/audit-log?action=superadmin:granted').expect(200);
+      const res = await agent
+        .get('/team/audit-log?action=superadmin:granted')
+        .expect(200);
       expect(res.body.totalCount).toBe(0);
     });
 
     it('search matches across actorEmail, action, targetType', async () => {
       const { agent, team, user } = await getLoggedInAgent(server);
       await AuditLog.create([
-        { teamId: team._id, actorId: user._id, actorEmail: 'alice@example.com', action: 'role:created', targetType: 'role', targetId: 'r1', details: {} },
-        { teamId: team._id, actorId: user._id, actorEmail: 'bob@example.com', action: 'webhook:created', targetType: 'webhook', targetId: 'w1', details: {} },
+        {
+          teamId: team._id,
+          actorId: user._id,
+          actorEmail: 'alice@example.com',
+          action: 'role:created',
+          targetType: 'role',
+          targetId: 'r1',
+          details: {},
+        },
+        {
+          teamId: team._id,
+          actorId: user._id,
+          actorEmail: 'bob@example.com',
+          action: 'webhook:created',
+          targetType: 'webhook',
+          targetId: 'w1',
+          details: {},
+        },
       ]);
-      const hitsRole = await agent.get('/team/audit-log?search=role').expect(200);
+      const hitsRole = await agent
+        .get('/team/audit-log?search=role')
+        .expect(200);
       expect(hitsRole.body.totalCount).toBe(1);
-      const hitsAlice = await agent.get('/team/audit-log?search=alice').expect(200);
+      const hitsAlice = await agent
+        .get('/team/audit-log?search=alice')
+        .expect(200);
       expect(hitsAlice.body.totalCount).toBe(1);
     });
 
     it('search + whitelist composition (search hit on excluded entry returns empty)', async () => {
       const { agent, team, user } = await getLoggedInAgent(server);
       await AuditLog.create([
-        { teamId: team._id, actorId: user._id, actorEmail: 'a@x', action: 'role:created', targetType: 'role', targetId: 'r1', details: {} },
-        { teamId: team._id, actorId: user._id, actorEmail: 'a@x', action: 'superadmin:granted', targetType: 'user', targetId: 'u1', details: {} },
+        {
+          teamId: team._id,
+          actorId: user._id,
+          actorEmail: 'a@x',
+          action: 'role:created',
+          targetType: 'role',
+          targetId: 'r1',
+          details: {},
+        },
+        {
+          teamId: team._id,
+          actorId: user._id,
+          actorEmail: 'a@x',
+          action: 'superadmin:granted',
+          targetType: 'user',
+          targetId: 'u1',
+          details: {},
+        },
       ]);
       const res = await agent.get('/team/audit-log?search=granted').expect(200);
       expect(res.body.totalCount).toBe(0);
@@ -668,10 +733,42 @@ Array [
     it('returns only whitelisted distinct actions for the team', async () => {
       const { agent, team, user } = await getLoggedInAgent(server);
       await AuditLog.create([
-        { teamId: team._id, actorId: user._id, actorEmail: 'a@x', action: 'role:created', targetType: 'role', targetId: 'r1', details: {} },
-        { teamId: team._id, actorId: user._id, actorEmail: 'a@x', action: 'role:created', targetType: 'role', targetId: 'r2', details: {} },
-        { teamId: team._id, actorId: user._id, actorEmail: 'a@x', action: 'member:removed', targetType: 'user', targetId: 'u1', details: {} },
-        { teamId: team._id, actorId: user._id, actorEmail: 'a@x', action: 'superadmin:granted', targetType: 'user', targetId: 'u2', details: {} },
+        {
+          teamId: team._id,
+          actorId: user._id,
+          actorEmail: 'a@x',
+          action: 'role:created',
+          targetType: 'role',
+          targetId: 'r1',
+          details: {},
+        },
+        {
+          teamId: team._id,
+          actorId: user._id,
+          actorEmail: 'a@x',
+          action: 'role:created',
+          targetType: 'role',
+          targetId: 'r2',
+          details: {},
+        },
+        {
+          teamId: team._id,
+          actorId: user._id,
+          actorEmail: 'a@x',
+          action: 'member:removed',
+          targetType: 'user',
+          targetId: 'u1',
+          details: {},
+        },
+        {
+          teamId: team._id,
+          actorId: user._id,
+          actorEmail: 'a@x',
+          action: 'superadmin:granted',
+          targetType: 'user',
+          targetId: 'u2',
+          details: {},
+        },
       ]);
       const res = await agent.get('/team/audit-log/actions').expect(200);
       expect(res.body.data.sort()).toEqual(['member:removed', 'role:created']);
