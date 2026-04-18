@@ -39,7 +39,10 @@ import {
 } from '@/controllers/user';
 import { requirePermission } from '@/middleware/auth';
 import AuditLog from '@/models/auditLog';
-import { TEAM_SETTINGS_ACTION_REGEX } from '@/models/auditLogWhitelist';
+import {
+  TEAM_SETTINGS_ACTION_REGEX,
+  TEAM_SETTINGS_TARGET_TYPES,
+} from '@/models/auditLogWhitelist';
 import Group from '@/models/group';
 import NotificationLog from '@/models/notificationLog';
 import Role from '@/models/role';
@@ -77,7 +80,7 @@ const auditLogQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
   actorEmail: z.string().max(200).optional(),
   action: z.string().max(100).optional(),
-  targetType: z.string().max(50).optional(),
+  targetType: z.enum(TEAM_SETTINGS_TARGET_TYPES).optional(),
   targetId: z.string().max(100).optional(),
   fromDate: z.string().datetime().optional(),
   toDate: z.string().datetime().optional(),
