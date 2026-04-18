@@ -464,4 +464,42 @@ Array [
       expect(found).toBeDefined();
     });
   });
+
+  describe('TEAM_SETTINGS_ACTION_REGEX', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const {
+      TEAM_SETTINGS_ACTION_REGEX,
+    } = require('@/models/auditLogWhitelist');
+
+    it.each([
+      'member:removed',
+      'member:reactivated',
+      'role:created',
+      'role:updated',
+      'role:deleted',
+      'permission:overrides-updated',
+      'group:created',
+      'webhook:created',
+      'apikey:rotated',
+      'connection:updated',
+      'source:deleted',
+      'policy:updated',
+      'integration:connected',
+      'telegram:linked',
+    ])('accepts team-settings action "%s"', action => {
+      expect(TEAM_SETTINGS_ACTION_REGEX.test(action)).toBe(true);
+    });
+
+    it.each([
+      'superadmin:granted',
+      'superadmin:revoked',
+      'notification_log.retention_updated',
+      'data_retention.purged',
+      'clickhouse_retention.updated',
+      '',
+      'unknown:action',
+    ])('rejects non-team-settings action "%s"', action => {
+      expect(TEAM_SETTINGS_ACTION_REGEX.test(action)).toBe(false);
+    });
+  });
 });
