@@ -92,10 +92,10 @@ if (!RUN_SCHEDULED_TASKS_EXTERNALLY) {
       timeZone: 'UTC',
     });
   } else if (argv.taskName === TaskName.CLICKHOUSE_RETENTION) {
-    // ClickHouse retention: daily at 3:30 AM MYT (19:30 UTC)
-    logger.info('ClickHouse retention cron: daily at 3:30 AM MYT (19:30 UTC)');
+    // ClickHouse retention: every hour
+    logger.info('ClickHouse retention cron: every hour');
     CronJob.from({
-      cronTime: '30 19 * * *', // 19:30 UTC = 3:30 AM MYT
+      cronTime: '0 0 * * * *',
       waitForCompletion: true,
       onTick: async () => instrumentedMain(argv),
       errorHandler: async err => {

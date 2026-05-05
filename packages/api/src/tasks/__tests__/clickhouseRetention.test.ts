@@ -48,12 +48,12 @@ describe('ClickhouseRetentionTask', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it('should not drop partitions when under limit', async () => {
+  it('should not drop partitions when under 80 percent threshold', async () => {
     mockPlatformSettingFindOne.mockResolvedValue({
       value: { maxDiskGB: 100, enabled: true },
     } as any);
 
-    // 50GB total - under 100GB limit
+    // 50GB total - under 80GB threshold for a 100GB disk
     mockFetch.mockResolvedValueOnce(
       makeSystemPartsResponse([{ total: String(50 * 1024 * 1024 * 1024) }]),
     );
@@ -73,14 +73,14 @@ describe('ClickhouseRetentionTask', () => {
     );
   });
 
-  it('should drop oldest partitions when over limit (dry run)', async () => {
+  it('should drop oldest partitions when over 80 percent threshold (dry run)', async () => {
     mockPlatformSettingFindOne.mockResolvedValue({
       value: { maxDiskGB: 10, enabled: true },
     } as any);
 
     const GB = 1024 * 1024 * 1024;
 
-    // 15GB total - over 10GB limit
+    // 15GB total - over 8GB threshold for a 10GB disk
     mockFetch.mockResolvedValueOnce(
       makeSystemPartsResponse([{ total: String(15 * GB) }]),
     );
@@ -91,26 +91,31 @@ describe('ClickhouseRetentionTask', () => {
         {
           table: 'otel_logs',
           partition: '2026-04-01',
+          partitionId: '20260401',
           sizeBytes: String(5 * GB),
         },
         {
           table: 'otel_traces',
           partition: '2026-04-01',
+          partitionId: '20260401',
           sizeBytes: String(0.5 * GB),
         },
         {
           table: 'otel_logs',
           partition: '2026-04-02',
+          partitionId: '20260402',
           sizeBytes: String(5 * GB),
         },
         {
           table: 'otel_traces',
           partition: '2026-04-02',
+          partitionId: '20260402',
           sizeBytes: String(0.5 * GB),
         },
         {
           table: 'otel_logs',
           partition: '2026-04-03',
+          partitionId: '20260403',
           sizeBytes: String(4 * GB),
         },
       ]),
@@ -128,6 +133,85 @@ describe('ClickhouseRetentionTask', () => {
     expect(mockAuditLogCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'clickhouse_retention.cleanup_dry_run',
+        details: expect.objectContaining({
+          targetUsagePercent: 80,
+        }),
+      }),
+    );
+  });
+
+  it('should drop partition IDs oldest first until usage is below 80 percent', async () => {
+    mockPlatformSettingFindOne.mockResolvedValue({
+      value: { maxDiskGB: 10, enabled: true },
+    } as any);
+
+    const GB = 1024 * 1024 * 1024;
+
+    mockFetch
+      .mockResolvedValueOnce(
+        makeSystemPartsResponse([{ total: String(15 * GB) }]),
+      )
+      .mockResolvedValueOnce(
+        makeSystemPartsResponse([
+          {
+            table: 'otel_logs',
+            partition: '2026-04-01',
+            partitionId: '20260401',
+            sizeBytes: String(5 * GB),
+          },
+          {
+            table: 'otel_traces',
+            partition: '2026-04-01',
+            partitionId: '20260401',
+            sizeBytes: String(0.5 * GB),
+          },
+          {
+            table: 'otel_logs',
+            partition: '2026-04-02',
+            partitionId: '20260402',
+            sizeBytes: String(5 * GB),
+          },
+          {
+            table: 'otel_logs',
+            partition: '2026-04-03',
+            partitionId: '20260403',
+            sizeBytes: String(4.5 * GB),
+          },
+        ]),
+      )
+      .mockImplementation(() => Promise.resolve(makeSystemPartsResponse([])));
+
+    const task = new ClickhouseRetentionTask({
+      taskName: TaskName.CLICKHOUSE_RETENTION,
+      dryRun: false,
+    });
+    await task.execute();
+
+    const queries = mockFetch.mock.calls.map(call =>
+      new URL(call[0] as string).searchParams.get('query'),
+    );
+
+    expect(queries).toContain(
+      "ALTER TABLE otel_logs DROP PARTITION ID '20260401'",
+    );
+    expect(queries).toContain(
+      "ALTER TABLE otel_traces DROP PARTITION ID '20260401'",
+    );
+    expect(queries).toContain(
+      "ALTER TABLE otel_logs DROP PARTITION ID '20260402'",
+    );
+    expect(queries).not.toContain(
+      "ALTER TABLE otel_logs DROP PARTITION ID '20260403'",
+    );
+    expect(mockAuditLogCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'clickhouse_retention.cleanup',
+        details: expect.objectContaining({
+          diskUsageAfterGB: '4.50',
+          freeDiskAfterGB: '5.50',
+          partitionsDropped: 3,
+          targetUsagePercent: 80,
+        }),
       }),
     );
   });

@@ -1051,6 +1051,70 @@ export const useUpdateDataRetentionSettings = () =>
       }).json(),
   });
 
+export type ClickhouseRetentionSettings = {
+  maxDiskGB: number;
+  enabled: boolean;
+  targetUsagePercent: number;
+};
+
+export type ClickhouseRetentionStatus = {
+  diskSizeGB: string;
+  totalSizeGB: string;
+  freeDiskGB: string;
+  maxDiskGB: number;
+  enabled: boolean;
+  usagePercent: string;
+  targetUsagePercent: number;
+  thresholdGB: string;
+  isOverThreshold: boolean;
+  tables: Array<{
+    table: string;
+    sizeGB: string;
+    oldestPartition: string | null;
+    newestPartition: string | null;
+    partitionCount: number;
+  }>;
+};
+
+export const useClickhouseRetentionSettings = () =>
+  useQuery<{ data: ClickhouseRetentionSettings }>({
+    queryKey: ['admin', 'clickhouse-retention-settings'],
+    queryFn: () => hdxServer('admin/clickhouse-retention/settings').json(),
+  });
+
+export const useUpdateClickhouseRetentionSettings = () =>
+  useMutation<
+    { data: { ok: boolean } },
+    Error,
+    { maxDiskGB: number; enabled: boolean }
+  >({
+    mutationFn: settings =>
+      hdxServer('admin/clickhouse-retention/settings', {
+        method: 'PUT',
+        json: settings,
+      }).json(),
+  });
+
+export const useClickhouseRetentionStatus = () =>
+  useQuery<{ data: ClickhouseRetentionStatus }>({
+    queryKey: ['admin', 'clickhouse-retention-status'],
+    queryFn: () => hdxServer('admin/clickhouse-retention/status').json(),
+    refetchInterval: 60_000,
+  });
+
+export const useRunClickhouseRetention = () =>
+  useMutation<
+    { data: { ok: boolean; dryRun: boolean } },
+    Error,
+    { dryRun: boolean }
+  >({
+    mutationFn: ({ dryRun }) =>
+      hdxServer('admin/clickhouse-retention/run', {
+        method: 'POST',
+        json: { dryRun },
+      }).json(),
+  });
+
 export const useProactiveInvestigationSettings = () =>
   useQuery<{ data: any }>({
     queryKey: ['admin', 'proactive-investigation-settings'],

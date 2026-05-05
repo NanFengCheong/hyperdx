@@ -6,10 +6,12 @@ import PlatformSetting from '@/models/platformSetting';
 import { ClickhouseRetentionTaskArgs, HdxTask } from '@/tasks/types';
 import logger from '@/utils/logger';
 
-const DEFAULT_MAX_DISK_GB = 100;
+export const DEFAULT_MAX_DISK_GB = 100;
+export const TARGET_USAGE_PERCENT = 80;
+export const TARGET_USAGE_RATIO = TARGET_USAGE_PERCENT / 100;
 
 /** All telemetry tables that use daily partitions (toDate) */
-const TELEMETRY_TABLES = [
+export const TELEMETRY_TABLES = [
   'otel_logs',
   'otel_traces',
   'otel_metrics_gauge',
@@ -22,7 +24,8 @@ const TELEMETRY_TABLES = [
 
 interface PartitionInfo {
   table: string;
-  partition: string; // e.g. '2026-04-01'
+  partition: string;
+  partitionId: string;
   sizeBytes: number;
 }
 
@@ -102,10 +105,10 @@ async function getTotalDiskUsage(): Promise<number> {
 async function getPartitionsByAge(): Promise<PartitionInfo[]> {
   const tableList = TELEMETRY_TABLES.map(t => `'${t}'`).join(',');
   const result = await queryClickhouse(
-    `SELECT table, partition, sum(bytes_on_disk) as sizeBytes
+    `SELECT table, partition, partition_id as partitionId, sum(bytes_on_disk) as sizeBytes
      FROM system.parts
      WHERE active = 1 AND table IN (${tableList})
-     GROUP BY table, partition
+     GROUP BY table, partition, partition_id
      ORDER BY partition ASC, table ASC
      FORMAT JSON`,
   );
@@ -113,13 +116,20 @@ async function getPartitionsByAge(): Promise<PartitionInfo[]> {
   return (parsed.data ?? []).map((row: any) => ({
     table: row.table,
     partition: row.partition,
+    partitionId: row.partitionId,
     sizeBytes: Number(row.sizeBytes),
   }));
 }
 
 /** Drop a specific partition from a table */
-async function dropPartition(table: string, partition: string): Promise<void> {
-  await queryClickhouse(`ALTER TABLE ${table} DROP PARTITION '${partition}'`);
+async function dropPartition(
+  table: string,
+  partitionId: string,
+): Promise<void> {
+  const escapedPartitionId = partitionId.replaceAll("'", "\\'");
+  await queryClickhouse(
+    `ALTER TABLE ${table} DROP PARTITION ID '${escapedPartitionId}'`,
+  );
 }
 
 export default class ClickhouseRetentionTask
@@ -136,19 +146,28 @@ export default class ClickhouseRetentionTask
       return;
     }
 
-    const maxBytes = settings.maxDiskGB * 1024 * 1024 * 1024;
+    const diskSizeBytes = settings.maxDiskGB * 1024 * 1024 * 1024;
+    const maxBytes = diskSizeBytes * TARGET_USAGE_RATIO;
     const totalBefore = await getTotalDiskUsage();
     const totalBeforeGB = (totalBefore / (1024 * 1024 * 1024)).toFixed(2);
+    const freeBeforeGB = (
+      Math.max(0, diskSizeBytes - totalBefore) /
+      (1024 * 1024 * 1024)
+    ).toFixed(2);
 
     logger.info(
-      `clickhouseRetention: Current disk usage ${totalBeforeGB} GB, limit ${settings.maxDiskGB} GB${dryRun ? ' [DRY RUN]' : ''}`,
+      `clickhouseRetention: Current disk usage ${totalBeforeGB} GB, free ${freeBeforeGB} GB, cleanup threshold ${TARGET_USAGE_PERCENT}% of ${settings.maxDiskGB} GB${dryRun ? ' [DRY RUN]' : ''}`,
     );
 
     if (totalBefore <= maxBytes) {
-      logger.info('clickhouseRetention: Under limit, no cleanup needed');
+      logger.info(
+        'clickhouseRetention: Under 80% threshold, no cleanup needed',
+      );
       await writeAuditLog('clickhouse_retention.check', {
         diskUsageGB: totalBeforeGB,
+        freeDiskGB: freeBeforeGB,
         maxDiskGB: settings.maxDiskGB,
+        targetUsagePercent: TARGET_USAGE_PERCENT,
         action: 'no_cleanup_needed',
         dryRun,
       });
@@ -157,8 +176,12 @@ export default class ClickhouseRetentionTask
 
     // Get all partitions ordered oldest first
     const partitions = await getPartitionsByAge();
-    const dropped: { table: string; partition: string; sizeBytes: number }[] =
-      [];
+    const dropped: {
+      table: string;
+      partition: string;
+      partitionId: string;
+      sizeBytes: number;
+    }[] = [];
     let currentUsage = totalBefore;
 
     // Group partitions by date so we drop all tables for same date together
@@ -180,13 +203,14 @@ export default class ClickhouseRetentionTask
           );
         } else {
           logger.info(
-            `clickhouseRetention: Dropping partition ${p.partition} from ${p.table} (${(p.sizeBytes / (1024 * 1024)).toFixed(1)} MB)`,
+            `clickhouseRetention: Dropping partition ${p.partition} (${p.partitionId}) from ${p.table} (${(p.sizeBytes / (1024 * 1024)).toFixed(1)} MB)`,
           );
-          await dropPartition(p.table, p.partition);
+          await dropPartition(p.table, p.partitionId);
         }
         dropped.push({
           table: p.table,
           partition: p.partition,
+          partitionId: p.partitionId,
           sizeBytes: p.sizeBytes,
         });
         currentUsage -= p.sizeBytes;
@@ -194,6 +218,10 @@ export default class ClickhouseRetentionTask
     }
 
     const totalAfterGB = (currentUsage / (1024 * 1024 * 1024)).toFixed(2);
+    const freeAfterGB = (
+      Math.max(0, diskSizeBytes - currentUsage) /
+      (1024 * 1024 * 1024)
+    ).toFixed(2);
     const freedGB = (
       (totalBefore - currentUsage) /
       (1024 * 1024 * 1024)
@@ -210,12 +238,16 @@ export default class ClickhouseRetentionTask
       {
         diskUsageBeforeGB: totalBeforeGB,
         diskUsageAfterGB: totalAfterGB,
+        freeDiskBeforeGB: freeBeforeGB,
+        freeDiskAfterGB: freeAfterGB,
         freedGB,
         maxDiskGB: settings.maxDiskGB,
+        targetUsagePercent: TARGET_USAGE_PERCENT,
         partitionsDropped: dropped.length,
         dropped: dropped.map(d => ({
           table: d.table,
           partition: d.partition,
+          partitionId: d.partitionId,
           sizeMB: (d.sizeBytes / (1024 * 1024)).toFixed(1),
         })),
         dryRun,

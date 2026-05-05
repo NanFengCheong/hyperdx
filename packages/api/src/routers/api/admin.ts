@@ -14,7 +14,12 @@ import NotificationLog from '../../models/notificationLog';
 import PlatformSetting from '../../models/platformSetting';
 import Team from '../../models/team';
 import User from '../../models/user';
-import ClickhouseRetentionTask from '../../tasks/clickhouseRetention';
+import ClickhouseRetentionTask, {
+  DEFAULT_MAX_DISK_GB,
+  TARGET_USAGE_PERCENT,
+  TARGET_USAGE_RATIO,
+  TELEMETRY_TABLES,
+} from '../../tasks/clickhouseRetention';
 import DataRetentionTask from '../../tasks/dataRetention';
 import { getTransporter } from '../../utils/emailService';
 import {
@@ -460,8 +465,9 @@ router.get('/clickhouse-retention/settings', async (req, res, next) => {
       | undefined;
     res.json({
       data: {
-        maxDiskGB: value?.maxDiskGB ?? 100,
+        maxDiskGB: value?.maxDiskGB ?? DEFAULT_MAX_DISK_GB,
         enabled: value?.enabled ?? true,
+        targetUsagePercent: TARGET_USAGE_PERCENT,
       },
     });
   } catch (e) {
@@ -521,17 +527,7 @@ router.get('/clickhouse-retention/status', async (req, res, next) => {
     const { CLICKHOUSE_HOST } = await import('../../config.js');
     const url = new URL(CLICKHOUSE_HOST);
 
-    const tables = [
-      'otel_logs',
-      'otel_traces',
-      'otel_metrics_gauge',
-      'otel_metrics_sum',
-      'otel_metrics_histogram',
-      'otel_metrics_exponential_histogram',
-      'otel_metrics_summary',
-      'hyperdx_sessions',
-    ];
-    const tableList = tables.map(t => `'${t}'`).join(',');
+    const tableList = TELEMETRY_TABLES.map(t => `'${t}'`).join(',');
 
     url.searchParams.set(
       'query',
@@ -562,17 +558,22 @@ router.get('/clickhouse-retention/status', async (req, res, next) => {
     const value = setting?.value as
       | { maxDiskGB?: number; enabled?: boolean }
       | undefined;
-    const maxDiskGB = value?.maxDiskGB ?? 100;
+    const maxDiskGB = value?.maxDiskGB ?? DEFAULT_MAX_DISK_GB;
+    const diskSizeBytes = maxDiskGB * 1024 * 1024 * 1024;
+    const freeBytes = Math.max(0, diskSizeBytes - totalBytes);
+    const thresholdBytes = diskSizeBytes * TARGET_USAGE_RATIO;
 
     res.json({
       data: {
+        diskSizeGB: maxDiskGB.toFixed(2),
         totalSizeGB: (totalBytes / (1024 * 1024 * 1024)).toFixed(2),
+        freeDiskGB: (freeBytes / (1024 * 1024 * 1024)).toFixed(2),
         maxDiskGB,
         enabled: value?.enabled ?? true,
-        usagePercent: (
-          (totalBytes / (maxDiskGB * 1024 * 1024 * 1024)) *
-          100
-        ).toFixed(1),
+        usagePercent: ((totalBytes / diskSizeBytes) * 100).toFixed(1),
+        targetUsagePercent: TARGET_USAGE_PERCENT,
+        thresholdGB: (thresholdBytes / (1024 * 1024 * 1024)).toFixed(2),
+        isOverThreshold: totalBytes > thresholdBytes,
         tables: tableStats,
       },
     });

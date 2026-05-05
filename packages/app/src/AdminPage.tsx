@@ -14,6 +14,7 @@ import {
   Modal,
   NumberInput,
   Pagination,
+  Progress,
   Select,
   Stack,
   Switch,
@@ -48,11 +49,15 @@ import {
   useAdminRetryNotification,
   useAdminTeamMembers,
   useAdminTeams,
+  useClickhouseRetentionSettings,
+  useClickhouseRetentionStatus,
   useDataRetentionSettings,
   useProactiveInvestigationSettings,
+  useRunClickhouseRetention,
   useRunDataRetention,
   useToggleSuperAdmin,
   useUpdateAdminNotificationLogRetention,
+  useUpdateClickhouseRetentionSettings,
   useUpdateDataRetentionSettings,
   useUpdateProactiveInvestigationSettings,
 } from './api';
@@ -799,16 +804,28 @@ function NotificationLogPanel() {
 function DataRetentionPanel() {
   const [modalOpen, setModalOpen] = useState(false);
   const [dryRun, setDryRun] = useState(false);
+  const [clickhouseModalOpen, setClickhouseModalOpen] = useState(false);
+  const [clickhouseDryRun, setClickhouseDryRun] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: settingsData, isLoading: settingsLoading } =
     useDataRetentionSettings();
+  const { data: clickhouseSettingsData, isLoading: clickhouseSettingsLoading } =
+    useClickhouseRetentionSettings();
+  const { data: clickhouseStatusData, isLoading: clickhouseStatusLoading } =
+    useClickhouseRetentionStatus();
   const updateSettings = useUpdateDataRetentionSettings();
+  const updateClickhouseSettings = useUpdateClickhouseRetentionSettings();
   const runRetention = useRunDataRetention();
+  const runClickhouseRetention = useRunClickhouseRetention();
 
   const [auditLog, setAuditLog] = useState<number | string>(90);
   const [alertHistory, setAlertHistory] = useState<number | string>(30);
+  const [diskSizeGB, setDiskSizeGB] = useState<number | string>(100);
+  const [clickhouseEnabled, setClickhouseEnabled] = useState(true);
   const [settingsInitialized, setSettingsInitialized] = useState(false);
+  const [clickhouseSettingsInitialized, setClickhouseSettingsInitialized] =
+    useState(false);
 
   // Sync form state when settings load
   if (settingsData?.data && !settingsInitialized) {
@@ -816,6 +833,19 @@ function DataRetentionPanel() {
     setAlertHistory(settingsData.data.alertHistory);
     setSettingsInitialized(true);
   }
+
+  if (clickhouseSettingsData?.data && !clickhouseSettingsInitialized) {
+    setDiskSizeGB(clickhouseSettingsData.data.maxDiskGB);
+    setClickhouseEnabled(clickhouseSettingsData.data.enabled);
+    setClickhouseSettingsInitialized(true);
+  }
+
+  const clickhouseStatus = clickhouseStatusData?.data;
+  const clickhouseUsagePercent = Number(clickhouseStatus?.usagePercent ?? 0);
+  const clickhouseTargetUsagePercent =
+    clickhouseStatus?.targetUsagePercent ??
+    clickhouseSettingsData?.data?.targetUsagePercent ??
+    80;
 
   const handleSaveSettings = useCallback(() => {
     const auditLogNum = Number(auditLog);
@@ -857,8 +887,51 @@ function DataRetentionPanel() {
     );
   }, [auditLog, alertHistory, updateSettings, queryClient]);
 
+  const handleSaveClickhouseSettings = useCallback(() => {
+    const diskSizeNum = Number(diskSizeGB);
+    if (!diskSizeNum || diskSizeNum < 1) {
+      notifications.show({
+        color: 'red',
+        title: 'Invalid Settings',
+        message: 'Disk space size must be at least 1 GB.',
+      });
+      return;
+    }
+
+    updateClickhouseSettings.mutate(
+      { maxDiskGB: diskSizeNum, enabled: clickhouseEnabled },
+      {
+        onSuccess: () => {
+          notifications.show({
+            color: 'green',
+            title: 'Settings Saved',
+            message: 'ClickHouse retention settings updated successfully.',
+          });
+          queryClient.invalidateQueries({
+            queryKey: ['admin', 'clickhouse-retention-settings'],
+          });
+          queryClient.invalidateQueries({
+            queryKey: ['admin', 'clickhouse-retention-status'],
+          });
+        },
+        onError: e => {
+          notifications.show({
+            color: 'red',
+            title: 'Save Failed',
+            message:
+              e.message ?? 'Failed to update ClickHouse retention settings.',
+          });
+        },
+      },
+    );
+  }, [diskSizeGB, clickhouseEnabled, updateClickhouseSettings, queryClient]);
+
   const handleRun = useCallback(() => {
     setModalOpen(true);
+  }, []);
+
+  const handleRunClickhouse = useCallback(() => {
+    setClickhouseModalOpen(true);
   }, []);
 
   const handleConfirm = useCallback(() => {
@@ -886,6 +959,35 @@ function DataRetentionPanel() {
       },
     );
   }, [dryRun, runRetention, queryClient]);
+
+  const handleConfirmClickhouse = useCallback(() => {
+    setClickhouseModalOpen(false);
+    runClickhouseRetention.mutate(
+      { dryRun: clickhouseDryRun },
+      {
+        onSuccess: () => {
+          notifications.show({
+            color: 'green',
+            title: clickhouseDryRun ? 'Dry Run Complete' : 'Cleanup Complete',
+            message: clickhouseDryRun
+              ? 'ClickHouse retention dry run finished. No data was deleted.'
+              : 'ClickHouse retention cleanup completed successfully.',
+          });
+          queryClient.invalidateQueries({
+            queryKey: ['admin', 'clickhouse-retention-status'],
+          });
+        },
+        onError: e => {
+          notifications.show({
+            color: 'red',
+            title: 'Cleanup Failed',
+            message:
+              e.message ?? 'An error occurred during ClickHouse retention.',
+          });
+        },
+      },
+    );
+  }, [clickhouseDryRun, runClickhouseRetention, queryClient]);
 
   return (
     <Stack gap="lg">
@@ -934,13 +1036,127 @@ function DataRetentionPanel() {
         )}
       </Stack>
 
+      <Stack gap="sm">
+        <Title order={4}>ClickHouse Disk Retention</Title>
+        <Text size="sm" c="dimmed">
+          Old telemetry partitions are cleaned hourly when usage exceeds{' '}
+          {clickhouseTargetUsagePercent}% of the configured disk size.
+        </Text>
+
+        {clickhouseSettingsLoading ? (
+          <Center py="md">
+            <Loader size="sm" />
+          </Center>
+        ) : (
+          <>
+            <Group grow align="flex-end">
+              <NumberInput
+                label="Disk Space Size (GB)"
+                value={diskSizeGB}
+                onChange={setDiskSizeGB}
+                min={1}
+                max={100000}
+                size="sm"
+              />
+              <Switch
+                label="Hourly cleanup enabled"
+                checked={clickhouseEnabled}
+                onChange={event =>
+                  setClickhouseEnabled(event.currentTarget.checked)
+                }
+              />
+            </Group>
+
+            {clickhouseStatusLoading ? (
+              <Center py="md">
+                <Loader size="sm" />
+              </Center>
+            ) : clickhouseStatus ? (
+              <Stack gap="xs">
+                <Group grow>
+                  <Box>
+                    <Text size="xs" c="dimmed">
+                      Disk Space Size
+                    </Text>
+                    <Text fw={600}>{clickhouseStatus.diskSizeGB} GB</Text>
+                  </Box>
+                  <Box>
+                    <Text size="xs" c="dimmed">
+                      Used Disk Space
+                    </Text>
+                    <Text fw={600}>{clickhouseStatus.totalSizeGB} GB</Text>
+                  </Box>
+                  <Box>
+                    <Text size="xs" c="dimmed">
+                      Free Disk Space
+                    </Text>
+                    <Text fw={600}>{clickhouseStatus.freeDiskGB} GB</Text>
+                  </Box>
+                </Group>
+
+                <Stack gap={4}>
+                  <Group justify="space-between">
+                    <Text size="sm">
+                      Usage {clickhouseStatus.usagePercent}% /{' '}
+                      {clickhouseTargetUsagePercent}%
+                    </Text>
+                    <Badge
+                      color={clickhouseStatus.isOverThreshold ? 'red' : 'green'}
+                      variant="light"
+                    >
+                      {clickhouseStatus.isOverThreshold
+                        ? 'Cleanup Needed'
+                        : 'Below Threshold'}
+                    </Badge>
+                  </Group>
+                  <Progress
+                    value={Math.min(clickhouseUsagePercent, 100)}
+                    color={
+                      clickhouseUsagePercent >= clickhouseTargetUsagePercent
+                        ? 'red'
+                        : 'green'
+                    }
+                  />
+                </Stack>
+              </Stack>
+            ) : (
+              <Text size="sm" c="dimmed">
+                Disk usage unavailable.
+              </Text>
+            )}
+
+            <Group>
+              <Button
+                onClick={handleSaveClickhouseSettings}
+                loading={updateClickhouseSettings.isPending}
+                size="sm"
+              >
+                Save Disk Settings
+              </Button>
+              <Button
+                leftSection={<IconRefresh size={16} />}
+                variant="secondary"
+                onClick={() => {
+                  queryClient.invalidateQueries({
+                    queryKey: ['admin', 'clickhouse-retention-status'],
+                  });
+                }}
+                size="sm"
+              >
+                Refresh
+              </Button>
+            </Group>
+          </>
+        )}
+      </Stack>
+
       {/* Manual Cleanup */}
       <Stack gap="sm">
         <Title order={4}>Manual Cleanup</Title>
         <Text size="sm" c="dimmed">
-          Manually trigger the data retention job. This will clean up expired
-          data from MongoDB collections based on the configured retention
-          settings above.
+          Manually trigger retention jobs. MongoDB cleanup removes expired
+          documents; ClickHouse cleanup drops oldest telemetry partitions until
+          usage is below the disk threshold.
         </Text>
 
         <Group>
@@ -965,6 +1181,28 @@ function DataRetentionPanel() {
             loading={runRetention.isPending && !dryRun}
           >
             Run Cleanup
+          </Button>
+          <Button
+            leftSection={<IconTrash size={16} />}
+            variant="secondary"
+            onClick={() => {
+              setClickhouseDryRun(true);
+              handleRunClickhouse();
+            }}
+            loading={runClickhouseRetention.isPending && clickhouseDryRun}
+          >
+            Dry Run ClickHouse
+          </Button>
+          <Button
+            leftSection={<IconPlayerPlay size={16} />}
+            color="red"
+            onClick={() => {
+              setClickhouseDryRun(false);
+              handleRunClickhouse();
+            }}
+            loading={runClickhouseRetention.isPending && !clickhouseDryRun}
+          >
+            Run ClickHouse Cleanup
           </Button>
         </Group>
       </Stack>
@@ -991,6 +1229,39 @@ function DataRetentionPanel() {
               loading={runRetention.isPending}
             >
               {dryRun ? 'Run Dry Run' : 'Confirm Cleanup'}
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+      <Modal
+        opened={clickhouseModalOpen}
+        onClose={() => setClickhouseModalOpen(false)}
+        title={
+          clickhouseDryRun
+            ? 'Confirm ClickHouse Dry Run'
+            : 'Confirm ClickHouse Cleanup'
+        }
+        centered
+      >
+        <Stack gap="md">
+          <Text size="sm">
+            {clickhouseDryRun
+              ? 'This will scan ClickHouse partitions and report how much data would be removed. No data will be modified.'
+              : 'This will permanently drop the oldest ClickHouse telemetry partitions until disk usage is below the configured threshold. This action cannot be undone.'}
+          </Text>
+          <Group justify="flex-end">
+            <Button
+              variant="secondary"
+              onClick={() => setClickhouseModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              color={clickhouseDryRun ? 'blue' : 'red'}
+              onClick={handleConfirmClickhouse}
+              loading={runClickhouseRetention.isPending}
+            >
+              {clickhouseDryRun ? 'Run Dry Run' : 'Confirm Cleanup'}
             </Button>
           </Group>
         </Stack>
