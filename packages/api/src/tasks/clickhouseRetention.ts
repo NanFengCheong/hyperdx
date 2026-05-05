@@ -1,6 +1,12 @@
 import mongoose from 'mongoose';
 
-import { CLICKHOUSE_HOST } from '@/config';
+import {
+  CLICKHOUSE_ENDPOINT,
+  CLICKHOUSE_HOST,
+  CLICKHOUSE_PASSWORD,
+  CLICKHOUSE_USER,
+  DEFAULT_CONNECTIONS,
+} from '@/config';
 import AuditLog from '@/models/auditLog';
 import PlatformSetting from '@/models/platformSetting';
 import { ClickhouseRetentionTaskArgs, HdxTask } from '@/tasks/types';
@@ -23,6 +29,7 @@ export const TELEMETRY_TABLES = [
 ];
 
 interface PartitionInfo {
+  database: string;
   table: string;
   partition: string;
   partitionId: string;
@@ -75,14 +82,100 @@ async function getSettings(): Promise<{ maxDiskGB: number; enabled: boolean }> {
   }
 }
 
-/**
- * Query ClickHouse system.parts for partition sizes across telemetry tables.
- * Uses the HTTP interface directly since we only need simple queries.
- */
-async function queryClickhouse(query: string): Promise<string> {
-  const url = new URL(CLICKHOUSE_HOST);
+type ClickHouseConnection = {
+  host: string;
+  username?: string;
+  password?: string;
+};
+
+function getDefaultConnection(): ClickHouseConnection | undefined {
+  if (!DEFAULT_CONNECTIONS) {
+    return undefined;
+  }
+
+  try {
+    const connections = JSON.parse(DEFAULT_CONNECTIONS);
+    const connection = Array.isArray(connections) ? connections[0] : undefined;
+    if (connection?.host) {
+      return {
+        host: connection.host,
+        username: connection.username,
+        password: connection.password,
+      };
+    }
+  } catch (error) {
+    logger.warn({ error }, 'Failed to parse DEFAULT_CONNECTIONS');
+  }
+
+  return undefined;
+}
+
+function endpointToHttpHost(endpoint: string | undefined): string | undefined {
+  if (!endpoint) {
+    return undefined;
+  }
+
+  try {
+    const url = new URL(endpoint);
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      return endpoint;
+    }
+
+    if (url.protocol === 'tcp:') {
+      return `http://${url.hostname}:8123`;
+    }
+  } catch (error) {
+    logger.warn({ error, endpoint }, 'Failed to parse CLICKHOUSE_ENDPOINT');
+  }
+
+  return undefined;
+}
+
+function getClickHouseConnection(): ClickHouseConnection {
+  if (CLICKHOUSE_HOST) {
+    return {
+      host: CLICKHOUSE_HOST,
+      username: CLICKHOUSE_USER,
+      password: CLICKHOUSE_PASSWORD,
+    };
+  }
+
+  const defaultConnection = getDefaultConnection();
+  if (defaultConnection) {
+    return defaultConnection;
+  }
+
+  const endpointHost = endpointToHttpHost(CLICKHOUSE_ENDPOINT);
+  if (endpointHost) {
+    return {
+      host: endpointHost,
+      username: CLICKHOUSE_USER,
+      password: CLICKHOUSE_PASSWORD,
+    };
+  }
+
+  throw new Error(
+    'ClickHouse HTTP host is not configured. Set CLICKHOUSE_HOST or DEFAULT_CONNECTIONS.',
+  );
+}
+
+export function quoteClickHouseIdentifier(identifier: string): string {
+  return '`' + identifier.replaceAll('`', '``') + '`';
+}
+
+export async function queryClickhouse(query: string): Promise<string> {
+  const connection = getClickHouseConnection();
+  const url = new URL(connection.host);
   url.searchParams.set('query', query);
-  const resp = await fetch(url.toString());
+  const headers: Record<string, string> = {};
+
+  if (connection.username) {
+    headers.Authorization = `Basic ${Buffer.from(
+      `${connection.username}:${connection.password ?? ''}`,
+    ).toString('base64')}`;
+  }
+
+  const resp = await fetch(url.toString(), { headers });
   if (!resp.ok) {
     throw new Error(
       `ClickHouse query failed: ${resp.status} ${await resp.text()}`,
@@ -105,15 +198,16 @@ async function getTotalDiskUsage(): Promise<number> {
 async function getPartitionsByAge(): Promise<PartitionInfo[]> {
   const tableList = TELEMETRY_TABLES.map(t => `'${t}'`).join(',');
   const result = await queryClickhouse(
-    `SELECT table, partition, partition_id as partitionId, sum(bytes_on_disk) as sizeBytes
+    `SELECT database, table, partition, partition_id as partitionId, sum(bytes_on_disk) as sizeBytes
      FROM system.parts
      WHERE active = 1 AND table IN (${tableList})
-     GROUP BY table, partition, partition_id
-     ORDER BY partition ASC, table ASC
+     GROUP BY database, table, partition, partition_id
+     ORDER BY partition ASC, database ASC, table ASC
      FORMAT JSON`,
   );
   const parsed = JSON.parse(result);
   return (parsed.data ?? []).map((row: any) => ({
+    database: row.database,
     table: row.table,
     partition: row.partition,
     partitionId: row.partitionId,
@@ -123,12 +217,13 @@ async function getPartitionsByAge(): Promise<PartitionInfo[]> {
 
 /** Drop a specific partition from a table */
 async function dropPartition(
+  database: string,
   table: string,
   partitionId: string,
 ): Promise<void> {
   const escapedPartitionId = partitionId.replaceAll("'", "\\'");
   await queryClickhouse(
-    `ALTER TABLE ${table} DROP PARTITION ID '${escapedPartitionId}'`,
+    `ALTER TABLE ${quoteClickHouseIdentifier(database)}.${quoteClickHouseIdentifier(table)} DROP PARTITION ID '${escapedPartitionId}'`,
   );
 }
 
@@ -177,6 +272,7 @@ export default class ClickhouseRetentionTask
     // Get all partitions ordered oldest first
     const partitions = await getPartitionsByAge();
     const dropped: {
+      database: string;
       table: string;
       partition: string;
       partitionId: string;
@@ -205,9 +301,10 @@ export default class ClickhouseRetentionTask
           logger.info(
             `clickhouseRetention: Dropping partition ${p.partition} (${p.partitionId}) from ${p.table} (${(p.sizeBytes / (1024 * 1024)).toFixed(1)} MB)`,
           );
-          await dropPartition(p.table, p.partitionId);
+          await dropPartition(p.database, p.table, p.partitionId);
         }
         dropped.push({
+          database: p.database,
           table: p.table,
           partition: p.partition,
           partitionId: p.partitionId,
@@ -245,6 +342,7 @@ export default class ClickhouseRetentionTask
         targetUsagePercent: TARGET_USAGE_PERCENT,
         partitionsDropped: dropped.length,
         dropped: dropped.map(d => ({
+          database: d.database,
           table: d.table,
           partition: d.partition,
           partitionId: d.partitionId,

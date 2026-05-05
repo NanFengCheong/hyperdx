@@ -16,6 +16,7 @@ import Team from '../../models/team';
 import User from '../../models/user';
 import ClickhouseRetentionTask, {
   DEFAULT_MAX_DISK_GB,
+  queryClickhouse,
   TARGET_USAGE_PERCENT,
   TARGET_USAGE_RATIO,
   TELEMETRY_TABLES,
@@ -524,22 +525,14 @@ router.put('/clickhouse-retention/settings', async (req, res, next) => {
 // GET /admin/clickhouse-retention/status — current ClickHouse disk usage
 router.get('/clickhouse-retention/status', async (req, res, next) => {
   try {
-    const { CLICKHOUSE_HOST } = await import('../../config.js');
-    const url = new URL(CLICKHOUSE_HOST);
-
     const tableList = TELEMETRY_TABLES.map(t => `'${t}'`).join(',');
-
-    url.searchParams.set(
-      'query',
-      `SELECT table, sum(bytes_on_disk) as bytes, min(partition) as oldest_partition, max(partition) as newest_partition, count(DISTINCT partition) as partition_count FROM system.parts WHERE active = 1 AND table IN (${tableList}) GROUP BY table FORMAT JSON`,
+    const result = await queryClickhouse(
+      `SELECT database, table, sum(bytes_on_disk) as bytes, min(partition) as oldest_partition, max(partition) as newest_partition, count(DISTINCT partition) as partition_count FROM system.parts WHERE active = 1 AND table IN (${tableList}) GROUP BY database, table FORMAT JSON`,
     );
-    const resp = await fetch(url.toString());
-    if (!resp.ok) {
-      return res.status(502).json({ message: 'Failed to query ClickHouse' });
-    }
-    const parsed = JSON.parse(await resp.text());
+    const parsed = JSON.parse(result);
 
     const tableStats = (parsed.data ?? []).map((row: any) => ({
+      database: row.database,
       table: row.table,
       sizeGB: (Number(row.bytes) / (1024 * 1024 * 1024)).toFixed(2),
       oldestPartition: row.oldest_partition,

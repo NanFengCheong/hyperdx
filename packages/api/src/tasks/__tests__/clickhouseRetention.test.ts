@@ -89,30 +89,35 @@ describe('ClickhouseRetentionTask', () => {
     mockFetch.mockResolvedValueOnce(
       makeSystemPartsResponse([
         {
+          database: 'default',
           table: 'otel_logs',
           partition: '2026-04-01',
           partitionId: '20260401',
           sizeBytes: String(5 * GB),
         },
         {
+          database: 'default',
           table: 'otel_traces',
           partition: '2026-04-01',
           partitionId: '20260401',
           sizeBytes: String(0.5 * GB),
         },
         {
+          database: 'default',
           table: 'otel_logs',
           partition: '2026-04-02',
           partitionId: '20260402',
           sizeBytes: String(5 * GB),
         },
         {
+          database: 'default',
           table: 'otel_traces',
           partition: '2026-04-02',
           partitionId: '20260402',
           sizeBytes: String(0.5 * GB),
         },
         {
+          database: 'default',
           table: 'otel_logs',
           partition: '2026-04-03',
           partitionId: '20260403',
@@ -154,24 +159,28 @@ describe('ClickhouseRetentionTask', () => {
       .mockResolvedValueOnce(
         makeSystemPartsResponse([
           {
+            database: 'default',
             table: 'otel_logs',
             partition: '2026-04-01',
             partitionId: '20260401',
             sizeBytes: String(5 * GB),
           },
           {
+            database: 'default',
             table: 'otel_traces',
             partition: '2026-04-01',
             partitionId: '20260401',
             sizeBytes: String(0.5 * GB),
           },
           {
+            database: 'otel_json',
             table: 'otel_logs',
             partition: '2026-04-02',
             partitionId: '20260402',
             sizeBytes: String(5 * GB),
           },
           {
+            database: 'default',
             table: 'otel_logs',
             partition: '2026-04-03',
             partitionId: '20260403',
@@ -192,16 +201,16 @@ describe('ClickhouseRetentionTask', () => {
     );
 
     expect(queries).toContain(
-      "ALTER TABLE otel_logs DROP PARTITION ID '20260401'",
+      "ALTER TABLE `default`.`otel_logs` DROP PARTITION ID '20260401'",
     );
     expect(queries).toContain(
-      "ALTER TABLE otel_traces DROP PARTITION ID '20260401'",
+      "ALTER TABLE `default`.`otel_traces` DROP PARTITION ID '20260401'",
     );
     expect(queries).toContain(
-      "ALTER TABLE otel_logs DROP PARTITION ID '20260402'",
+      "ALTER TABLE `otel_json`.`otel_logs` DROP PARTITION ID '20260402'",
     );
     expect(queries).not.toContain(
-      "ALTER TABLE otel_logs DROP PARTITION ID '20260403'",
+      "ALTER TABLE `default`.`otel_logs` DROP PARTITION ID '20260403'",
     );
     expect(mockAuditLogCreate).toHaveBeenCalledWith(
       expect.objectContaining({

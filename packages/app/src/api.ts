@@ -1068,6 +1068,7 @@ export type ClickhouseRetentionStatus = {
   thresholdGB: string;
   isOverThreshold: boolean;
   tables: Array<{
+    database: string;
     table: string;
     sizeGB: string;
     oldestPartition: string | null;

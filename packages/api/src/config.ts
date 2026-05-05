@@ -44,6 +44,7 @@ export const DEFAULT_SOURCES = env.DEFAULT_SOURCES;
 
 // FOR CI ONLY
 export const CLICKHOUSE_HOST = env.CLICKHOUSE_HOST as string;
+export const CLICKHOUSE_ENDPOINT = env.CLICKHOUSE_ENDPOINT as string;
 export const CLICKHOUSE_USER = env.CLICKHOUSE_USER as string;
 export const CLICKHOUSE_PASSWORD = env.CLICKHOUSE_PASSWORD as string;
 
