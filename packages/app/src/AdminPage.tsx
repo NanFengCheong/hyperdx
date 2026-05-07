@@ -821,7 +821,9 @@ function DataRetentionPanel() {
 
   const [auditLog, setAuditLog] = useState<number | string>(90);
   const [alertHistory, setAlertHistory] = useState<number | string>(30);
-  const [diskSizeGB, setDiskSizeGB] = useState<number | string>(100);
+  const [clickhouseThresholdPercent, setClickhouseThresholdPercent] = useState<
+    number | string
+  >(80);
   const [clickhouseEnabled, setClickhouseEnabled] = useState(true);
   const [settingsInitialized, setSettingsInitialized] = useState(false);
   const [clickhouseSettingsInitialized, setClickhouseSettingsInitialized] =
@@ -835,7 +837,9 @@ function DataRetentionPanel() {
   }
 
   if (clickhouseSettingsData?.data && !clickhouseSettingsInitialized) {
-    setDiskSizeGB(clickhouseSettingsData.data.maxDiskGB);
+    setClickhouseThresholdPercent(
+      clickhouseSettingsData.data.targetUsagePercent,
+    );
     setClickhouseEnabled(clickhouseSettingsData.data.enabled);
     setClickhouseSettingsInitialized(true);
   }
@@ -909,18 +913,25 @@ function DataRetentionPanel() {
   }, [auditLog, alertHistory, updateSettings, queryClient]);
 
   const handleSaveClickhouseSettings = useCallback(() => {
-    const diskSizeNum = Number(diskSizeGB);
-    if (!diskSizeNum || diskSizeNum < 1) {
+    const thresholdPercentNum = Number(clickhouseThresholdPercent);
+    if (
+      !thresholdPercentNum ||
+      thresholdPercentNum < 50 ||
+      thresholdPercentNum > 95
+    ) {
       notifications.show({
         color: 'red',
         title: 'Invalid Settings',
-        message: 'Disk space size must be at least 1 GB.',
+        message: 'Cleanup threshold must be between 50% and 95%.',
       });
       return;
     }
 
     updateClickhouseSettings.mutate(
-      { maxDiskGB: diskSizeNum, enabled: clickhouseEnabled },
+      {
+        enabled: clickhouseEnabled,
+        targetUsagePercent: thresholdPercentNum,
+      },
       {
         onSuccess: () => {
           notifications.show({
@@ -945,7 +956,12 @@ function DataRetentionPanel() {
         },
       },
     );
-  }, [diskSizeGB, clickhouseEnabled, updateClickhouseSettings, queryClient]);
+  }, [
+    clickhouseThresholdPercent,
+    clickhouseEnabled,
+    updateClickhouseSettings,
+    queryClient,
+  ]);
 
   const handleRun = useCallback(() => {
     setModalOpen(true);
@@ -1061,7 +1077,7 @@ function DataRetentionPanel() {
         <Title order={4}>ClickHouse Disk Retention</Title>
         <Text size="sm" c="dimmed">
           Old ClickHouse partitions are cleaned hourly when filesystem usage
-          exceeds {clickhouseTargetUsagePercent}% of the configured disk size.
+          exceeds the configured threshold.
         </Text>
 
         {clickhouseSettingsLoading ? (
@@ -1072,11 +1088,11 @@ function DataRetentionPanel() {
           <>
             <Group grow align="flex-end">
               <NumberInput
-                label="Disk Space Size (GB)"
-                value={diskSizeGB}
-                onChange={setDiskSizeGB}
-                min={1}
-                max={100000}
+                label="Cleanup Threshold (%)"
+                value={clickhouseThresholdPercent}
+                onChange={setClickhouseThresholdPercent}
+                min={50}
+                max={95}
                 size="sm"
               />
               <Switch
@@ -1097,7 +1113,7 @@ function DataRetentionPanel() {
                 <Group grow>
                   <Box>
                     <Text size="xs" c="dimmed">
-                      Disk Space Size
+                      Retention Disk Cap
                     </Text>
                     <Text fw={600}>{clickhouseStatus.diskSizeGB} GB</Text>
                   </Box>

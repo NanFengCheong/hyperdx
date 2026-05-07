@@ -83,6 +83,33 @@ describe('ClickhouseRetentionTask', () => {
     );
   });
 
+  it('should use configured cleanup threshold instead of hardcoded default', async () => {
+    mockPlatformSettingFindOne.mockResolvedValue({
+      value: { maxDiskGB: 100, enabled: true, targetUsagePercent: 90 },
+    } as any);
+
+    // 85GB total - over default 80GB threshold, under configured 90GB threshold
+    mockFetch.mockResolvedValueOnce(
+      makeSystemDisksResponse(85 * 1024 * 1024 * 1024, 15 * 1024 * 1024 * 1024),
+    );
+
+    const task = new ClickhouseRetentionTask({
+      taskName: TaskName.CLICKHOUSE_RETENTION,
+      dryRun: false,
+    });
+    await task.execute();
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockAuditLogCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'clickhouse_retention.check',
+        details: expect.objectContaining({
+          targetUsagePercent: 90,
+        }),
+      }),
+    );
+  });
+
   it('should drop oldest partitions when over 80 percent threshold (dry run)', async () => {
     mockPlatformSettingFindOne.mockResolvedValue({
       value: { maxDiskGB: 10, enabled: true },

@@ -460,13 +460,13 @@ router.get('/clickhouse-retention/settings', async (req, res, next) => {
       key: 'clickhouseRetention',
     });
     const value = setting?.value as
-      | { maxDiskGB?: number; enabled?: boolean }
+      | { maxDiskGB?: number; enabled?: boolean; targetUsagePercent?: number }
       | undefined;
     res.json({
       data: {
         maxDiskGB: value?.maxDiskGB ?? DEFAULT_MAX_DISK_GB,
         enabled: value?.enabled ?? true,
-        targetUsagePercent: TARGET_USAGE_PERCENT,
+        targetUsagePercent: value?.targetUsagePercent ?? TARGET_USAGE_PERCENT,
       },
     });
   } catch (e) {
@@ -476,8 +476,8 @@ router.get('/clickhouse-retention/settings', async (req, res, next) => {
 
 // PUT /admin/clickhouse-retention/settings — update config
 const clickhouseRetentionSettingsSchema = z.object({
-  maxDiskGB: z.number().min(1).max(100000),
   enabled: z.boolean(),
+  targetUsagePercent: z.number().min(50).max(95),
 });
 
 router.put('/clickhouse-retention/settings', async (req, res, next) => {
@@ -491,13 +491,20 @@ router.put('/clickhouse-retention/settings', async (req, res, next) => {
       });
     }
 
-    const { maxDiskGB, enabled } = parseResult.data;
+    const { enabled, targetUsagePercent } = parseResult.data;
+    const existingSetting = await PlatformSetting.findOne({
+      key: 'clickhouseRetention',
+    });
+    const existingValue = existingSetting?.value as
+      | { maxDiskGB?: number }
+      | undefined;
+    const maxDiskGB = existingValue?.maxDiskGB ?? DEFAULT_MAX_DISK_GB;
 
     await PlatformSetting.findOneAndUpdate(
       { key: 'clickhouseRetention' },
       {
         $set: {
-          value: { maxDiskGB, enabled },
+          value: { maxDiskGB, enabled, targetUsagePercent },
           updatedBy: actor._id,
         },
       },
@@ -511,7 +518,7 @@ router.put('/clickhouse-retention/settings', async (req, res, next) => {
       action: 'clickhouse_retention.settings_updated',
       targetType: 'PlatformSetting',
       targetId: 'clickhouseRetention',
-      details: { maxDiskGB, enabled },
+      details: { maxDiskGB, enabled, targetUsagePercent },
     });
 
     res.json({ data: { ok: true } });
@@ -527,11 +534,17 @@ router.get('/clickhouse-retention/status', async (req, res, next) => {
       key: 'clickhouseRetention',
     });
     const value = setting?.value as
-      | { maxDiskGB?: number; enabled?: boolean }
+      | { maxDiskGB?: number; enabled?: boolean; targetUsagePercent?: number }
       | undefined;
     const maxDiskGB = value?.maxDiskGB ?? DEFAULT_MAX_DISK_GB;
     const enabled = value?.enabled ?? true;
-    const status = await getClickHouseRetentionStatus(maxDiskGB, enabled);
+    const targetUsagePercent =
+      value?.targetUsagePercent ?? TARGET_USAGE_PERCENT;
+    const status = await getClickHouseRetentionStatus(
+      maxDiskGB,
+      enabled,
+      targetUsagePercent,
+    );
 
     res.json({
       data: status,

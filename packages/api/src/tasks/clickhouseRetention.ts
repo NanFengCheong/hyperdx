@@ -14,7 +14,6 @@ import logger from '@/utils/logger';
 
 export const DEFAULT_MAX_DISK_GB = 100;
 export const TARGET_USAGE_PERCENT = 80;
-export const TARGET_USAGE_RATIO = TARGET_USAGE_PERCENT / 100;
 
 interface PartitionInfo {
   database: string;
@@ -125,24 +124,33 @@ async function writeAuditLog(
   }
 }
 
-async function getSettings(): Promise<{ maxDiskGB: number; enabled: boolean }> {
+async function getSettings(): Promise<{
+  maxDiskGB: number;
+  enabled: boolean;
+  targetUsagePercent: number;
+}> {
   try {
     const setting = await PlatformSetting.findOne({
       key: 'clickhouseRetention',
     });
     const value = setting?.value as
-      | { maxDiskGB?: number; enabled?: boolean }
+      | { maxDiskGB?: number; enabled?: boolean; targetUsagePercent?: number }
       | undefined;
     return {
       maxDiskGB: value?.maxDiskGB ?? DEFAULT_MAX_DISK_GB,
       enabled: value?.enabled ?? true,
+      targetUsagePercent: value?.targetUsagePercent ?? TARGET_USAGE_PERCENT,
     };
   } catch (error) {
     logger.warn(
       { error },
       'Failed to read ClickHouse retention settings, using defaults',
     );
-    return { maxDiskGB: DEFAULT_MAX_DISK_GB, enabled: true };
+    return {
+      maxDiskGB: DEFAULT_MAX_DISK_GB,
+      enabled: true,
+      targetUsagePercent: TARGET_USAGE_PERCENT,
+    };
   }
 }
 
@@ -356,6 +364,7 @@ export async function getTableDiskUsage(): Promise<ClickHouseTableDiskUsage[]> {
 export async function getClickHouseRetentionStatus(
   maxDiskGB: number,
   enabled: boolean,
+  targetUsagePercent: number = TARGET_USAGE_PERCENT,
 ): Promise<ClickHouseRetentionStatus> {
   const [tableStats, diskUsage, partsUsage, detachedPartsBytes] =
     await Promise.all([
@@ -366,7 +375,7 @@ export async function getClickHouseRetentionStatus(
     ]);
   const totalBytes = diskUsage.usedBytes;
   const diskSizeBytes = maxDiskGB * 1024 * 1024 * 1024;
-  const thresholdBytes = diskSizeBytes * TARGET_USAGE_RATIO;
+  const thresholdBytes = diskSizeBytes * (targetUsagePercent / 100);
   const otherFilesystemBytes = Math.max(
     0,
     totalBytes -
@@ -382,7 +391,7 @@ export async function getClickHouseRetentionStatus(
     maxDiskGB,
     enabled,
     usagePercent: ((totalBytes / diskSizeBytes) * 100).toFixed(1),
-    targetUsagePercent: TARGET_USAGE_PERCENT,
+    targetUsagePercent,
     thresholdGB: formatGB(thresholdBytes),
     isOverThreshold: totalBytes > thresholdBytes,
     storageBreakdown: {
@@ -504,7 +513,7 @@ export default class ClickhouseRetentionTask
     }
 
     const diskSizeBytes = settings.maxDiskGB * 1024 * 1024 * 1024;
-    const maxBytes = diskSizeBytes * TARGET_USAGE_RATIO;
+    const maxBytes = diskSizeBytes * (settings.targetUsagePercent / 100);
     const diskUsageBefore = await getClickHouseDiskUsage();
     const totalBefore = diskUsageBefore.usedBytes;
     const totalBeforeGB = (totalBefore / (1024 * 1024 * 1024)).toFixed(2);
@@ -514,18 +523,18 @@ export default class ClickhouseRetentionTask
     ).toFixed(2);
 
     logger.info(
-      `clickhouseRetention: Current disk usage ${totalBeforeGB} GB, free ${freeBeforeGB} GB, cleanup threshold ${TARGET_USAGE_PERCENT}% of ${settings.maxDiskGB} GB${dryRun ? ' [DRY RUN]' : ''}`,
+      `clickhouseRetention: Current disk usage ${totalBeforeGB} GB, free ${freeBeforeGB} GB, cleanup threshold ${settings.targetUsagePercent}% of ${settings.maxDiskGB} GB${dryRun ? ' [DRY RUN]' : ''}`,
     );
 
     if (totalBefore <= maxBytes) {
       logger.info(
-        'clickhouseRetention: Under 80% threshold, no cleanup needed',
+        `clickhouseRetention: Under ${settings.targetUsagePercent}% threshold, no cleanup needed`,
       );
       await writeAuditLog('clickhouse_retention.check', {
         diskUsageGB: totalBeforeGB,
         freeDiskGB: freeBeforeGB,
         maxDiskGB: settings.maxDiskGB,
-        targetUsagePercent: TARGET_USAGE_PERCENT,
+        targetUsagePercent: settings.targetUsagePercent,
         action: 'no_cleanup_needed',
         dryRun,
       });
@@ -752,7 +761,7 @@ export default class ClickhouseRetentionTask
         freeDiskAfterGB: freeAfterGB,
         freedGB,
         maxDiskGB: settings.maxDiskGB,
-        targetUsagePercent: TARGET_USAGE_PERCENT,
+        targetUsagePercent: settings.targetUsagePercent,
         partitionsDropped: dropped.length,
         partitionsFailed: failed.length,
         detachedPartsDropped: detachedDropped.length,

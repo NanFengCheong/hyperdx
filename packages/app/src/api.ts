@@ -1093,7 +1093,7 @@ export const useUpdateClickhouseRetentionSettings = () =>
   useMutation<
     { data: { ok: boolean } },
     Error,
-    { maxDiskGB: number; enabled: boolean }
+    { enabled: boolean; targetUsagePercent: number }
   >({
     mutationFn: settings =>
       hdxServer('admin/clickhouse-retention/settings', {
