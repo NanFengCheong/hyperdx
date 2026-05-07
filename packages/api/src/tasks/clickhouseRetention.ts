@@ -47,6 +47,11 @@ export interface ClickHouseRetentionStatus {
   tables: ClickHouseTableDiskUsage[];
 }
 
+interface ClickHouseDiskUsage {
+  usedBytes: number;
+  freeBytes: number;
+}
+
 const SYSTEM_ACTOR_ID = new mongoose.Types.ObjectId('000000000000000000000000');
 const SYSTEM_EMAIL = 'system@hyperdx.io';
 const USER_DATABASE_FILTER =
@@ -199,13 +204,40 @@ export async function queryClickhouse(query: string): Promise<string> {
   return resp.text();
 }
 
-/** Get total disk usage in bytes for all user ClickHouse tables */
-async function getTotalDiskUsage(): Promise<number> {
+/** Get filesystem disk usage in bytes for ClickHouse disks */
+async function getFilesystemDiskUsage(): Promise<ClickHouseDiskUsage> {
+  const result = await queryClickhouse(
+    `SELECT sum(total_space - free_space) as used, sum(free_space) as free FROM system.disks FORMAT JSON`,
+  );
+  const parsed = JSON.parse(result);
+  return {
+    usedBytes: Number(parsed.data?.[0]?.used ?? 0),
+    freeBytes: Number(parsed.data?.[0]?.free ?? 0),
+  };
+}
+
+/** Get active user table usage in bytes. Used only when system.disks is unavailable. */
+async function getActivePartsDiskUsage(): Promise<ClickHouseDiskUsage> {
   const result = await queryClickhouse(
     `SELECT sum(bytes_on_disk) as total FROM system.parts WHERE active = 1 AND ${USER_DATABASE_FILTER} FORMAT JSON`,
   );
   const parsed = JSON.parse(result);
-  return Number(parsed.data?.[0]?.total ?? 0);
+  return {
+    usedBytes: Number(parsed.data?.[0]?.total ?? 0),
+    freeBytes: 0,
+  };
+}
+
+async function getClickHouseDiskUsage(): Promise<ClickHouseDiskUsage> {
+  try {
+    return await getFilesystemDiskUsage();
+  } catch (error) {
+    logger.warn(
+      { error },
+      'Failed to read ClickHouse filesystem usage from system.disks, falling back to active parts usage',
+    );
+    return getActivePartsDiskUsage();
+  }
 }
 
 export async function getTableDiskUsage(): Promise<ClickHouseTableDiskUsage[]> {
@@ -233,18 +265,18 @@ export async function getClickHouseRetentionStatus(
   maxDiskGB: number,
   enabled: boolean,
 ): Promise<ClickHouseRetentionStatus> {
-  const [tableStats, totalBytes] = await Promise.all([
+  const [tableStats, diskUsage] = await Promise.all([
     getTableDiskUsage(),
-    getTotalDiskUsage(),
+    getClickHouseDiskUsage(),
   ]);
+  const totalBytes = diskUsage.usedBytes;
   const diskSizeBytes = maxDiskGB * 1024 * 1024 * 1024;
-  const freeBytes = Math.max(0, diskSizeBytes - totalBytes);
   const thresholdBytes = diskSizeBytes * TARGET_USAGE_RATIO;
 
   return {
     diskSizeGB: maxDiskGB.toFixed(2),
     totalSizeGB: (totalBytes / (1024 * 1024 * 1024)).toFixed(2),
-    freeDiskGB: (freeBytes / (1024 * 1024 * 1024)).toFixed(2),
+    freeDiskGB: (diskUsage.freeBytes / (1024 * 1024 * 1024)).toFixed(2),
     maxDiskGB,
     enabled,
     usagePercent: ((totalBytes / diskSizeBytes) * 100).toFixed(1),
@@ -304,10 +336,11 @@ export default class ClickhouseRetentionTask
 
     const diskSizeBytes = settings.maxDiskGB * 1024 * 1024 * 1024;
     const maxBytes = diskSizeBytes * TARGET_USAGE_RATIO;
-    const totalBefore = await getTotalDiskUsage();
+    const diskUsageBefore = await getClickHouseDiskUsage();
+    const totalBefore = diskUsageBefore.usedBytes;
     const totalBeforeGB = (totalBefore / (1024 * 1024 * 1024)).toFixed(2);
     const freeBeforeGB = (
-      Math.max(0, diskSizeBytes - totalBefore) /
+      diskUsageBefore.freeBytes /
       (1024 * 1024 * 1024)
     ).toFixed(2);
 

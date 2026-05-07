@@ -29,6 +29,12 @@ function makeSystemPartsResponse(data: any[]) {
   return new Response(JSON.stringify({ data }), { status: 200 });
 }
 
+function makeSystemDisksResponse(usedBytes: number, freeBytes: number) {
+  return makeSystemPartsResponse([
+    { used: String(usedBytes), free: String(freeBytes) },
+  ]);
+}
+
 describe('ClickhouseRetentionTask', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -55,7 +61,7 @@ describe('ClickhouseRetentionTask', () => {
 
     // 50GB total - under 80GB threshold for a 100GB disk
     mockFetch.mockResolvedValueOnce(
-      makeSystemPartsResponse([{ total: String(50 * 1024 * 1024 * 1024) }]),
+      makeSystemDisksResponse(50 * 1024 * 1024 * 1024, 50 * 1024 * 1024 * 1024),
     );
 
     const task = new ClickhouseRetentionTask({
@@ -81,9 +87,7 @@ describe('ClickhouseRetentionTask', () => {
     const GB = 1024 * 1024 * 1024;
 
     // 15GB total - over 8GB threshold for a 10GB disk
-    mockFetch.mockResolvedValueOnce(
-      makeSystemPartsResponse([{ total: String(15 * GB) }]),
-    );
+    mockFetch.mockResolvedValueOnce(makeSystemDisksResponse(15 * GB, 0));
 
     // Partition listing - 3 dates, ~5GB each
     mockFetch.mockResolvedValueOnce(
@@ -158,9 +162,7 @@ describe('ClickhouseRetentionTask', () => {
     const GB = 1024 * 1024 * 1024;
 
     mockFetch
-      .mockResolvedValueOnce(
-        makeSystemPartsResponse([{ total: String(15 * GB) }]),
-      )
+      .mockResolvedValueOnce(makeSystemDisksResponse(15 * GB, 0))
       .mockResolvedValueOnce(
         makeSystemPartsResponse([
           {
@@ -243,9 +245,7 @@ describe('ClickhouseRetentionTask', () => {
     const GB = 1024 * 1024 * 1024;
 
     mockFetch
-      .mockResolvedValueOnce(
-        makeSystemPartsResponse([{ total: String(13.9 * GB) }]),
-      )
+      .mockResolvedValueOnce(makeSystemDisksResponse(13.9 * GB, 0))
       .mockResolvedValueOnce(
         makeSystemPartsResponse([
           {
@@ -270,10 +270,10 @@ describe('ClickhouseRetentionTask', () => {
       new URL(call[0] as string).searchParams.get('query'),
     );
 
-    expect(queries[0]).toContain(
+    expect(queries[1]).toContain(
       "database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')",
     );
-    expect(queries[0]).not.toContain('table IN');
+    expect(queries[1]).not.toContain('table IN');
     expect(queries).toContain(
       "ALTER TABLE `default`.`custom_large_telemetry` DROP PARTITION ID '20260401'",
     );
@@ -284,7 +284,7 @@ describe('ClickhouseRetentionTask', () => {
 
     // Under default 100GB
     mockFetch.mockResolvedValueOnce(
-      makeSystemPartsResponse([{ total: String(50 * 1024 * 1024 * 1024) }]),
+      makeSystemDisksResponse(50 * 1024 * 1024 * 1024, 50 * 1024 * 1024 * 1024),
     );
 
     const task = new ClickhouseRetentionTask({
