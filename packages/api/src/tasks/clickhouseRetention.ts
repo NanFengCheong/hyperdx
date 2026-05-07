@@ -186,7 +186,6 @@ export function quoteClickHouseIdentifier(identifier: string): string {
 export async function queryClickhouse(query: string): Promise<string> {
   const connection = getClickHouseConnection();
   const url = new URL(connection.host);
-  url.searchParams.set('query', query);
   const headers: Record<string, string> = {};
 
   if (connection.username) {
@@ -195,7 +194,11 @@ export async function queryClickhouse(query: string): Promise<string> {
     ).toString('base64')}`;
   }
 
-  const resp = await fetch(url.toString(), { headers });
+  const resp = await fetch(url.toString(), {
+    method: 'POST',
+    headers,
+    body: query,
+  });
   if (!resp.ok) {
     throw new Error(
       `ClickHouse query failed: ${resp.status} ${await resp.text()}`,

@@ -35,6 +35,10 @@ function makeSystemDisksResponse(usedBytes: number, freeBytes: number) {
   ]);
 }
 
+function getFetchQueries() {
+  return mockFetch.mock.calls.map(call => (call[1] as RequestInit).body);
+}
+
 describe('ClickhouseRetentionTask', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -207,9 +211,7 @@ describe('ClickhouseRetentionTask', () => {
     });
     await task.execute();
 
-    const queries = mockFetch.mock.calls.map(call =>
-      new URL(call[0] as string).searchParams.get('query'),
-    );
+    const queries = getFetchQueries();
 
     expect(queries).toContain(
       "ALTER TABLE `default`.`otel_logs` DROP PARTITION ID '20260401'",
@@ -276,9 +278,7 @@ describe('ClickhouseRetentionTask', () => {
     });
     await expect(task.execute()).resolves.toBeUndefined();
 
-    const queries = mockFetch.mock.calls.map(call =>
-      new URL(call[0] as string).searchParams.get('query'),
-    );
+    const queries = getFetchQueries();
 
     expect(queries).toContain(
       "ALTER TABLE `default`.`otel_logs` DROP PARTITION ID '20260401'",
@@ -326,9 +326,7 @@ describe('ClickhouseRetentionTask', () => {
     });
     await task.execute();
 
-    const queries = mockFetch.mock.calls.map(call =>
-      new URL(call[0] as string).searchParams.get('query'),
-    );
+    const queries = getFetchQueries();
 
     expect(queries[1]).toContain(
       "database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')",
@@ -354,5 +352,43 @@ describe('ClickhouseRetentionTask', () => {
     await task.execute();
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('should send ClickHouse queries with POST so ALTER is not readonly', async () => {
+    mockPlatformSettingFindOne.mockResolvedValue({
+      value: { maxDiskGB: 10, enabled: true },
+    } as any);
+
+    const GB = 1024 * 1024 * 1024;
+
+    mockFetch
+      .mockResolvedValueOnce(makeSystemDisksResponse(9 * GB, 0))
+      .mockResolvedValueOnce(
+        makeSystemPartsResponse([
+          {
+            database: 'default',
+            table: 'otel_logs',
+            partition: '2026-04-01',
+            partitionId: '20260401',
+            oldestDateTime: '2026-04-01 00:00:00',
+            sizeBytes: String(2 * GB),
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(makeSystemPartsResponse([]));
+
+    const task = new ClickhouseRetentionTask({
+      taskName: TaskName.CLICKHOUSE_RETENTION,
+      dryRun: false,
+    });
+    await task.execute();
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://localhost:8123/',
+      expect.objectContaining({
+        method: 'POST',
+        body: "ALTER TABLE `default`.`otel_logs` DROP PARTITION ID '20260401'",
+      }),
+    );
   });
 });
