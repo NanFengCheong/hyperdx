@@ -337,6 +337,79 @@ describe('ClickhouseRetentionTask', () => {
     );
   });
 
+  it('should drop detached parts when active partitions do not reclaim enough space', async () => {
+    mockPlatformSettingFindOne.mockResolvedValue({
+      value: { maxDiskGB: 10, enabled: true },
+    } as any);
+
+    const GB = 1024 * 1024 * 1024;
+
+    mockFetch
+      .mockResolvedValueOnce(makeSystemDisksResponse(20 * GB, 0))
+      .mockResolvedValueOnce(
+        makeSystemPartsResponse([
+          {
+            database: 'default',
+            table: 'otel_logs',
+            partition: '2026-04-01',
+            partitionId: '20260401',
+            oldestDateTime: '2026-04-01 00:00:00',
+            sizeBytes: String(2 * GB),
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(makeSystemPartsResponse([]))
+      .mockResolvedValueOnce(
+        makeSystemPartsResponse([
+          {
+            database: 'default',
+            table: 'otel_logs',
+            partition: '2026-04-01',
+            partitionId: '20260401',
+            name: '20260401_1_1_0',
+            sizeBytes: String(8 * GB),
+          },
+          {
+            database: 'default',
+            table: 'otel_traces',
+            partition: '2026-04-02',
+            partitionId: '20260402',
+            name: '20260402_1_1_0',
+            sizeBytes: String(4 * GB),
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(makeSystemPartsResponse([]))
+      .mockResolvedValueOnce(makeSystemPartsResponse([]));
+
+    const task = new ClickhouseRetentionTask({
+      taskName: TaskName.CLICKHOUSE_RETENTION,
+      dryRun: false,
+    });
+    await task.execute();
+
+    const queries = getFetchQueries();
+
+    expect(queries).toContain(
+      "ALTER TABLE `default`.`otel_logs` DROP PARTITION ID '20260401'",
+    );
+    expect(queries).toContain(
+      "ALTER TABLE `default`.`otel_logs` DROP DETACHED PART '20260401_1_1_0'",
+    );
+    expect(queries).toContain(
+      "ALTER TABLE `default`.`otel_traces` DROP DETACHED PART '20260402_1_1_0'",
+    );
+    expect(mockAuditLogCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'clickhouse_retention.cleanup',
+        details: expect.objectContaining({
+          partitionsDropped: 1,
+          detachedPartsDropped: 2,
+        }),
+      }),
+    );
+  });
+
   it('should use default settings when no PlatformSetting exists', async () => {
     mockPlatformSettingFindOne.mockResolvedValue(null);
 

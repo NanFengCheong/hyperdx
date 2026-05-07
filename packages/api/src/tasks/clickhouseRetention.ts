@@ -25,6 +25,15 @@ interface PartitionInfo {
   sizeBytes: number;
 }
 
+interface DetachedPartInfo {
+  database: string;
+  table: string;
+  partition: string;
+  partitionId: string;
+  name: string;
+  sizeBytes: number;
+}
+
 export interface ClickHouseTableDiskUsage {
   database: string;
   table: string;
@@ -32,6 +41,13 @@ export interface ClickHouseTableDiskUsage {
   oldestPartition: string | null;
   newestPartition: string | null;
   partitionCount: number;
+}
+
+export interface ClickHouseStorageBreakdown {
+  activePartsGB: string;
+  inactivePartsGB: string;
+  detachedPartsGB: string;
+  otherFilesystemGB: string;
 }
 
 export interface ClickHouseRetentionStatus {
@@ -44,6 +60,7 @@ export interface ClickHouseRetentionStatus {
   targetUsagePercent: number;
   thresholdGB: string;
   isOverThreshold: boolean;
+  storageBreakdown: ClickHouseStorageBreakdown;
   tables: ClickHouseTableDiskUsage[];
 }
 
@@ -58,6 +75,11 @@ const USER_DATABASE_FILTER =
   "database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')";
 const DROPPABLE_PARTITION_FILTER =
   "partition != 'tuple()' AND partition_id != 'all'";
+const BYTES_IN_GB = 1024 * 1024 * 1024;
+
+function formatGB(bytes: number): string {
+  return (bytes / BYTES_IN_GB).toFixed(2);
+}
 
 async function writeAuditLog(
   action: string,
@@ -243,6 +265,51 @@ async function getClickHouseDiskUsage(): Promise<ClickHouseDiskUsage> {
   }
 }
 
+async function getPartsUsageByState(): Promise<{
+  activeBytes: number;
+  inactiveBytes: number;
+}> {
+  const result = await queryClickhouse(
+    `SELECT active, sum(bytes_on_disk) as bytes
+     FROM system.parts
+     WHERE ${USER_DATABASE_FILTER}
+     GROUP BY active
+     FORMAT JSON`,
+  );
+  const parsed = JSON.parse(result);
+  let activeBytes = 0;
+  let inactiveBytes = 0;
+
+  for (const row of parsed.data ?? []) {
+    if (Number(row.active) === 1) {
+      activeBytes += Number(row.bytes);
+    } else {
+      inactiveBytes += Number(row.bytes);
+    }
+  }
+
+  return { activeBytes, inactiveBytes };
+}
+
+async function getDetachedPartsUsage(): Promise<number> {
+  try {
+    const result = await queryClickhouse(
+      `SELECT sum(bytes_on_disk) as bytes
+       FROM system.detached_parts
+       WHERE ${USER_DATABASE_FILTER}
+       FORMAT JSON`,
+    );
+    const parsed = JSON.parse(result);
+    return Number(parsed.data?.[0]?.bytes ?? 0);
+  } catch (error) {
+    logger.warn(
+      { error },
+      'Failed to read ClickHouse detached parts usage from system.detached_parts',
+    );
+    return 0;
+  }
+}
+
 export async function getTableDiskUsage(): Promise<ClickHouseTableDiskUsage[]> {
   const result = await queryClickhouse(
     `SELECT database, table, sum(bytes_on_disk) as bytes, min(partition) as oldest_partition, max(partition) as newest_partition, uniqExactIf(partition, ${DROPPABLE_PARTITION_FILTER}) as partition_count
@@ -268,24 +335,40 @@ export async function getClickHouseRetentionStatus(
   maxDiskGB: number,
   enabled: boolean,
 ): Promise<ClickHouseRetentionStatus> {
-  const [tableStats, diskUsage] = await Promise.all([
-    getTableDiskUsage(),
-    getClickHouseDiskUsage(),
-  ]);
+  const [tableStats, diskUsage, partsUsage, detachedPartsBytes] =
+    await Promise.all([
+      getTableDiskUsage(),
+      getClickHouseDiskUsage(),
+      getPartsUsageByState(),
+      getDetachedPartsUsage(),
+    ]);
   const totalBytes = diskUsage.usedBytes;
   const diskSizeBytes = maxDiskGB * 1024 * 1024 * 1024;
   const thresholdBytes = diskSizeBytes * TARGET_USAGE_RATIO;
+  const otherFilesystemBytes = Math.max(
+    0,
+    totalBytes -
+      partsUsage.activeBytes -
+      partsUsage.inactiveBytes -
+      detachedPartsBytes,
+  );
 
   return {
     diskSizeGB: maxDiskGB.toFixed(2),
-    totalSizeGB: (totalBytes / (1024 * 1024 * 1024)).toFixed(2),
-    freeDiskGB: (diskUsage.freeBytes / (1024 * 1024 * 1024)).toFixed(2),
+    totalSizeGB: formatGB(totalBytes),
+    freeDiskGB: formatGB(diskUsage.freeBytes),
     maxDiskGB,
     enabled,
     usagePercent: ((totalBytes / diskSizeBytes) * 100).toFixed(1),
     targetUsagePercent: TARGET_USAGE_PERCENT,
-    thresholdGB: (thresholdBytes / (1024 * 1024 * 1024)).toFixed(2),
+    thresholdGB: formatGB(thresholdBytes),
     isOverThreshold: totalBytes > thresholdBytes,
+    storageBreakdown: {
+      activePartsGB: formatGB(partsUsage.activeBytes),
+      inactivePartsGB: formatGB(partsUsage.inactiveBytes),
+      detachedPartsGB: formatGB(detachedPartsBytes),
+      otherFilesystemGB: formatGB(otherFilesystemBytes),
+    },
     tables: tableStats,
   };
 }
@@ -311,6 +394,33 @@ async function getPartitionsByAge(): Promise<PartitionInfo[]> {
   }));
 }
 
+async function getDetachedPartsByAge(): Promise<DetachedPartInfo[]> {
+  try {
+    const result = await queryClickhouse(
+      `SELECT database, table, partition, partition_id as partitionId, name, bytes_on_disk as sizeBytes
+       FROM system.detached_parts
+       WHERE ${USER_DATABASE_FILTER}
+       ORDER BY partition ASC, database ASC, table ASC, name ASC
+       FORMAT JSON`,
+    );
+    const parsed = JSON.parse(result);
+    return (parsed.data ?? []).map((row: any) => ({
+      database: row.database,
+      table: row.table,
+      partition: row.partition,
+      partitionId: row.partitionId,
+      name: row.name,
+      sizeBytes: Number(row.sizeBytes),
+    }));
+  } catch (error) {
+    logger.warn(
+      { error },
+      'Failed to list ClickHouse detached parts from system.detached_parts',
+    );
+    return [];
+  }
+}
+
 /** Drop a specific partition from a table */
 async function dropPartition(
   database: string,
@@ -320,6 +430,17 @@ async function dropPartition(
   const escapedPartitionId = partitionId.replaceAll("'", "\\'");
   await queryClickhouse(
     `ALTER TABLE ${quoteClickHouseIdentifier(database)}.${quoteClickHouseIdentifier(table)} DROP PARTITION ID '${escapedPartitionId}'`,
+  );
+}
+
+async function dropDetachedPart(
+  database: string,
+  table: string,
+  name: string,
+): Promise<void> {
+  const escapedName = name.replaceAll("'", "\\'");
+  await queryClickhouse(
+    `ALTER TABLE ${quoteClickHouseIdentifier(database)}.${quoteClickHouseIdentifier(table)} DROP DETACHED PART '${escapedName}'`,
   );
 }
 
@@ -382,6 +503,22 @@ export default class ClickhouseRetentionTask
       partition: string;
       partitionId: string;
       oldestDateTime: string;
+      error: string;
+    }[] = [];
+    const detachedDropped: {
+      database: string;
+      table: string;
+      partition: string;
+      partitionId: string;
+      name: string;
+      sizeBytes: number;
+    }[] = [];
+    const detachedFailed: {
+      database: string;
+      table: string;
+      partition: string;
+      partitionId: string;
+      name: string;
       error: string;
     }[] = [];
     let currentUsage = totalBefore;
@@ -447,6 +584,60 @@ export default class ClickhouseRetentionTask
       }
     }
 
+    if (currentUsage > maxBytes) {
+      const detachedParts = await getDetachedPartsByAge();
+
+      for (const p of detachedParts) {
+        if (currentUsage <= maxBytes) break;
+
+        if (dryRun) {
+          logger.info(
+            `[DRY RUN] Would drop detached part ${p.name} (${p.partition}) from ${p.table} (${(p.sizeBytes / (1024 * 1024)).toFixed(1)} MB)`,
+          );
+          detachedDropped.push({
+            database: p.database,
+            table: p.table,
+            partition: p.partition,
+            partitionId: p.partitionId,
+            name: p.name,
+            sizeBytes: p.sizeBytes,
+          });
+          currentUsage -= p.sizeBytes;
+        } else {
+          logger.info(
+            `clickhouseRetention: Dropping detached part ${p.name} (${p.partition}) from ${p.table} (${(p.sizeBytes / (1024 * 1024)).toFixed(1)} MB)`,
+          );
+          try {
+            await dropDetachedPart(p.database, p.table, p.name);
+            detachedDropped.push({
+              database: p.database,
+              table: p.table,
+              partition: p.partition,
+              partitionId: p.partitionId,
+              name: p.name,
+              sizeBytes: p.sizeBytes,
+            });
+            currentUsage -= p.sizeBytes;
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            logger.error(
+              { error, detachedPart: p },
+              'clickhouseRetention: Failed to drop detached part, continuing',
+            );
+            detachedFailed.push({
+              database: p.database,
+              table: p.table,
+              partition: p.partition,
+              partitionId: p.partitionId,
+              name: p.name,
+              error: message,
+            });
+          }
+        }
+      }
+    }
+
     const totalAfterGB = (currentUsage / (1024 * 1024 * 1024)).toFixed(2);
     const freeAfterGB = (
       Math.max(0, diskSizeBytes - currentUsage) /
@@ -458,7 +649,7 @@ export default class ClickhouseRetentionTask
     ).toFixed(2);
 
     logger.info(
-      `clickhouseRetention: ${dryRun ? '[DRY RUN] Would drop' : 'Dropped'} ${dropped.length} partition(s), freed ${freedGB} GB. Usage: ${totalBeforeGB} GB → ${totalAfterGB} GB`,
+      `clickhouseRetention: ${dryRun ? '[DRY RUN] Would drop' : 'Dropped'} ${dropped.length} partition(s) and ${detachedDropped.length} detached part(s), freed ${freedGB} GB. Usage: ${totalBeforeGB} GB → ${totalAfterGB} GB`,
     );
 
     await writeAuditLog(
@@ -475,6 +666,8 @@ export default class ClickhouseRetentionTask
         targetUsagePercent: TARGET_USAGE_PERCENT,
         partitionsDropped: dropped.length,
         partitionsFailed: failed.length,
+        detachedPartsDropped: detachedDropped.length,
+        detachedPartsFailed: detachedFailed.length,
         dropped: dropped.map(d => ({
           database: d.database,
           table: d.table,
@@ -483,7 +676,16 @@ export default class ClickhouseRetentionTask
           oldestDateTime: d.oldestDateTime,
           sizeMB: (d.sizeBytes / (1024 * 1024)).toFixed(1),
         })),
+        detachedDropped: detachedDropped.map(d => ({
+          database: d.database,
+          table: d.table,
+          partition: d.partition,
+          partitionId: d.partitionId,
+          name: d.name,
+          sizeMB: (d.sizeBytes / (1024 * 1024)).toFixed(1),
+        })),
         failed,
+        detachedFailed,
         dryRun,
       },
     );

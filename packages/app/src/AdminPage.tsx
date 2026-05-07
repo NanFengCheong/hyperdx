@@ -851,9 +851,21 @@ function DataRetentionPanel() {
       (sum, table) => sum + Number(table.sizeGB),
       0,
     ) ?? 0;
+  const clickhouseActivePartsGB = Number(
+    clickhouseStatus?.storageBreakdown?.activePartsGB ?? clickhouseTableUsageGB,
+  );
+  const clickhouseInactivePartsGB = Number(
+    clickhouseStatus?.storageBreakdown?.inactivePartsGB ?? 0,
+  );
+  const clickhouseDetachedPartsGB = Number(
+    clickhouseStatus?.storageBreakdown?.detachedPartsGB ?? 0,
+  );
   const clickhouseUntrackedUsageGB = Math.max(
     0,
-    Number(clickhouseStatus?.totalSizeGB ?? 0) - clickhouseTableUsageGB,
+    Number(
+      clickhouseStatus?.storageBreakdown?.otherFilesystemGB ??
+        Number(clickhouseStatus?.totalSizeGB ?? 0) - clickhouseTableUsageGB,
+    ),
   );
 
   const handleSaveSettings = useCallback(() => {
@@ -1103,9 +1115,27 @@ function DataRetentionPanel() {
                   </Box>
                   <Box>
                     <Text size="xs" c="dimmed">
-                      Active Table Parts
+                      Active Parts
                     </Text>
-                    <Text fw={600}>{clickhouseTableUsageGB.toFixed(2)} GB</Text>
+                    <Text fw={600}>
+                      {clickhouseActivePartsGB.toFixed(2)} GB
+                    </Text>
+                  </Box>
+                  <Box>
+                    <Text size="xs" c="dimmed">
+                      Inactive Parts
+                    </Text>
+                    <Text fw={600}>
+                      {clickhouseInactivePartsGB.toFixed(2)} GB
+                    </Text>
+                  </Box>
+                  <Box>
+                    <Text size="xs" c="dimmed">
+                      Detached Parts
+                    </Text>
+                    <Text fw={600}>
+                      {clickhouseDetachedPartsGB.toFixed(2)} GB
+                    </Text>
                   </Box>
                   <Box>
                     <Text size="xs" c="dimmed">
@@ -1144,9 +1174,9 @@ function DataRetentionPanel() {
 
                 {clickhouseUntrackedUsageGB > 0.01 ? (
                   <Text size="xs" c="dimmed">
-                    Filesystem usage includes data outside active table parts,
-                    such as detached parts, inactive parts, merges, metadata,
-                    logs, or other ClickHouse files.
+                    Other filesystem usage includes ClickHouse files not
+                    represented by parts, such as metadata, logs, caches, or
+                    merge/mutation leftovers.
                   </Text>
                 ) : null}
 

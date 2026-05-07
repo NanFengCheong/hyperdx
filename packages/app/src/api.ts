@@ -1067,6 +1067,12 @@ export type ClickhouseRetentionStatus = {
   targetUsagePercent: number;
   thresholdGB: string;
   isOverThreshold: boolean;
+  storageBreakdown?: {
+    activePartsGB: string;
+    inactivePartsGB: string;
+    detachedPartsGB: string;
+    otherFilesystemGB: string;
+  };
   tables: Array<{
     database: string;
     table: string;
