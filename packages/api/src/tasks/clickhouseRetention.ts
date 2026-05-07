@@ -73,6 +73,23 @@ const SYSTEM_ACTOR_ID = new mongoose.Types.ObjectId('000000000000000000000000');
 const SYSTEM_EMAIL = 'system@hyperdx.io';
 const USER_DATABASE_FILTER =
   "database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')";
+const CLEANABLE_SYSTEM_LOG_TABLES = [
+  'asynchronous_metric_log',
+  'crash_log',
+  'error_log',
+  'metric_log',
+  'opentelemetry_span_log',
+  'part_log',
+  'processors_profile_log',
+  'query_log',
+  'query_thread_log',
+  'text_log',
+  'trace_log',
+];
+const CLEANABLE_SYSTEM_LOG_TABLE_LIST = CLEANABLE_SYSTEM_LOG_TABLES.map(
+  table => `'${table}'`,
+).join(',');
+const CLEANABLE_PARTS_FILTER = `(${USER_DATABASE_FILTER} OR (database = 'system' AND table IN (${CLEANABLE_SYSTEM_LOG_TABLE_LIST})))`;
 const DROPPABLE_PARTITION_FILTER =
   "partition != 'tuple()' AND partition_id != 'all'";
 const BYTES_IN_GB = 1024 * 1024 * 1024;
@@ -244,7 +261,7 @@ async function getFilesystemDiskUsage(): Promise<ClickHouseDiskUsage> {
 /** Get active user table usage in bytes. Used only when system.disks is unavailable. */
 async function getActivePartsDiskUsage(): Promise<ClickHouseDiskUsage> {
   const result = await queryClickhouse(
-    `SELECT sum(bytes_on_disk) as total FROM system.parts WHERE active = 1 AND ${USER_DATABASE_FILTER} FORMAT JSON`,
+    `SELECT sum(bytes_on_disk) as total FROM system.parts WHERE active = 1 AND ${CLEANABLE_PARTS_FILTER} FORMAT JSON`,
   );
   const parsed = JSON.parse(result);
   return {
@@ -272,7 +289,7 @@ async function getPartsUsageByState(): Promise<{
   const result = await queryClickhouse(
     `SELECT active, sum(bytes_on_disk) as bytes
      FROM system.parts
-     WHERE ${USER_DATABASE_FILTER}
+     WHERE ${CLEANABLE_PARTS_FILTER}
      GROUP BY active
      FORMAT JSON`,
   );
@@ -296,7 +313,7 @@ async function getDetachedPartsUsage(): Promise<number> {
     const result = await queryClickhouse(
       `SELECT sum(bytes_on_disk) as bytes
        FROM system.detached_parts
-       WHERE ${USER_DATABASE_FILTER}
+       WHERE ${CLEANABLE_PARTS_FILTER}
        FORMAT JSON`,
     );
     const parsed = JSON.parse(result);
@@ -314,7 +331,7 @@ export async function getTableDiskUsage(): Promise<ClickHouseTableDiskUsage[]> {
   const result = await queryClickhouse(
     `SELECT database, table, sum(bytes_on_disk) as bytes, min(partition) as oldest_partition, max(partition) as newest_partition, uniqExactIf(partition, ${DROPPABLE_PARTITION_FILTER}) as partition_count
      FROM system.parts
-     WHERE active = 1 AND ${USER_DATABASE_FILTER}
+     WHERE active = 1 AND ${CLEANABLE_PARTS_FILTER}
      GROUP BY database, table
      ORDER BY sum(bytes_on_disk) DESC
      FORMAT JSON`,
@@ -378,7 +395,7 @@ async function getPartitionsByAge(): Promise<PartitionInfo[]> {
   const result = await queryClickhouse(
     `SELECT database, table, partition, partition_id as partitionId, toString(min(min_time)) as oldestDateTime, sum(bytes_on_disk) as sizeBytes
      FROM system.parts
-     WHERE active = 1 AND ${USER_DATABASE_FILTER} AND ${DROPPABLE_PARTITION_FILTER}
+     WHERE active = 1 AND ${CLEANABLE_PARTS_FILTER} AND ${DROPPABLE_PARTITION_FILTER}
      GROUP BY database, table, partition, partition_id
      ORDER BY oldestDateTime ASC, database ASC, table ASC
      FORMAT JSON`,
@@ -399,7 +416,7 @@ async function getDetachedPartsByAge(): Promise<DetachedPartInfo[]> {
     const result = await queryClickhouse(
       `SELECT database, table, partition, partition_id as partitionId, name, bytes_on_disk as sizeBytes
        FROM system.detached_parts
-       WHERE ${USER_DATABASE_FILTER}
+       WHERE ${CLEANABLE_PARTS_FILTER}
        ORDER BY partition ASC, database ASC, table ASC, name ASC
        FORMAT JSON`,
     );
