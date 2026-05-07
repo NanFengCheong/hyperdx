@@ -846,6 +846,15 @@ function DataRetentionPanel() {
     clickhouseStatus?.targetUsagePercent ??
     clickhouseSettingsData?.data?.targetUsagePercent ??
     80;
+  const clickhouseTableUsageGB =
+    clickhouseStatus?.tables.reduce(
+      (sum, table) => sum + Number(table.sizeGB),
+      0,
+    ) ?? 0;
+  const clickhouseUntrackedUsageGB = Math.max(
+    0,
+    Number(clickhouseStatus?.totalSizeGB ?? 0) - clickhouseTableUsageGB,
+  );
 
   const handleSaveSettings = useCallback(() => {
     const auditLogNum = Number(auditLog);
@@ -1039,8 +1048,8 @@ function DataRetentionPanel() {
       <Stack gap="sm">
         <Title order={4}>ClickHouse Disk Retention</Title>
         <Text size="sm" c="dimmed">
-          Old telemetry partitions are cleaned hourly when usage exceeds{' '}
-          {clickhouseTargetUsagePercent}% of the configured disk size.
+          Old ClickHouse partitions are cleaned hourly when filesystem usage
+          exceeds {clickhouseTargetUsagePercent}% of the configured disk size.
         </Text>
 
         {clickhouseSettingsLoading ? (
@@ -1092,6 +1101,20 @@ function DataRetentionPanel() {
                     </Text>
                     <Text fw={600}>{clickhouseStatus.freeDiskGB} GB</Text>
                   </Box>
+                  <Box>
+                    <Text size="xs" c="dimmed">
+                      Active Table Parts
+                    </Text>
+                    <Text fw={600}>{clickhouseTableUsageGB.toFixed(2)} GB</Text>
+                  </Box>
+                  <Box>
+                    <Text size="xs" c="dimmed">
+                      Other Filesystem Usage
+                    </Text>
+                    <Text fw={600}>
+                      {clickhouseUntrackedUsageGB.toFixed(2)} GB
+                    </Text>
+                  </Box>
                 </Group>
 
                 <Stack gap={4}>
@@ -1117,6 +1140,73 @@ function DataRetentionPanel() {
                         : 'green'
                     }
                   />
+                </Stack>
+
+                {clickhouseUntrackedUsageGB > 0.01 ? (
+                  <Text size="xs" c="dimmed">
+                    Filesystem usage includes data outside active table parts,
+                    such as detached parts, inactive parts, merges, metadata,
+                    logs, or other ClickHouse files.
+                  </Text>
+                ) : null}
+
+                <Stack gap={4}>
+                  <Group justify="space-between">
+                    <Text size="sm" fw={600}>
+                      Table Breakdown
+                    </Text>
+                    <Badge variant="light" color="gray">
+                      {clickhouseStatus.tables.length} tables
+                    </Badge>
+                  </Group>
+                  <Box style={{ overflowX: 'auto' }}>
+                    <Table
+                      highlightOnHover
+                      withTableBorder
+                      withColumnBorders={false}
+                    >
+                      <Table.Thead>
+                        <Table.Tr>
+                          <Table.Th>Database</Table.Th>
+                          <Table.Th>Table</Table.Th>
+                          <Table.Th>Size</Table.Th>
+                          <Table.Th>Oldest</Table.Th>
+                          <Table.Th>Newest</Table.Th>
+                          <Table.Th>Partitions</Table.Th>
+                        </Table.Tr>
+                      </Table.Thead>
+                      <Table.Tbody>
+                        {clickhouseStatus.tables.length > 0 ? (
+                          clickhouseStatus.tables.map(table => (
+                            <Table.Tr key={`${table.database}.${table.table}`}>
+                              <Table.Td>
+                                <Code>{table.database}</Code>
+                              </Table.Td>
+                              <Table.Td>
+                                <Code>{table.table}</Code>
+                              </Table.Td>
+                              <Table.Td>{table.sizeGB} GB</Table.Td>
+                              <Table.Td>
+                                {table.oldestPartition ?? '-'}
+                              </Table.Td>
+                              <Table.Td>
+                                {table.newestPartition ?? '-'}
+                              </Table.Td>
+                              <Table.Td>{table.partitionCount}</Table.Td>
+                            </Table.Tr>
+                          ))
+                        ) : (
+                          <Table.Tr>
+                            <Table.Td colSpan={6}>
+                              <Text size="sm" c="dimmed">
+                                No active ClickHouse table parts found.
+                              </Text>
+                            </Table.Td>
+                          </Table.Tr>
+                        )}
+                      </Table.Tbody>
+                    </Table>
+                  </Box>
                 </Stack>
               </Stack>
             ) : (
