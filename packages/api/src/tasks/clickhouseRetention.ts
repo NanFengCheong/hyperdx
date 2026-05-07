@@ -16,28 +16,43 @@ export const DEFAULT_MAX_DISK_GB = 100;
 export const TARGET_USAGE_PERCENT = 80;
 export const TARGET_USAGE_RATIO = TARGET_USAGE_PERCENT / 100;
 
-/** All telemetry tables that use daily partitions (toDate) */
-export const TELEMETRY_TABLES = [
-  'otel_logs',
-  'otel_traces',
-  'otel_metrics_gauge',
-  'otel_metrics_sum',
-  'otel_metrics_histogram',
-  'otel_metrics_exponential_histogram',
-  'otel_metrics_summary',
-  'hyperdx_sessions',
-];
-
 interface PartitionInfo {
   database: string;
   table: string;
   partition: string;
   partitionId: string;
+  oldestDateTime: string;
   sizeBytes: number;
+}
+
+export interface ClickHouseTableDiskUsage {
+  database: string;
+  table: string;
+  sizeGB: string;
+  oldestPartition: string | null;
+  newestPartition: string | null;
+  partitionCount: number;
+}
+
+export interface ClickHouseRetentionStatus {
+  diskSizeGB: string;
+  totalSizeGB: string;
+  freeDiskGB: string;
+  maxDiskGB: number;
+  enabled: boolean;
+  usagePercent: string;
+  targetUsagePercent: number;
+  thresholdGB: string;
+  isOverThreshold: boolean;
+  tables: ClickHouseTableDiskUsage[];
 }
 
 const SYSTEM_ACTOR_ID = new mongoose.Types.ObjectId('000000000000000000000000');
 const SYSTEM_EMAIL = 'system@hyperdx.io';
+const USER_DATABASE_FILTER =
+  "database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')";
+const DROPPABLE_PARTITION_FILTER =
+  "partition != 'tuple()' AND partition_id != 'all'";
 
 async function writeAuditLog(
   action: string,
@@ -184,25 +199,70 @@ export async function queryClickhouse(query: string): Promise<string> {
   return resp.text();
 }
 
-/** Get total disk usage in bytes for telemetry tables */
+/** Get total disk usage in bytes for all user ClickHouse tables */
 async function getTotalDiskUsage(): Promise<number> {
-  const tableList = TELEMETRY_TABLES.map(t => `'${t}'`).join(',');
   const result = await queryClickhouse(
-    `SELECT sum(bytes_on_disk) as total FROM system.parts WHERE active = 1 AND table IN (${tableList}) FORMAT JSON`,
+    `SELECT sum(bytes_on_disk) as total FROM system.parts WHERE active = 1 AND ${USER_DATABASE_FILTER} FORMAT JSON`,
   );
   const parsed = JSON.parse(result);
   return Number(parsed.data?.[0]?.total ?? 0);
 }
 
+export async function getTableDiskUsage(): Promise<ClickHouseTableDiskUsage[]> {
+  const result = await queryClickhouse(
+    `SELECT database, table, sum(bytes_on_disk) as bytes, min(partition) as oldest_partition, max(partition) as newest_partition, uniqExactIf(partition, ${DROPPABLE_PARTITION_FILTER}) as partition_count
+     FROM system.parts
+     WHERE active = 1 AND ${USER_DATABASE_FILTER}
+     GROUP BY database, table
+     ORDER BY sum(bytes_on_disk) DESC
+     FORMAT JSON`,
+  );
+  const parsed = JSON.parse(result);
+
+  return (parsed.data ?? []).map((row: any) => ({
+    database: row.database,
+    table: row.table,
+    sizeGB: (Number(row.bytes) / (1024 * 1024 * 1024)).toFixed(2),
+    oldestPartition: row.oldest_partition,
+    newestPartition: row.newest_partition,
+    partitionCount: Number(row.partition_count),
+  }));
+}
+
+export async function getClickHouseRetentionStatus(
+  maxDiskGB: number,
+  enabled: boolean,
+): Promise<ClickHouseRetentionStatus> {
+  const [tableStats, totalBytes] = await Promise.all([
+    getTableDiskUsage(),
+    getTotalDiskUsage(),
+  ]);
+  const diskSizeBytes = maxDiskGB * 1024 * 1024 * 1024;
+  const freeBytes = Math.max(0, diskSizeBytes - totalBytes);
+  const thresholdBytes = diskSizeBytes * TARGET_USAGE_RATIO;
+
+  return {
+    diskSizeGB: maxDiskGB.toFixed(2),
+    totalSizeGB: (totalBytes / (1024 * 1024 * 1024)).toFixed(2),
+    freeDiskGB: (freeBytes / (1024 * 1024 * 1024)).toFixed(2),
+    maxDiskGB,
+    enabled,
+    usagePercent: ((totalBytes / diskSizeBytes) * 100).toFixed(1),
+    targetUsagePercent: TARGET_USAGE_PERCENT,
+    thresholdGB: (thresholdBytes / (1024 * 1024 * 1024)).toFixed(2),
+    isOverThreshold: totalBytes > thresholdBytes,
+    tables: tableStats,
+  };
+}
+
 /** Get partition info ordered by partition date (oldest first) */
 async function getPartitionsByAge(): Promise<PartitionInfo[]> {
-  const tableList = TELEMETRY_TABLES.map(t => `'${t}'`).join(',');
   const result = await queryClickhouse(
-    `SELECT database, table, partition, partition_id as partitionId, sum(bytes_on_disk) as sizeBytes
+    `SELECT database, table, partition, partition_id as partitionId, toString(min(if(min_time = toDateTime(0), toDateTime(min_date), min_time))) as oldestDateTime, sum(bytes_on_disk) as sizeBytes
      FROM system.parts
-     WHERE active = 1 AND table IN (${tableList})
+     WHERE active = 1 AND ${USER_DATABASE_FILTER} AND ${DROPPABLE_PARTITION_FILTER}
      GROUP BY database, table, partition, partition_id
-     ORDER BY partition ASC, database ASC, table ASC
+     ORDER BY oldestDateTime ASC, database ASC, table ASC
      FORMAT JSON`,
   );
   const parsed = JSON.parse(result);
@@ -211,6 +271,7 @@ async function getPartitionsByAge(): Promise<PartitionInfo[]> {
     table: row.table,
     partition: row.partition,
     partitionId: row.partitionId,
+    oldestDateTime: row.oldestDateTime,
     sizeBytes: Number(row.sizeBytes),
   }));
 }
@@ -276,30 +337,31 @@ export default class ClickhouseRetentionTask
       table: string;
       partition: string;
       partitionId: string;
+      oldestDateTime: string;
       sizeBytes: number;
     }[] = [];
     let currentUsage = totalBefore;
 
-    // Group partitions by date so we drop all tables for same date together
-    const partitionsByDate = new Map<string, PartitionInfo[]>();
+    // Group partitions by oldest part datetime so tables for the same time slice are dropped together.
+    const partitionsByDateTime = new Map<string, PartitionInfo[]>();
     for (const p of partitions) {
-      const existing = partitionsByDate.get(p.partition) ?? [];
+      const existing = partitionsByDateTime.get(p.oldestDateTime) ?? [];
       existing.push(p);
-      partitionsByDate.set(p.partition, existing);
+      partitionsByDateTime.set(p.oldestDateTime, existing);
     }
 
-    // Iterate dates oldest first
-    for (const [date, datePartitions] of partitionsByDate) {
+    // Iterate datetimes oldest first
+    for (const datePartitions of partitionsByDateTime.values()) {
       if (currentUsage <= maxBytes) break;
 
       for (const p of datePartitions) {
         if (dryRun) {
           logger.info(
-            `[DRY RUN] Would drop partition ${p.partition} from ${p.table} (${(p.sizeBytes / (1024 * 1024)).toFixed(1)} MB)`,
+            `[DRY RUN] Would drop partition ${p.partition} (${p.oldestDateTime}) from ${p.table} (${(p.sizeBytes / (1024 * 1024)).toFixed(1)} MB)`,
           );
         } else {
           logger.info(
-            `clickhouseRetention: Dropping partition ${p.partition} (${p.partitionId}) from ${p.table} (${(p.sizeBytes / (1024 * 1024)).toFixed(1)} MB)`,
+            `clickhouseRetention: Dropping partition ${p.partition} (${p.partitionId}, ${p.oldestDateTime}) from ${p.table} (${(p.sizeBytes / (1024 * 1024)).toFixed(1)} MB)`,
           );
           await dropPartition(p.database, p.table, p.partitionId);
         }
@@ -308,6 +370,7 @@ export default class ClickhouseRetentionTask
           table: p.table,
           partition: p.partition,
           partitionId: p.partitionId,
+          oldestDateTime: p.oldestDateTime,
           sizeBytes: p.sizeBytes,
         });
         currentUsage -= p.sizeBytes;
@@ -346,6 +409,7 @@ export default class ClickhouseRetentionTask
           table: d.table,
           partition: d.partition,
           partitionId: d.partitionId,
+          oldestDateTime: d.oldestDateTime,
           sizeMB: (d.sizeBytes / (1024 * 1024)).toFixed(1),
         })),
         dryRun,

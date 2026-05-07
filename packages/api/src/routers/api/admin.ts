@@ -16,10 +16,8 @@ import Team from '../../models/team';
 import User from '../../models/user';
 import ClickhouseRetentionTask, {
   DEFAULT_MAX_DISK_GB,
-  queryClickhouse,
+  getClickHouseRetentionStatus,
   TARGET_USAGE_PERCENT,
-  TARGET_USAGE_RATIO,
-  TELEMETRY_TABLES,
 } from '../../tasks/clickhouseRetention';
 import DataRetentionTask from '../../tasks/dataRetention';
 import { getTransporter } from '../../utils/emailService';
@@ -525,26 +523,6 @@ router.put('/clickhouse-retention/settings', async (req, res, next) => {
 // GET /admin/clickhouse-retention/status — current ClickHouse disk usage
 router.get('/clickhouse-retention/status', async (req, res, next) => {
   try {
-    const tableList = TELEMETRY_TABLES.map(t => `'${t}'`).join(',');
-    const result = await queryClickhouse(
-      `SELECT database, table, sum(bytes_on_disk) as bytes, min(partition) as oldest_partition, max(partition) as newest_partition, count(DISTINCT partition) as partition_count FROM system.parts WHERE active = 1 AND table IN (${tableList}) GROUP BY database, table FORMAT JSON`,
-    );
-    const parsed = JSON.parse(result);
-
-    const tableStats = (parsed.data ?? []).map((row: any) => ({
-      database: row.database,
-      table: row.table,
-      sizeGB: (Number(row.bytes) / (1024 * 1024 * 1024)).toFixed(2),
-      oldestPartition: row.oldest_partition,
-      newestPartition: row.newest_partition,
-      partitionCount: Number(row.partition_count),
-    }));
-
-    const totalBytes = (parsed.data ?? []).reduce(
-      (sum: number, row: any) => sum + Number(row.bytes),
-      0,
-    );
-
     const setting = await PlatformSetting.findOne({
       key: 'clickhouseRetention',
     });
@@ -552,23 +530,11 @@ router.get('/clickhouse-retention/status', async (req, res, next) => {
       | { maxDiskGB?: number; enabled?: boolean }
       | undefined;
     const maxDiskGB = value?.maxDiskGB ?? DEFAULT_MAX_DISK_GB;
-    const diskSizeBytes = maxDiskGB * 1024 * 1024 * 1024;
-    const freeBytes = Math.max(0, diskSizeBytes - totalBytes);
-    const thresholdBytes = diskSizeBytes * TARGET_USAGE_RATIO;
+    const enabled = value?.enabled ?? true;
+    const status = await getClickHouseRetentionStatus(maxDiskGB, enabled);
 
     res.json({
-      data: {
-        diskSizeGB: maxDiskGB.toFixed(2),
-        totalSizeGB: (totalBytes / (1024 * 1024 * 1024)).toFixed(2),
-        freeDiskGB: (freeBytes / (1024 * 1024 * 1024)).toFixed(2),
-        maxDiskGB,
-        enabled: value?.enabled ?? true,
-        usagePercent: ((totalBytes / diskSizeBytes) * 100).toFixed(1),
-        targetUsagePercent: TARGET_USAGE_PERCENT,
-        thresholdGB: (thresholdBytes / (1024 * 1024 * 1024)).toFixed(2),
-        isOverThreshold: totalBytes > thresholdBytes,
-        tables: tableStats,
-      },
+      data: status,
     });
   } catch (e) {
     next(e);
