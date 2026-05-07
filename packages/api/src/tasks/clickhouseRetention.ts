@@ -290,7 +290,7 @@ export async function getClickHouseRetentionStatus(
 /** Get partition info ordered by partition date (oldest first) */
 async function getPartitionsByAge(): Promise<PartitionInfo[]> {
   const result = await queryClickhouse(
-    `SELECT database, table, partition, partition_id as partitionId, toString(min(if(min_time = toDateTime(0), toDateTime(min_date), min_time))) as oldestDateTime, sum(bytes_on_disk) as sizeBytes
+    `SELECT database, table, partition, partition_id as partitionId, toString(min(min_time)) as oldestDateTime, sum(bytes_on_disk) as sizeBytes
      FROM system.parts
      WHERE active = 1 AND ${USER_DATABASE_FILTER} AND ${DROPPABLE_PARTITION_FILTER}
      GROUP BY database, table, partition, partition_id
@@ -373,6 +373,14 @@ export default class ClickhouseRetentionTask
       oldestDateTime: string;
       sizeBytes: number;
     }[] = [];
+    const failed: {
+      database: string;
+      table: string;
+      partition: string;
+      partitionId: string;
+      oldestDateTime: string;
+      error: string;
+    }[] = [];
     let currentUsage = totalBefore;
 
     // Group partitions by oldest part datetime so tables for the same time slice are dropped together.
@@ -392,21 +400,47 @@ export default class ClickhouseRetentionTask
           logger.info(
             `[DRY RUN] Would drop partition ${p.partition} (${p.oldestDateTime}) from ${p.table} (${(p.sizeBytes / (1024 * 1024)).toFixed(1)} MB)`,
           );
+          dropped.push({
+            database: p.database,
+            table: p.table,
+            partition: p.partition,
+            partitionId: p.partitionId,
+            oldestDateTime: p.oldestDateTime,
+            sizeBytes: p.sizeBytes,
+          });
+          currentUsage -= p.sizeBytes;
         } else {
           logger.info(
             `clickhouseRetention: Dropping partition ${p.partition} (${p.partitionId}, ${p.oldestDateTime}) from ${p.table} (${(p.sizeBytes / (1024 * 1024)).toFixed(1)} MB)`,
           );
-          await dropPartition(p.database, p.table, p.partitionId);
+          try {
+            await dropPartition(p.database, p.table, p.partitionId);
+            dropped.push({
+              database: p.database,
+              table: p.table,
+              partition: p.partition,
+              partitionId: p.partitionId,
+              oldestDateTime: p.oldestDateTime,
+              sizeBytes: p.sizeBytes,
+            });
+            currentUsage -= p.sizeBytes;
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            logger.error(
+              { error, partition: p },
+              'clickhouseRetention: Failed to drop partition, continuing',
+            );
+            failed.push({
+              database: p.database,
+              table: p.table,
+              partition: p.partition,
+              partitionId: p.partitionId,
+              oldestDateTime: p.oldestDateTime,
+              error: message,
+            });
+          }
         }
-        dropped.push({
-          database: p.database,
-          table: p.table,
-          partition: p.partition,
-          partitionId: p.partitionId,
-          oldestDateTime: p.oldestDateTime,
-          sizeBytes: p.sizeBytes,
-        });
-        currentUsage -= p.sizeBytes;
       }
     }
 
@@ -437,6 +471,7 @@ export default class ClickhouseRetentionTask
         maxDiskGB: settings.maxDiskGB,
         targetUsagePercent: TARGET_USAGE_PERCENT,
         partitionsDropped: dropped.length,
+        partitionsFailed: failed.length,
         dropped: dropped.map(d => ({
           database: d.database,
           table: d.table,
@@ -445,6 +480,7 @@ export default class ClickhouseRetentionTask
           oldestDateTime: d.oldestDateTime,
           sizeMB: (d.sizeBytes / (1024 * 1024)).toFixed(1),
         })),
+        failed,
         dryRun,
       },
     );

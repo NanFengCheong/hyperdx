@@ -214,6 +214,7 @@ describe('ClickhouseRetentionTask', () => {
     expect(queries).toContain(
       "ALTER TABLE `default`.`otel_logs` DROP PARTITION ID '20260401'",
     );
+    expect(queries[1]).toContain('toString(min(min_time))');
     expect(queries[1]).toContain('ORDER BY oldestDateTime ASC');
     expect(queries).toContain(
       "ALTER TABLE `default`.`otel_traces` DROP PARTITION ID '20260401'",
@@ -232,6 +233,65 @@ describe('ClickhouseRetentionTask', () => {
           freeDiskAfterGB: '5.50',
           partitionsDropped: 3,
           targetUsagePercent: 80,
+        }),
+      }),
+    );
+  });
+
+  it('should continue cleanup when one partition drop fails', async () => {
+    mockPlatformSettingFindOne.mockResolvedValue({
+      value: { maxDiskGB: 10, enabled: true },
+    } as any);
+
+    const GB = 1024 * 1024 * 1024;
+
+    mockFetch
+      .mockResolvedValueOnce(makeSystemDisksResponse(15 * GB, 0))
+      .mockResolvedValueOnce(
+        makeSystemPartsResponse([
+          {
+            database: 'default',
+            table: 'otel_logs',
+            partition: '2026-04-01',
+            partitionId: '20260401',
+            oldestDateTime: '2026-04-01 00:00:00',
+            sizeBytes: String(5 * GB),
+          },
+          {
+            database: 'default',
+            table: 'otel_traces',
+            partition: '2026-04-02',
+            partitionId: '20260402',
+            oldestDateTime: '2026-04-02 00:00:00',
+            sizeBytes: String(5 * GB),
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(new Response('drop failed', { status: 500 }))
+      .mockResolvedValueOnce(makeSystemPartsResponse([]));
+
+    const task = new ClickhouseRetentionTask({
+      taskName: TaskName.CLICKHOUSE_RETENTION,
+      dryRun: false,
+    });
+    await expect(task.execute()).resolves.toBeUndefined();
+
+    const queries = mockFetch.mock.calls.map(call =>
+      new URL(call[0] as string).searchParams.get('query'),
+    );
+
+    expect(queries).toContain(
+      "ALTER TABLE `default`.`otel_logs` DROP PARTITION ID '20260401'",
+    );
+    expect(queries).toContain(
+      "ALTER TABLE `default`.`otel_traces` DROP PARTITION ID '20260402'",
+    );
+    expect(mockAuditLogCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'clickhouse_retention.cleanup',
+        details: expect.objectContaining({
+          partitionsDropped: 1,
+          partitionsFailed: 1,
         }),
       }),
     );
