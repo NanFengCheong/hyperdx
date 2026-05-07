@@ -444,7 +444,7 @@ router.post('/data-retention/run', async (req, res, next) => {
 
     try {
       await task.execute();
-      res.json({ data: { ok: true, dryRun } });
+      res.json({ data: { ok: true, dryRun, summary: task.getSummary() } });
     } finally {
       await task.asyncDispose();
     }

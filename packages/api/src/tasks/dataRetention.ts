@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 
 import { RETENTION_DAYS_ALERTHISTORY, RETENTION_DAYS_AUDITLOG } from '@/config';
+import AlertHistory from '@/models/alertHistory';
 import AuditLog from '@/models/auditLog';
 import NotificationLog from '@/models/notificationLog';
 import PlatformSetting from '@/models/platformSetting';
@@ -68,6 +69,20 @@ export interface RetentionPolicy {
   dryRun: boolean;
 }
 
+export interface DataRetentionSummary {
+  collectionsProcessed: number;
+  totalDeleted: number;
+  durationMs: number;
+  dryRun: boolean;
+  startTime: string;
+  endTime: string;
+  results: {
+    collection: string;
+    retentionDays: number;
+    deletedCount: number;
+  }[];
+}
+
 /** System user ID for automated tasks (sentinel value) */
 const SYSTEM_ACTOR_ID = new mongoose.Types.ObjectId('000000000000000000000000');
 const SYSTEM_EMAIL = 'system@hyperdx.io';
@@ -107,10 +122,13 @@ export async function applyRetention(
 ): Promise<number> {
   const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
-  let model: typeof AuditLog | typeof NotificationLog;
+  let model: typeof AlertHistory | typeof AuditLog | typeof NotificationLog;
   switch (collectionName) {
     case 'AuditLog':
       model = AuditLog;
+      break;
+    case 'AlertHistory':
+      model = AlertHistory;
       break;
     case 'NotificationLog':
       model = NotificationLog;
@@ -152,6 +170,8 @@ export async function applyRetention(
 export default class DataRetentionTask
   implements HdxTask<DataRetentionTaskArgs>
 {
+  private summary: DataRetentionSummary | undefined;
+
   constructor(private args: DataRetentionTaskArgs) {}
 
   async execute(): Promise<void> {
@@ -228,25 +248,32 @@ export default class DataRetentionTask
       `dataRetention: Complete. Processed ${results.length} collection(s), ${dryRun ? 'would delete' : 'deleted'} ${totalDeleted} document(s) total`,
     );
 
+    const summary: DataRetentionSummary = {
+      collectionsProcessed: results.length,
+      totalDeleted,
+      durationMs,
+      dryRun,
+      startTime: startTime.toISOString(),
+      endTime: new Date().toISOString(),
+      results: results.map(r => ({
+        collection: r.collectionName,
+        retentionDays: r.retentionDays,
+        deletedCount: r.deletedCount,
+      })),
+    };
+    this.summary = summary;
+
     // Write summary audit log
     await writeAuditLog(
       dryRun ? 'data_retention.summary_dry_run' : 'data_retention.summary',
       'DataRetentionTask',
       'data-retention',
-      {
-        collectionsProcessed: results.length,
-        totalDeleted,
-        durationMs,
-        dryRun,
-        startTime: startTime.toISOString(),
-        endTime: new Date().toISOString(),
-        results: results.map(r => ({
-          collection: r.collectionName,
-          retentionDays: r.retentionDays,
-          deletedCount: r.deletedCount,
-        })),
-      },
+      { ...summary },
     );
+  }
+
+  getSummary(): DataRetentionSummary | undefined {
+    return this.summary;
   }
 
   name(): string {

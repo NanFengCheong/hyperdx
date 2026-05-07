@@ -455,6 +455,65 @@ describe('ClickhouseRetentionTask', () => {
     );
   });
 
+  it('should truncate large system log tables when partition cleanup cannot reach threshold', async () => {
+    mockPlatformSettingFindOne.mockResolvedValue({
+      value: { maxDiskGB: 20, enabled: true },
+    } as any);
+
+    const GB = 1024 * 1024 * 1024;
+
+    mockFetch
+      .mockResolvedValueOnce(makeSystemDisksResponse(19.5 * GB, 0))
+      .mockResolvedValueOnce(
+        makeSystemPartsResponse([
+          {
+            database: 'system',
+            table: 'trace_log',
+            partition: '202604',
+            partitionId: '202604',
+            oldestDateTime: '2026-04-01 00:00:00',
+            sizeBytes: String(2 * GB),
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(new Response('drop failed', { status: 500 }))
+      .mockResolvedValueOnce(makeSystemPartsResponse([]))
+      .mockResolvedValueOnce(
+        makeSystemPartsResponse([
+          {
+            table: 'trace_log',
+            sizeBytes: String(13.5 * GB),
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(makeSystemPartsResponse([]))
+      .mockResolvedValueOnce(makeSystemPartsResponse([]));
+
+    const task = new ClickhouseRetentionTask({
+      taskName: TaskName.CLICKHOUSE_RETENTION,
+      dryRun: false,
+    });
+    await task.execute();
+
+    const queries = getFetchQueries();
+
+    expect(queries).toContain(
+      "ALTER TABLE `system`.`trace_log` DROP PARTITION ID '202604'",
+    );
+    expect(queries).toContain('SYSTEM FLUSH LOGS');
+    expect(queries).toContain('TRUNCATE TABLE `system`.`trace_log`');
+    expect(mockAuditLogCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'clickhouse_retention.cleanup',
+        details: expect.objectContaining({
+          partitionsFailed: 1,
+          systemLogTablesTruncated: 1,
+          systemLogTablesFailed: 0,
+        }),
+      }),
+    );
+  });
+
   it('should use default settings when no PlatformSetting exists', async () => {
     mockPlatformSettingFindOne.mockResolvedValue(null);
 

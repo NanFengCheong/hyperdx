@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { clearDBCollections, closeDB, connectDB } from '@/fixtures';
 import AlertHistory, { IAlertHistory } from '@/models/alertHistory';
 import AuditLog from '@/models/auditLog';
+import PlatformSetting from '@/models/platformSetting';
 import DataRetentionTask, { applyRetention } from '@/tasks/dataRetention';
 import { TaskName } from '@/tasks/types';
 
@@ -123,6 +124,30 @@ describe('DataRetentionTask', () => {
       const deletedCount = await applyRetention('UnknownCollection', 90, false);
       expect(deletedCount).toBe(0);
     });
+
+    it('deletes AlertHistory entries older than retention period', async () => {
+      await AlertHistory.create({
+        alert: fakeObjectId,
+        counts: 1,
+        createdAt: new Date(Date.now() - 45 * DAY_MS),
+        state: 'ALERT' as any,
+        lastValues: [],
+      });
+
+      await AlertHistory.create({
+        alert: fakeObjectId,
+        counts: 1,
+        createdAt: new Date(Date.now() - 10 * DAY_MS),
+        state: 'ALERT' as any,
+        lastValues: [],
+      });
+
+      const deletedCount = await applyRetention('AlertHistory', 30, false);
+
+      expect(deletedCount).toBe(1);
+      const remaining = await AlertHistory.find();
+      expect(remaining).toHaveLength(1);
+    });
   });
 
   describe('DataRetentionTask class', () => {
@@ -186,6 +211,62 @@ describe('DataRetentionTask', () => {
       const logs = await AuditLog.find();
       expect(logs).toHaveLength(1);
       expect(logs[0].actorEmail).toBe('recent@example.com');
+
+      await task.asyncDispose();
+    });
+
+    it('uses saved audit log retention settings', async () => {
+      await PlatformSetting.create({
+        key: 'dataRetention',
+        value: { auditLog: 7, alertHistory: 30 },
+        updatedBy: fakeObjectId,
+      });
+
+      await AuditLog.create({
+        teamId: fakeObjectId,
+        actorId: fakeObjectId,
+        actorEmail: 'older-than-setting@example.com',
+        action: 'user.login',
+        targetType: 'User',
+        targetId: 'user-123',
+        createdAt: new Date(Date.now() - 10 * DAY_MS),
+      });
+
+      await AuditLog.create({
+        teamId: fakeObjectId,
+        actorId: fakeObjectId,
+        actorEmail: 'within-setting@example.com',
+        action: 'user.login',
+        targetType: 'User',
+        targetId: 'user-456',
+        createdAt: new Date(Date.now() - 5 * DAY_MS),
+      });
+
+      const task = new DataRetentionTask({
+        taskName: TaskName.DATA_RETENTION,
+        dryRun: false,
+      });
+
+      await task.execute();
+
+      expect(
+        await AuditLog.exists({ actorEmail: 'older-than-setting@example.com' }),
+      ).toBeNull();
+      expect(
+        await AuditLog.exists({ actorEmail: 'within-setting@example.com' }),
+      ).not.toBeNull();
+      expect(task.getSummary()).toEqual(
+        expect.objectContaining({
+          totalDeleted: 1,
+          results: expect.arrayContaining([
+            expect.objectContaining({
+              collection: 'AuditLog',
+              retentionDays: 7,
+              deletedCount: 1,
+            }),
+          ]),
+        }),
+      );
 
       await task.asyncDispose();
     });

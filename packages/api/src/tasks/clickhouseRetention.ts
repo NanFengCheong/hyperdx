@@ -34,6 +34,11 @@ interface DetachedPartInfo {
   sizeBytes: number;
 }
 
+interface SystemLogTableInfo {
+  table: string;
+  sizeBytes: number;
+}
+
 export interface ClickHouseTableDiskUsage {
   database: string;
   table: string;
@@ -461,6 +466,29 @@ async function dropDetachedPart(
   );
 }
 
+async function getSystemLogTablesBySize(): Promise<SystemLogTableInfo[]> {
+  const result = await queryClickhouse(
+    `SELECT table, sum(bytes_on_disk) as sizeBytes
+     FROM system.parts
+     WHERE active = 1 AND database = 'system' AND table IN (${CLEANABLE_SYSTEM_LOG_TABLE_LIST})
+     GROUP BY table
+     ORDER BY sizeBytes DESC
+     FORMAT JSON`,
+  );
+  const parsed = JSON.parse(result);
+  return (parsed.data ?? []).map((row: any) => ({
+    table: row.table,
+    sizeBytes: Number(row.sizeBytes),
+  }));
+}
+
+async function truncateSystemLogTable(table: string): Promise<void> {
+  await queryClickhouse('SYSTEM FLUSH LOGS');
+  await queryClickhouse(
+    `TRUNCATE TABLE ${quoteClickHouseIdentifier('system')}.${quoteClickHouseIdentifier(table)}`,
+  );
+}
+
 export default class ClickhouseRetentionTask
   implements HdxTask<ClickhouseRetentionTaskArgs>
 {
@@ -536,6 +564,14 @@ export default class ClickhouseRetentionTask
       partition: string;
       partitionId: string;
       name: string;
+      error: string;
+    }[] = [];
+    const systemLogsTruncated: {
+      table: string;
+      sizeBytes: number;
+    }[] = [];
+    const systemLogsFailed: {
+      table: string;
       error: string;
     }[] = [];
     let currentUsage = totalBefore;
@@ -655,6 +691,42 @@ export default class ClickhouseRetentionTask
       }
     }
 
+    if (currentUsage > maxBytes) {
+      const systemLogTables = await getSystemLogTablesBySize();
+
+      for (const tableInfo of systemLogTables) {
+        if (currentUsage <= maxBytes) break;
+
+        if (dryRun) {
+          logger.info(
+            `[DRY RUN] Would truncate system log table ${tableInfo.table} (${(tableInfo.sizeBytes / (1024 * 1024)).toFixed(1)} MB)`,
+          );
+          systemLogsTruncated.push(tableInfo);
+          currentUsage -= tableInfo.sizeBytes;
+        } else {
+          logger.info(
+            `clickhouseRetention: Truncating system log table ${tableInfo.table} (${(tableInfo.sizeBytes / (1024 * 1024)).toFixed(1)} MB)`,
+          );
+          try {
+            await truncateSystemLogTable(tableInfo.table);
+            systemLogsTruncated.push(tableInfo);
+            currentUsage -= tableInfo.sizeBytes;
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            logger.error(
+              { error, table: tableInfo.table },
+              'clickhouseRetention: Failed to truncate system log table, continuing',
+            );
+            systemLogsFailed.push({
+              table: tableInfo.table,
+              error: message,
+            });
+          }
+        }
+      }
+    }
+
     const totalAfterGB = (currentUsage / (1024 * 1024 * 1024)).toFixed(2);
     const freeAfterGB = (
       Math.max(0, diskSizeBytes - currentUsage) /
@@ -666,7 +738,7 @@ export default class ClickhouseRetentionTask
     ).toFixed(2);
 
     logger.info(
-      `clickhouseRetention: ${dryRun ? '[DRY RUN] Would drop' : 'Dropped'} ${dropped.length} partition(s) and ${detachedDropped.length} detached part(s), freed ${freedGB} GB. Usage: ${totalBeforeGB} GB → ${totalAfterGB} GB`,
+      `clickhouseRetention: ${dryRun ? '[DRY RUN] Would drop' : 'Dropped'} ${dropped.length} partition(s), ${detachedDropped.length} detached part(s), and ${systemLogsTruncated.length} system log table(s), freed ${freedGB} GB. Usage: ${totalBeforeGB} GB → ${totalAfterGB} GB`,
     );
 
     await writeAuditLog(
@@ -685,6 +757,8 @@ export default class ClickhouseRetentionTask
         partitionsFailed: failed.length,
         detachedPartsDropped: detachedDropped.length,
         detachedPartsFailed: detachedFailed.length,
+        systemLogTablesTruncated: systemLogsTruncated.length,
+        systemLogTablesFailed: systemLogsFailed.length,
         dropped: dropped.map(d => ({
           database: d.database,
           table: d.table,
@@ -701,8 +775,13 @@ export default class ClickhouseRetentionTask
           name: d.name,
           sizeMB: (d.sizeBytes / (1024 * 1024)).toFixed(1),
         })),
+        systemLogsTruncated: systemLogsTruncated.map(d => ({
+          table: d.table,
+          sizeMB: (d.sizeBytes / (1024 * 1024)).toFixed(1),
+        })),
         failed,
         detachedFailed,
+        systemLogsFailed,
         dryRun,
       },
     );
