@@ -15,7 +15,6 @@ import PlatformSetting from '../../models/platformSetting';
 import Team from '../../models/team';
 import User from '../../models/user';
 import ClickhouseRetentionTask, {
-  DEFAULT_MAX_DISK_GB,
   getClickHouseRetentionStatus,
   TARGET_USAGE_PERCENT,
 } from '../../tasks/clickhouseRetention';
@@ -460,11 +459,10 @@ router.get('/clickhouse-retention/settings', async (req, res, next) => {
       key: 'clickhouseRetention',
     });
     const value = setting?.value as
-      | { maxDiskGB?: number; enabled?: boolean; targetUsagePercent?: number }
+      | { enabled?: boolean; targetUsagePercent?: number }
       | undefined;
     res.json({
       data: {
-        maxDiskGB: value?.maxDiskGB ?? DEFAULT_MAX_DISK_GB,
         enabled: value?.enabled ?? true,
         targetUsagePercent: value?.targetUsagePercent ?? TARGET_USAGE_PERCENT,
       },
@@ -477,7 +475,7 @@ router.get('/clickhouse-retention/settings', async (req, res, next) => {
 // PUT /admin/clickhouse-retention/settings — update config
 const clickhouseRetentionSettingsSchema = z.object({
   enabled: z.boolean(),
-  targetUsagePercent: z.number().min(50).max(95),
+  targetUsagePercent: z.number().min(10).max(95),
 });
 
 router.put('/clickhouse-retention/settings', async (req, res, next) => {
@@ -492,19 +490,11 @@ router.put('/clickhouse-retention/settings', async (req, res, next) => {
     }
 
     const { enabled, targetUsagePercent } = parseResult.data;
-    const existingSetting = await PlatformSetting.findOne({
-      key: 'clickhouseRetention',
-    });
-    const existingValue = existingSetting?.value as
-      | { maxDiskGB?: number }
-      | undefined;
-    const maxDiskGB = existingValue?.maxDiskGB ?? DEFAULT_MAX_DISK_GB;
-
     await PlatformSetting.findOneAndUpdate(
       { key: 'clickhouseRetention' },
       {
         $set: {
-          value: { maxDiskGB, enabled, targetUsagePercent },
+          value: { enabled, targetUsagePercent },
           updatedBy: actor._id,
         },
       },
@@ -518,7 +508,7 @@ router.put('/clickhouse-retention/settings', async (req, res, next) => {
       action: 'clickhouse_retention.settings_updated',
       targetType: 'PlatformSetting',
       targetId: 'clickhouseRetention',
-      details: { maxDiskGB, enabled, targetUsagePercent },
+      details: { enabled, targetUsagePercent },
     });
 
     res.json({ data: { ok: true } });
@@ -534,14 +524,12 @@ router.get('/clickhouse-retention/status', async (req, res, next) => {
       key: 'clickhouseRetention',
     });
     const value = setting?.value as
-      | { maxDiskGB?: number; enabled?: boolean; targetUsagePercent?: number }
+      | { enabled?: boolean; targetUsagePercent?: number }
       | undefined;
-    const maxDiskGB = value?.maxDiskGB ?? DEFAULT_MAX_DISK_GB;
     const enabled = value?.enabled ?? true;
     const targetUsagePercent =
       value?.targetUsagePercent ?? TARGET_USAGE_PERCENT;
     const status = await getClickHouseRetentionStatus(
-      maxDiskGB,
       enabled,
       targetUsagePercent,
     );
@@ -557,6 +545,8 @@ router.get('/clickhouse-retention/status', async (req, res, next) => {
 // POST /admin/clickhouse-retention/run — manual ClickHouse retention cleanup
 const clickhouseRetentionRunSchema = z.object({
   dryRun: z.boolean().optional().default(false),
+  nuke: z.boolean().optional().default(false),
+  force: z.boolean().optional().default(false),
 });
 
 router.post('/clickhouse-retention/run', async (req, res, next) => {
@@ -570,28 +560,34 @@ router.post('/clickhouse-retention/run', async (req, res, next) => {
       });
     }
 
-    const { dryRun } = parseResult.data;
+    const { dryRun, nuke, force } = parseResult.data;
 
     await AuditLog.create({
       teamId: actor._id,
       actorId: actor._id,
       actorEmail: actor.email,
-      action: dryRun
-        ? 'clickhouse_retention.manual_dry_run'
-        : 'clickhouse_retention.manual_run',
+      action: nuke
+        ? dryRun
+          ? 'clickhouse_retention.manual_nuke_dry_run'
+          : 'clickhouse_retention.manual_nuke'
+        : dryRun
+          ? 'clickhouse_retention.manual_dry_run'
+          : 'clickhouse_retention.manual_run',
       targetType: 'System',
       targetId: 'clickhouse-retention',
-      details: { triggeredBy: actor.email, dryRun },
+      details: { triggeredBy: actor.email, dryRun, nuke, force },
     });
 
     const task = new ClickhouseRetentionTask({
       taskName: 'clickhouse-retention' as any,
       dryRun,
+      nuke,
+      force,
     });
 
     try {
       await task.execute();
-      res.json({ data: { ok: true, dryRun } });
+      res.json({ data: { ok: true, dryRun, nuke, force } });
     } finally {
       await task.asyncDispose();
     }

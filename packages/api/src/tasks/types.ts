@@ -50,6 +50,8 @@ const proactiveInvestigationTaskArgsSchema = z.object({
 const clickhouseRetentionTaskArgsSchema = z.object({
   taskName: z.literal(TaskName.CLICKHOUSE_RETENTION),
   dryRun: z.boolean().optional().default(false),
+  nuke: z.boolean().optional().default(false),
+  force: z.boolean().optional().default(false),
 });
 
 const taskArgsSchema = z.discriminatedUnion('taskName', [

@@ -806,6 +806,7 @@ function DataRetentionPanel() {
   const [dryRun, setDryRun] = useState(false);
   const [clickhouseModalOpen, setClickhouseModalOpen] = useState(false);
   const [clickhouseDryRun, setClickhouseDryRun] = useState(false);
+  const [clickhouseNuke, setClickhouseNuke] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: settingsData, isLoading: settingsLoading } =
@@ -823,7 +824,7 @@ function DataRetentionPanel() {
   const [alertHistory, setAlertHistory] = useState<number | string>(30);
   const [clickhouseThresholdPercent, setClickhouseThresholdPercent] = useState<
     number | string
-  >(80);
+  >(90);
   const [clickhouseEnabled, setClickhouseEnabled] = useState(true);
   const [settingsInitialized, setSettingsInitialized] = useState(false);
   const [clickhouseSettingsInitialized, setClickhouseSettingsInitialized] =
@@ -849,7 +850,7 @@ function DataRetentionPanel() {
   const clickhouseTargetUsagePercent =
     clickhouseStatus?.targetUsagePercent ??
     clickhouseSettingsData?.data?.targetUsagePercent ??
-    80;
+    90;
   const clickhouseTableUsageGB =
     clickhouseStatus?.tables.reduce(
       (sum, table) => sum + Number(table.sizeGB),
@@ -916,13 +917,13 @@ function DataRetentionPanel() {
     const thresholdPercentNum = Number(clickhouseThresholdPercent);
     if (
       !thresholdPercentNum ||
-      thresholdPercentNum < 50 ||
+      thresholdPercentNum < 10 ||
       thresholdPercentNum > 95
     ) {
       notifications.show({
         color: 'red',
         title: 'Invalid Settings',
-        message: 'Cleanup threshold must be between 50% and 95%.',
+        message: 'Cleanup threshold must be between 10% and 95%.',
       });
       return;
     }
@@ -1000,15 +1001,27 @@ function DataRetentionPanel() {
   const handleConfirmClickhouse = useCallback(() => {
     setClickhouseModalOpen(false);
     runClickhouseRetention.mutate(
-      { dryRun: clickhouseDryRun },
+      {
+        dryRun: clickhouseDryRun,
+        nuke: clickhouseNuke,
+        force: clickhouseNuke,
+      },
       {
         onSuccess: () => {
           notifications.show({
             color: 'green',
-            title: clickhouseDryRun ? 'Dry Run Complete' : 'Cleanup Complete',
+            title: clickhouseDryRun
+              ? 'Dry Run Complete'
+              : clickhouseNuke
+                ? 'Nuke Complete'
+                : 'Cleanup Complete',
             message: clickhouseDryRun
-              ? 'ClickHouse retention dry run finished. No data was deleted.'
-              : 'ClickHouse retention cleanup completed successfully.',
+              ? clickhouseNuke
+                ? 'ClickHouse nuke dry run finished. No data was deleted.'
+                : 'ClickHouse retention dry run finished. No data was deleted.'
+              : clickhouseNuke
+                ? 'ClickHouse nuke completed successfully.'
+                : 'ClickHouse retention cleanup completed successfully.',
           });
           queryClient.invalidateQueries({
             queryKey: ['admin', 'clickhouse-retention-status'],
@@ -1024,7 +1037,7 @@ function DataRetentionPanel() {
         },
       },
     );
-  }, [clickhouseDryRun, runClickhouseRetention, queryClient]);
+  }, [clickhouseDryRun, clickhouseNuke, runClickhouseRetention, queryClient]);
 
   return (
     <Stack gap="lg">
@@ -1091,7 +1104,7 @@ function DataRetentionPanel() {
                 label="Cleanup Threshold (%)"
                 value={clickhouseThresholdPercent}
                 onChange={setClickhouseThresholdPercent}
-                min={50}
+                min={10}
                 max={95}
                 size="sm"
               />
@@ -1113,7 +1126,7 @@ function DataRetentionPanel() {
                 <Group grow>
                   <Box>
                     <Text size="xs" c="dimmed">
-                      Retention Disk Cap
+                      Detected Disk Size
                     </Text>
                     <Text fw={600}>{clickhouseStatus.diskSizeGB} GB</Text>
                   </Box>
@@ -1292,7 +1305,8 @@ function DataRetentionPanel() {
         <Text size="sm" c="dimmed">
           Manually trigger retention jobs. MongoDB cleanup removes expired
           documents; ClickHouse cleanup drops oldest telemetry partitions until
-          usage is below the disk threshold.
+          usage is below the disk threshold. ClickHouse nuke removes all
+          cleanable telemetry partitions, detached parts, and system logs.
         </Text>
 
         <Group>
@@ -1323,9 +1337,14 @@ function DataRetentionPanel() {
             variant="secondary"
             onClick={() => {
               setClickhouseDryRun(true);
+              setClickhouseNuke(false);
               handleRunClickhouse();
             }}
-            loading={runClickhouseRetention.isPending && clickhouseDryRun}
+            loading={
+              runClickhouseRetention.isPending &&
+              clickhouseDryRun &&
+              !clickhouseNuke
+            }
           >
             Dry Run ClickHouse
           </Button>
@@ -1334,11 +1353,33 @@ function DataRetentionPanel() {
             color="red"
             onClick={() => {
               setClickhouseDryRun(false);
+              setClickhouseNuke(false);
               handleRunClickhouse();
             }}
-            loading={runClickhouseRetention.isPending && !clickhouseDryRun}
+            loading={
+              runClickhouseRetention.isPending &&
+              !clickhouseDryRun &&
+              !clickhouseNuke
+            }
           >
             Run ClickHouse Cleanup
+          </Button>
+          <Button
+            leftSection={<IconTrash size={16} />}
+            color="red"
+            variant="filled"
+            onClick={() => {
+              setClickhouseDryRun(false);
+              setClickhouseNuke(true);
+              handleRunClickhouse();
+            }}
+            loading={
+              runClickhouseRetention.isPending &&
+              !clickhouseDryRun &&
+              clickhouseNuke
+            }
+          >
+            Nuke ClickHouse
           </Button>
         </Group>
       </Stack>
@@ -1374,16 +1415,24 @@ function DataRetentionPanel() {
         onClose={() => setClickhouseModalOpen(false)}
         title={
           clickhouseDryRun
-            ? 'Confirm ClickHouse Dry Run'
-            : 'Confirm ClickHouse Cleanup'
+            ? clickhouseNuke
+              ? 'Confirm ClickHouse Nuke Dry Run'
+              : 'Confirm ClickHouse Dry Run'
+            : clickhouseNuke
+              ? 'Confirm ClickHouse Nuke'
+              : 'Confirm ClickHouse Cleanup'
         }
         centered
       >
         <Stack gap="md">
           <Text size="sm">
             {clickhouseDryRun
-              ? 'This will scan ClickHouse partitions and report how much data would be removed. No data will be modified.'
-              : 'This will permanently drop the oldest ClickHouse telemetry partitions until disk usage is below the configured threshold. This action cannot be undone.'}
+              ? clickhouseNuke
+                ? 'This will scan all cleanable ClickHouse telemetry partitions, detached parts, and system logs and report what would be removed. No data will be modified.'
+                : 'This will scan ClickHouse partitions and report how much data would be removed. No data will be modified.'
+              : clickhouseNuke
+                ? 'This will permanently remove all cleanable ClickHouse telemetry partitions, detached parts, and system logs. This action cannot be undone.'
+                : 'This will permanently drop the oldest ClickHouse telemetry partitions until disk usage is below the configured threshold. This action cannot be undone.'}
           </Text>
           <Group justify="flex-end">
             <Button
@@ -1397,7 +1446,11 @@ function DataRetentionPanel() {
               onClick={handleConfirmClickhouse}
               loading={runClickhouseRetention.isPending}
             >
-              {clickhouseDryRun ? 'Run Dry Run' : 'Confirm Cleanup'}
+              {clickhouseDryRun
+                ? 'Run Dry Run'
+                : clickhouseNuke
+                  ? 'Confirm Nuke'
+                  : 'Confirm Cleanup'}
             </Button>
           </Group>
         </Stack>

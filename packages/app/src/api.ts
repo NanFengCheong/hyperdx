@@ -1052,7 +1052,6 @@ export const useUpdateDataRetentionSettings = () =>
   });
 
 export type ClickhouseRetentionSettings = {
-  maxDiskGB: number;
   enabled: boolean;
   targetUsagePercent: number;
 };
@@ -1061,7 +1060,6 @@ export type ClickhouseRetentionStatus = {
   diskSizeGB: string;
   totalSizeGB: string;
   freeDiskGB: string;
-  maxDiskGB: number;
   enabled: boolean;
   usagePercent: string;
   targetUsagePercent: number;
@@ -1111,14 +1109,14 @@ export const useClickhouseRetentionStatus = () =>
 
 export const useRunClickhouseRetention = () =>
   useMutation<
-    { data: { ok: boolean; dryRun: boolean } },
+    { data: { ok: boolean; dryRun: boolean; nuke: boolean; force: boolean } },
     Error,
-    { dryRun: boolean }
+    { dryRun: boolean; nuke?: boolean; force?: boolean }
   >({
-    mutationFn: ({ dryRun }) =>
+    mutationFn: ({ dryRun, nuke = false, force = false }) =>
       hdxServer('admin/clickhouse-retention/run', {
         method: 'POST',
-        json: { dryRun },
+        json: { dryRun, nuke, force },
       }).json(),
   });
 

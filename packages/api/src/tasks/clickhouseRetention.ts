@@ -12,8 +12,7 @@ import PlatformSetting from '@/models/platformSetting';
 import { ClickhouseRetentionTaskArgs, HdxTask } from '@/tasks/types';
 import logger from '@/utils/logger';
 
-export const DEFAULT_MAX_DISK_GB = 100;
-export const TARGET_USAGE_PERCENT = 80;
+export const TARGET_USAGE_PERCENT = 90;
 
 interface PartitionInfo {
   database: string;
@@ -58,7 +57,6 @@ export interface ClickHouseRetentionStatus {
   diskSizeGB: string;
   totalSizeGB: string;
   freeDiskGB: string;
-  maxDiskGB: number;
   enabled: boolean;
   usagePercent: string;
   targetUsagePercent: number;
@@ -71,6 +69,7 @@ export interface ClickHouseRetentionStatus {
 interface ClickHouseDiskUsage {
   usedBytes: number;
   freeBytes: number;
+  totalBytes: number;
 }
 
 const SYSTEM_ACTOR_ID = new mongoose.Types.ObjectId('000000000000000000000000');
@@ -125,7 +124,6 @@ async function writeAuditLog(
 }
 
 async function getSettings(): Promise<{
-  maxDiskGB: number;
   enabled: boolean;
   targetUsagePercent: number;
 }> {
@@ -134,10 +132,9 @@ async function getSettings(): Promise<{
       key: 'clickhouseRetention',
     });
     const value = setting?.value as
-      | { maxDiskGB?: number; enabled?: boolean; targetUsagePercent?: number }
+      | { enabled?: boolean; targetUsagePercent?: number }
       | undefined;
     return {
-      maxDiskGB: value?.maxDiskGB ?? DEFAULT_MAX_DISK_GB,
       enabled: value?.enabled ?? true,
       targetUsagePercent: value?.targetUsagePercent ?? TARGET_USAGE_PERCENT,
     };
@@ -147,7 +144,6 @@ async function getSettings(): Promise<{
       'Failed to read ClickHouse retention settings, using defaults',
     );
     return {
-      maxDiskGB: DEFAULT_MAX_DISK_GB,
       enabled: true,
       targetUsagePercent: TARGET_USAGE_PERCENT,
     };
@@ -262,37 +258,24 @@ export async function queryClickhouse(query: string): Promise<string> {
 /** Get filesystem disk usage in bytes for ClickHouse disks */
 async function getFilesystemDiskUsage(): Promise<ClickHouseDiskUsage> {
   const result = await queryClickhouse(
-    `SELECT sum(total_space - free_space) as used, sum(free_space) as free FROM system.disks FORMAT JSON`,
+    `SELECT sum(total_space) as total, sum(total_space - free_space) as used, sum(free_space) as free FROM system.disks FORMAT JSON`,
   );
   const parsed = JSON.parse(result);
+  const usedBytes = Number(parsed.data?.[0]?.used ?? 0);
+  const freeBytes = Number(parsed.data?.[0]?.free ?? 0);
+  const totalBytes = Number(parsed.data?.[0]?.total ?? 0);
+  if (!Number.isFinite(totalBytes) || totalBytes <= 0) {
+    throw new Error('ClickHouse system.disks returned no disk total_space');
+  }
   return {
-    usedBytes: Number(parsed.data?.[0]?.used ?? 0),
-    freeBytes: Number(parsed.data?.[0]?.free ?? 0),
-  };
-}
-
-/** Get active user table usage in bytes. Used only when system.disks is unavailable. */
-async function getActivePartsDiskUsage(): Promise<ClickHouseDiskUsage> {
-  const result = await queryClickhouse(
-    `SELECT sum(bytes_on_disk) as total FROM system.parts WHERE active = 1 AND ${CLEANABLE_PARTS_FILTER} FORMAT JSON`,
-  );
-  const parsed = JSON.parse(result);
-  return {
-    usedBytes: Number(parsed.data?.[0]?.total ?? 0),
-    freeBytes: 0,
+    usedBytes,
+    freeBytes,
+    totalBytes,
   };
 }
 
 async function getClickHouseDiskUsage(): Promise<ClickHouseDiskUsage> {
-  try {
-    return await getFilesystemDiskUsage();
-  } catch (error) {
-    logger.warn(
-      { error },
-      'Failed to read ClickHouse filesystem usage from system.disks, falling back to active parts usage',
-    );
-    return getActivePartsDiskUsage();
-  }
+  return getFilesystemDiskUsage();
 }
 
 async function getPartsUsageByState(): Promise<{
@@ -362,7 +345,6 @@ export async function getTableDiskUsage(): Promise<ClickHouseTableDiskUsage[]> {
 }
 
 export async function getClickHouseRetentionStatus(
-  maxDiskGB: number,
   enabled: boolean,
   targetUsagePercent: number = TARGET_USAGE_PERCENT,
 ): Promise<ClickHouseRetentionStatus> {
@@ -374,7 +356,7 @@ export async function getClickHouseRetentionStatus(
       getDetachedPartsUsage(),
     ]);
   const totalBytes = diskUsage.usedBytes;
-  const diskSizeBytes = maxDiskGB * 1024 * 1024 * 1024;
+  const diskSizeBytes = diskUsage.totalBytes;
   const thresholdBytes = diskSizeBytes * (targetUsagePercent / 100);
   const otherFilesystemBytes = Math.max(
     0,
@@ -385,12 +367,14 @@ export async function getClickHouseRetentionStatus(
   );
 
   return {
-    diskSizeGB: maxDiskGB.toFixed(2),
+    diskSizeGB: formatGB(diskSizeBytes),
     totalSizeGB: formatGB(totalBytes),
     freeDiskGB: formatGB(diskUsage.freeBytes),
-    maxDiskGB,
     enabled,
-    usagePercent: ((totalBytes / diskSizeBytes) * 100).toFixed(1),
+    usagePercent:
+      diskSizeBytes > 0
+        ? ((totalBytes / diskSizeBytes) * 100).toFixed(1)
+        : '0.0',
     targetUsagePercent,
     thresholdGB: formatGB(thresholdBytes),
     isOverThreshold: totalBytes > thresholdBytes,
@@ -498,13 +482,11 @@ async function truncateSystemLogTable(table: string): Promise<void> {
   );
 }
 
-export default class ClickhouseRetentionTask
-  implements HdxTask<ClickhouseRetentionTaskArgs>
-{
+export default class ClickhouseRetentionTask implements HdxTask<ClickhouseRetentionTaskArgs> {
   constructor(private args: ClickhouseRetentionTaskArgs) {}
 
   async execute(): Promise<void> {
-    const { dryRun } = this.args;
+    const { dryRun, nuke, force } = this.args;
     const settings = await getSettings();
 
     if (!settings.enabled) {
@@ -512,31 +494,31 @@ export default class ClickhouseRetentionTask
       return;
     }
 
-    const diskSizeBytes = settings.maxDiskGB * 1024 * 1024 * 1024;
-    const maxBytes = diskSizeBytes * (settings.targetUsagePercent / 100);
     const diskUsageBefore = await getClickHouseDiskUsage();
+    const diskSizeBytes = diskUsageBefore.totalBytes;
+    const maxBytes = diskSizeBytes * (settings.targetUsagePercent / 100);
     const totalBefore = diskUsageBefore.usedBytes;
-    const totalBeforeGB = (totalBefore / (1024 * 1024 * 1024)).toFixed(2);
-    const freeBeforeGB = (
-      diskUsageBefore.freeBytes /
-      (1024 * 1024 * 1024)
-    ).toFixed(2);
+    const diskSizeGB = formatGB(diskSizeBytes);
+    const totalBeforeGB = formatGB(totalBefore);
+    const freeBeforeGB = formatGB(diskUsageBefore.freeBytes);
 
     logger.info(
-      `clickhouseRetention: Current disk usage ${totalBeforeGB} GB, free ${freeBeforeGB} GB, cleanup threshold ${settings.targetUsagePercent}% of ${settings.maxDiskGB} GB${dryRun ? ' [DRY RUN]' : ''}`,
+      `clickhouseRetention: Current disk usage ${totalBeforeGB} GB, free ${freeBeforeGB} GB, cleanup threshold ${settings.targetUsagePercent}% of ${diskSizeGB} GB${nuke ? ' [NUKE]' : ''}${force ? ' [FORCE]' : ''}${dryRun ? ' [DRY RUN]' : ''}`,
     );
 
-    if (totalBefore <= maxBytes) {
+    if (!force && totalBefore <= maxBytes) {
       logger.info(
         `clickhouseRetention: Under ${settings.targetUsagePercent}% threshold, no cleanup needed`,
       );
       await writeAuditLog('clickhouse_retention.check', {
         diskUsageGB: totalBeforeGB,
+        diskSizeGB,
         freeDiskGB: freeBeforeGB,
-        maxDiskGB: settings.maxDiskGB,
         targetUsagePercent: settings.targetUsagePercent,
         action: 'no_cleanup_needed',
         dryRun,
+        nuke,
+        force,
       });
       return;
     }
@@ -595,7 +577,7 @@ export default class ClickhouseRetentionTask
 
     // Iterate datetimes oldest first
     for (const datePartitions of partitionsByDateTime.values()) {
-      if (currentUsage <= maxBytes) break;
+      if (!nuke && currentUsage <= maxBytes) break;
 
       for (const p of datePartitions) {
         if (dryRun) {
@@ -646,11 +628,11 @@ export default class ClickhouseRetentionTask
       }
     }
 
-    if (currentUsage > maxBytes) {
+    if (nuke || currentUsage > maxBytes) {
       const detachedParts = await getDetachedPartsByAge();
 
       for (const p of detachedParts) {
-        if (currentUsage <= maxBytes) break;
+        if (!nuke && currentUsage <= maxBytes) break;
 
         if (dryRun) {
           logger.info(
@@ -700,11 +682,11 @@ export default class ClickhouseRetentionTask
       }
     }
 
-    if (currentUsage > maxBytes) {
+    if (nuke || currentUsage > maxBytes) {
       const systemLogTables = await getSystemLogTablesBySize();
 
       for (const tableInfo of systemLogTables) {
-        if (currentUsage <= maxBytes) break;
+        if (!nuke && currentUsage <= maxBytes) break;
 
         if (dryRun) {
           logger.info(
@@ -736,15 +718,9 @@ export default class ClickhouseRetentionTask
       }
     }
 
-    const totalAfterGB = (currentUsage / (1024 * 1024 * 1024)).toFixed(2);
-    const freeAfterGB = (
-      Math.max(0, diskSizeBytes - currentUsage) /
-      (1024 * 1024 * 1024)
-    ).toFixed(2);
-    const freedGB = (
-      (totalBefore - currentUsage) /
-      (1024 * 1024 * 1024)
-    ).toFixed(2);
+    const totalAfterGB = formatGB(currentUsage);
+    const freeAfterGB = formatGB(Math.max(0, diskSizeBytes - currentUsage));
+    const freedGB = formatGB(totalBefore - currentUsage);
 
     logger.info(
       `clickhouseRetention: ${dryRun ? '[DRY RUN] Would drop' : 'Dropped'} ${dropped.length} partition(s), ${detachedDropped.length} detached part(s), and ${systemLogsTruncated.length} system log table(s), freed ${freedGB} GB. Usage: ${totalBeforeGB} GB → ${totalAfterGB} GB`,
@@ -757,11 +733,13 @@ export default class ClickhouseRetentionTask
       {
         diskUsageBeforeGB: totalBeforeGB,
         diskUsageAfterGB: totalAfterGB,
+        diskSizeGB,
         freeDiskBeforeGB: freeBeforeGB,
         freeDiskAfterGB: freeAfterGB,
         freedGB,
-        maxDiskGB: settings.maxDiskGB,
         targetUsagePercent: settings.targetUsagePercent,
+        nuke,
+        force,
         partitionsDropped: dropped.length,
         partitionsFailed: failed.length,
         detachedPartsDropped: detachedDropped.length,

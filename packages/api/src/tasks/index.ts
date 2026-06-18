@@ -97,7 +97,7 @@ if (!RUN_SCHEDULED_TASKS_EXTERNALLY) {
     CronJob.from({
       cronTime: '0 0 * * * *',
       waitForCompletion: true,
-      onTick: async () => instrumentedMain(argv),
+      onTick: async () => instrumentedMain({ ...argv, nuke: true }),
       errorHandler: async err => {
         console.error(err);
       },

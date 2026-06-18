@@ -31,7 +31,11 @@ function makeSystemPartsResponse(data: any[]) {
 
 function makeSystemDisksResponse(usedBytes: number, freeBytes: number) {
   return makeSystemPartsResponse([
-    { used: String(usedBytes), free: String(freeBytes) },
+    {
+      total: String(usedBytes + freeBytes),
+      used: String(usedBytes),
+      free: String(freeBytes),
+    },
   ]);
 }
 
@@ -46,7 +50,7 @@ describe('ClickhouseRetentionTask', () => {
 
   it('should skip when disabled', async () => {
     mockPlatformSettingFindOne.mockResolvedValue({
-      value: { maxDiskGB: 100, enabled: false },
+      value: { enabled: false },
     } as any);
 
     const task = new ClickhouseRetentionTask({
@@ -58,12 +62,12 @@ describe('ClickhouseRetentionTask', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it('should not drop partitions when under 80 percent threshold', async () => {
+  it('should not drop partitions when under 90 percent threshold', async () => {
     mockPlatformSettingFindOne.mockResolvedValue({
-      value: { maxDiskGB: 100, enabled: true },
+      value: { enabled: true },
     } as any);
 
-    // 50GB total - under 80GB threshold for a 100GB disk
+    // 50GB total - under 90GB threshold for a 100GB disk
     mockFetch.mockResolvedValueOnce(
       makeSystemDisksResponse(50 * 1024 * 1024 * 1024, 50 * 1024 * 1024 * 1024),
     );
@@ -83,14 +87,101 @@ describe('ClickhouseRetentionTask', () => {
     );
   });
 
-  it('should use configured cleanup threshold instead of hardcoded default', async () => {
+  it('should nuke ClickHouse cleanup candidates even when under threshold', async () => {
     mockPlatformSettingFindOne.mockResolvedValue({
-      value: { maxDiskGB: 100, enabled: true, targetUsagePercent: 90 },
+      value: { enabled: true },
     } as any);
 
-    // 85GB total - over default 80GB threshold, under configured 90GB threshold
+    const GB = 1024 * 1024 * 1024;
+
+    mockFetch
+      .mockResolvedValueOnce(makeSystemDisksResponse(5 * GB, 5 * GB))
+      .mockResolvedValueOnce(
+        makeSystemPartsResponse([
+          {
+            database: 'default',
+            table: 'otel_logs',
+            partition: '2026-04-01',
+            partitionId: '20260401',
+            oldestDateTime: '2026-04-01 00:00:00',
+            sizeBytes: String(1 * GB),
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(makeSystemPartsResponse([]))
+      .mockResolvedValueOnce(
+        makeSystemPartsResponse([
+          {
+            table: 'trace_log',
+            sizeBytes: String(2 * GB),
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(makeSystemPartsResponse([]))
+      .mockResolvedValueOnce(makeSystemPartsResponse([]));
+
+    const task = new ClickhouseRetentionTask({
+      taskName: TaskName.CLICKHOUSE_RETENTION,
+      dryRun: false,
+      nuke: true,
+      force: true,
+    });
+    await task.execute();
+
+    const queries = getFetchQueries();
+
+    expect(queries).toContain(
+      "ALTER TABLE `default`.`otel_logs` DROP PARTITION ID '20260401'",
+    );
+    expect(queries).toContain('TRUNCATE TABLE `system`.`trace_log`');
+    expect(mockAuditLogCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'clickhouse_retention.cleanup',
+        details: expect.objectContaining({
+          nuke: true,
+          force: true,
+          partitionsDropped: 1,
+          systemLogTablesTruncated: 1,
+        }),
+      }),
+    );
+  });
+
+  it('should not nuke below threshold unless forced', async () => {
+    mockPlatformSettingFindOne.mockResolvedValue({
+      value: { enabled: true },
+    } as any);
+
+    const GB = 1024 * 1024 * 1024;
+    mockFetch.mockResolvedValueOnce(makeSystemDisksResponse(5 * GB, 5 * GB));
+
+    const task = new ClickhouseRetentionTask({
+      taskName: TaskName.CLICKHOUSE_RETENTION,
+      dryRun: false,
+      nuke: true,
+    });
+    await task.execute();
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockAuditLogCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'clickhouse_retention.check',
+        details: expect.objectContaining({
+          nuke: true,
+          force: false,
+        }),
+      }),
+    );
+  });
+
+  it('should use configured cleanup threshold instead of hardcoded default', async () => {
+    mockPlatformSettingFindOne.mockResolvedValue({
+      value: { enabled: true, targetUsagePercent: 95 },
+    } as any);
+
+    // 92GB total - over default 90GB threshold, under configured 95GB threshold
     mockFetch.mockResolvedValueOnce(
-      makeSystemDisksResponse(85 * 1024 * 1024 * 1024, 15 * 1024 * 1024 * 1024),
+      makeSystemDisksResponse(92 * 1024 * 1024 * 1024, 8 * 1024 * 1024 * 1024),
     );
 
     const task = new ClickhouseRetentionTask({
@@ -104,7 +195,7 @@ describe('ClickhouseRetentionTask', () => {
       expect.objectContaining({
         action: 'clickhouse_retention.check',
         details: expect.objectContaining({
-          targetUsagePercent: 90,
+          targetUsagePercent: 95,
         }),
       }),
     );
@@ -112,13 +203,13 @@ describe('ClickhouseRetentionTask', () => {
 
   it('should drop oldest partitions when over 80 percent threshold (dry run)', async () => {
     mockPlatformSettingFindOne.mockResolvedValue({
-      value: { maxDiskGB: 10, enabled: true },
+      value: { enabled: true, targetUsagePercent: 80 },
     } as any);
 
     const GB = 1024 * 1024 * 1024;
 
-    // 15GB total - over 8GB threshold for a 10GB disk
-    mockFetch.mockResolvedValueOnce(makeSystemDisksResponse(15 * GB, 0));
+    // 9GB used on a 10GB disk - over 8GB threshold
+    mockFetch.mockResolvedValueOnce(makeSystemDisksResponse(9 * GB, 1 * GB));
 
     // Partition listing - 3 dates, ~5GB each
     mockFetch.mockResolvedValueOnce(
@@ -187,13 +278,13 @@ describe('ClickhouseRetentionTask', () => {
 
   it('should drop partition IDs oldest first until usage is below 80 percent', async () => {
     mockPlatformSettingFindOne.mockResolvedValue({
-      value: { maxDiskGB: 10, enabled: true },
+      value: { enabled: true, targetUsagePercent: 80 },
     } as any);
 
     const GB = 1024 * 1024 * 1024;
 
     mockFetch
-      .mockResolvedValueOnce(makeSystemDisksResponse(15 * GB, 0))
+      .mockResolvedValueOnce(makeSystemDisksResponse(9 * GB, 1 * GB))
       .mockResolvedValueOnce(
         makeSystemPartsResponse([
           {
@@ -202,7 +293,7 @@ describe('ClickhouseRetentionTask', () => {
             partition: '2026-04-01',
             partitionId: '20260401',
             oldestDateTime: '2026-04-01 00:00:00',
-            sizeBytes: String(5 * GB),
+            sizeBytes: String(0.6 * GB),
           },
           {
             database: 'default',
@@ -210,7 +301,7 @@ describe('ClickhouseRetentionTask', () => {
             partition: '2026-04-01',
             partitionId: '20260401',
             oldestDateTime: '2026-04-01 00:00:00',
-            sizeBytes: String(0.5 * GB),
+            sizeBytes: String(0.2 * GB),
           },
           {
             database: 'otel_json',
@@ -218,7 +309,7 @@ describe('ClickhouseRetentionTask', () => {
             partition: '2026-04-02',
             partitionId: '20260402',
             oldestDateTime: '2026-04-02 00:00:00',
-            sizeBytes: String(5 * GB),
+            sizeBytes: String(0.6 * GB),
           },
           {
             database: 'default',
@@ -226,7 +317,7 @@ describe('ClickhouseRetentionTask', () => {
             partition: '2026-04-03',
             partitionId: '20260403',
             oldestDateTime: '2026-04-03 00:00:00',
-            sizeBytes: String(4.5 * GB),
+            sizeBytes: String(0.5 * GB),
           },
         ]),
       )
@@ -258,8 +349,8 @@ describe('ClickhouseRetentionTask', () => {
       expect.objectContaining({
         action: 'clickhouse_retention.cleanup',
         details: expect.objectContaining({
-          diskUsageAfterGB: '4.50',
-          freeDiskAfterGB: '5.50',
+          diskUsageAfterGB: '7.60',
+          freeDiskAfterGB: '2.40',
           partitionsDropped: 3,
           targetUsagePercent: 80,
         }),
@@ -269,13 +360,13 @@ describe('ClickhouseRetentionTask', () => {
 
   it('should continue cleanup when one partition drop fails', async () => {
     mockPlatformSettingFindOne.mockResolvedValue({
-      value: { maxDiskGB: 10, enabled: true },
+      value: { enabled: true, targetUsagePercent: 80 },
     } as any);
 
     const GB = 1024 * 1024 * 1024;
 
     mockFetch
-      .mockResolvedValueOnce(makeSystemDisksResponse(15 * GB, 0))
+      .mockResolvedValueOnce(makeSystemDisksResponse(9 * GB, 1 * GB))
       .mockResolvedValueOnce(
         makeSystemPartsResponse([
           {
@@ -284,7 +375,7 @@ describe('ClickhouseRetentionTask', () => {
             partition: '2026-04-01',
             partitionId: '20260401',
             oldestDateTime: '2026-04-01 00:00:00',
-            sizeBytes: String(5 * GB),
+            sizeBytes: String(1.5 * GB),
           },
           {
             database: 'default',
@@ -292,7 +383,7 @@ describe('ClickhouseRetentionTask', () => {
             partition: '2026-04-02',
             partitionId: '20260402',
             oldestDateTime: '2026-04-02 00:00:00',
-            sizeBytes: String(5 * GB),
+            sizeBytes: String(1.5 * GB),
           },
         ]),
       )
@@ -326,13 +417,13 @@ describe('ClickhouseRetentionTask', () => {
 
   it('should include non-otel user tables in disk usage and cleanup candidates', async () => {
     mockPlatformSettingFindOne.mockResolvedValue({
-      value: { maxDiskGB: 10, enabled: true },
+      value: { enabled: true, targetUsagePercent: 80 },
     } as any);
 
     const GB = 1024 * 1024 * 1024;
 
     mockFetch
-      .mockResolvedValueOnce(makeSystemDisksResponse(13.9 * GB, 0))
+      .mockResolvedValueOnce(makeSystemDisksResponse(9 * GB, 1 * GB))
       .mockResolvedValueOnce(
         makeSystemPartsResponse([
           {
@@ -341,7 +432,7 @@ describe('ClickhouseRetentionTask', () => {
             partition: '2026-04-01',
             partitionId: '20260401',
             oldestDateTime: '2026-04-01 00:00:00',
-            sizeBytes: String(6 * GB),
+            sizeBytes: String(2 * GB),
           },
         ]),
       )
@@ -366,13 +457,13 @@ describe('ClickhouseRetentionTask', () => {
 
   it('should drop detached parts when active partitions do not reclaim enough space', async () => {
     mockPlatformSettingFindOne.mockResolvedValue({
-      value: { maxDiskGB: 10, enabled: true },
+      value: { enabled: true, targetUsagePercent: 80 },
     } as any);
 
     const GB = 1024 * 1024 * 1024;
 
     mockFetch
-      .mockResolvedValueOnce(makeSystemDisksResponse(20 * GB, 0))
+      .mockResolvedValueOnce(makeSystemDisksResponse(9.5 * GB, 0.5 * GB))
       .mockResolvedValueOnce(
         makeSystemPartsResponse([
           {
@@ -381,7 +472,7 @@ describe('ClickhouseRetentionTask', () => {
             partition: '2026-04-01',
             partitionId: '20260401',
             oldestDateTime: '2026-04-01 00:00:00',
-            sizeBytes: String(2 * GB),
+            sizeBytes: String(0.5 * GB),
           },
         ]),
       )
@@ -394,7 +485,7 @@ describe('ClickhouseRetentionTask', () => {
             partition: '2026-04-01',
             partitionId: '20260401',
             name: '20260401_1_1_0',
-            sizeBytes: String(8 * GB),
+            sizeBytes: String(0.75 * GB),
           },
           {
             database: 'default',
@@ -402,7 +493,7 @@ describe('ClickhouseRetentionTask', () => {
             partition: '2026-04-02',
             partitionId: '20260402',
             name: '20260402_1_1_0',
-            sizeBytes: String(4 * GB),
+            sizeBytes: String(0.5 * GB),
           },
         ]),
       )
@@ -439,13 +530,13 @@ describe('ClickhouseRetentionTask', () => {
 
   it('should clean ClickHouse system trace log partitions', async () => {
     mockPlatformSettingFindOne.mockResolvedValue({
-      value: { maxDiskGB: 20, enabled: true },
+      value: { enabled: true, targetUsagePercent: 80 },
     } as any);
 
     const GB = 1024 * 1024 * 1024;
 
     mockFetch
-      .mockResolvedValueOnce(makeSystemDisksResponse(19.5 * GB, 0))
+      .mockResolvedValueOnce(makeSystemDisksResponse(19.5 * GB, 0.5 * GB))
       .mockResolvedValueOnce(
         makeSystemPartsResponse([
           {
@@ -484,13 +575,13 @@ describe('ClickhouseRetentionTask', () => {
 
   it('should truncate large system log tables when partition cleanup cannot reach threshold', async () => {
     mockPlatformSettingFindOne.mockResolvedValue({
-      value: { maxDiskGB: 20, enabled: true },
+      value: { enabled: true, targetUsagePercent: 80 },
     } as any);
 
     const GB = 1024 * 1024 * 1024;
 
     mockFetch
-      .mockResolvedValueOnce(makeSystemDisksResponse(19.5 * GB, 0))
+      .mockResolvedValueOnce(makeSystemDisksResponse(19.5 * GB, 0.5 * GB))
       .mockResolvedValueOnce(
         makeSystemPartsResponse([
           {
@@ -560,13 +651,13 @@ describe('ClickhouseRetentionTask', () => {
 
   it('should send ClickHouse queries with POST so ALTER is not readonly', async () => {
     mockPlatformSettingFindOne.mockResolvedValue({
-      value: { maxDiskGB: 10, enabled: true },
+      value: { enabled: true, targetUsagePercent: 80 },
     } as any);
 
     const GB = 1024 * 1024 * 1024;
 
     mockFetch
-      .mockResolvedValueOnce(makeSystemDisksResponse(9 * GB, 0))
+      .mockResolvedValueOnce(makeSystemDisksResponse(9 * GB, 1 * GB))
       .mockResolvedValueOnce(
         makeSystemPartsResponse([
           {
