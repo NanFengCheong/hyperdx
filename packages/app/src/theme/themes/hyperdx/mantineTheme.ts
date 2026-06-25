@@ -12,9 +12,9 @@ import {
   Tooltip,
 } from '@mantine/core';
 
-import focusClasses from '../../../../styles/focus.module.scss';
-import variantClasses from '../../../../styles/variants.module.scss';
-import componentClasses from '../components.module.scss';
+import componentClasses from '@/theme/themes/components.module.scss';
+import focusClasses from '@styles/focus.module.scss';
+import variantClasses from '@styles/variants.module.scss';
 
 const makeTheme = ({
   fontFamily = '"IBM Plex Sans", monospace',
@@ -22,6 +22,7 @@ const makeTheme = ({
   fontFamily?: string;
 }): MantineThemeOverride => ({
   cursorType: 'pointer',
+  defaultRadius: 'sm',
   fontFamily,
   focusClassName: focusClasses.focusRing,
   primaryColor: 'green',
@@ -298,7 +299,7 @@ const makeTheme = ({
       },
     }),
     SegmentedControl: SegmentedControl.extend({
-      styles: (_theme, props) => ({
+      styles: () => ({
         root: {
           background: 'var(--color-bg-field)',
         },
@@ -313,6 +314,9 @@ const makeTheme = ({
           '--tabs-color': 'var(--color-text-brand)',
         },
       }),
+      styles: {
+        tabLabel: { textAlign: 'left' },
+      },
     }),
     ActionIcon: ActionIcon.extend({
       defaultProps: {

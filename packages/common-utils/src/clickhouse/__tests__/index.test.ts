@@ -2,9 +2,17 @@ import {
   convertCHDataTypeToJSType,
   extractColumnReferencesFromKey,
   JSDataType,
-} from '..';
+} from '@/clickhouse';
 
 describe('extractColumnReferencesFromKey', () => {
+  // Suppress expected console.error from parse failures in edge-case tests
+  beforeAll(() => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterAll(() => {
+    jest.restoreAllMocks();
+  });
+
   it('should extract column references from simple column names', () => {
     expect(extractColumnReferencesFromKey('col1, col2, col3')).toEqual([
       'col1',

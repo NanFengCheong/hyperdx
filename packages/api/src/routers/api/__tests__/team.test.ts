@@ -33,11 +33,11 @@ describe('team router', () => {
 
     expect(_.omit(resp.body, ['_id', 'id', 'apiKey', 'createdAt']))
       .toMatchInlineSnapshot(`
-Object {
-  "allowedAuthMethods": Array [],
-  "name": "fake@deploysentinel.com's Team",
-}
-`);
+      {
+        "allowedAuthMethods": [],
+        "name": "fake@deploysentinel.com's Team",
+      }
+    `);
   });
 
   it('GET /team/tags - no tags', async () => {
@@ -45,7 +45,7 @@ Object {
 
     const resp = await agent.get('/team/tags').expect(200);
 
-    expect(resp.body.data).toMatchInlineSnapshot(`Array []`);
+    expect(resp.body.data).toMatchInlineSnapshot(`[]`);
   });
 
   it('GET /team/tags', async () => {
@@ -245,17 +245,17 @@ Object {
         name: i.name,
       })),
     ).toMatchInlineSnapshot(`
-Array [
-  Object {
-    "email": "user1@example.com",
-    "name": "User 1",
-  },
-  Object {
-    "email": "user2@example.com",
-    "name": "User 2",
-  },
-]
-`);
+      [
+        {
+          "email": "user1@example.com",
+          "name": "User 1",
+        },
+        {
+          "email": "user2@example.com",
+          "name": "User 2",
+        },
+      ]
+    `);
   });
 
   it('DELETE /team/member/:userId removes a user', async () => {

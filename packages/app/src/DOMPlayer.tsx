@@ -19,7 +19,7 @@ import { useDebugMode } from '@/utils';
 
 import { FieldExpressionGenerator } from './hooks/useFieldExpressionGenerator';
 
-import styles from '../styles/SessionSubpanelV2.module.scss';
+import styles from '@styles/SessionSubpanelV2.module.scss';
 
 function getPlayerCurrentTime(player: Replayer) {
   return Math.max(player.getCurrentTime(), 0); //getCurrentTime can be -startTime
@@ -264,6 +264,7 @@ export default function DOMPlayer({
       );
     }
 
+    // eslint-disable-next-line react-hooks/immutability
     updatePlayerTimeRafRef.current = requestAnimationFrame(updatePlayerTime);
   }, []);
 

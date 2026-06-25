@@ -32,6 +32,7 @@ import CodeMirror, {
 
 import InputLanguageSwitch from '@/components/SearchInput/InputLanguageSwitch';
 import { useMultipleAllFields } from '@/hooks/useMetadata';
+import { useSource } from '@/source';
 import { useQueryHistory } from '@/utils';
 import { clickhouseSql } from '@/utils/codeMirror';
 
@@ -62,6 +63,8 @@ type SQLInlineEditorProps = {
   queryHistoryType?: string;
   parentRef?: HTMLElement | null;
   allowMultiline?: boolean;
+  dateRange?: [Date, Date];
+  sourceId?: string;
 };
 
 const MAX_EDITOR_HEIGHT = '150px';
@@ -86,12 +89,18 @@ export default function SQLInlineEditor({
   queryHistoryType,
   parentRef,
   allowMultiline = true,
+  dateRange,
+  sourceId,
 }: SQLInlineEditorProps & TableConnectionChoice) {
   const { colorScheme } = useMantineColorScheme();
   const _tableConnections = tableConnection
     ? [tableConnection]
     : tableConnections;
-  const { data: fields } = useMultipleAllFields(_tableConnections ?? []);
+  const { data: source } = useSource({ id: sourceId });
+  const { data: fields } = useMultipleAllFields(_tableConnections ?? [], {
+    dateRange,
+    timestampValueExpression: source?.timestampValueExpression,
+  });
   const filteredFields = useMemo(() => {
     return filterField ? fields?.filter(filterField) : fields;
   }, [fields, filterField]);
@@ -165,7 +174,7 @@ export default function SQLInlineEditor({
       });
 
       const queryHistoryList = autocompletion({
-        compareCompletions: (a: any, b: any) => {
+        compareCompletions: () => {
           return 0;
         }, // don't sort the history search
         override: [createHistoryList],
@@ -242,6 +251,7 @@ export default function SQLInlineEditor({
       // Enable line wrapping when multiline is allowed (regardless of focus)
       ...(allowMultiline ? [EditorView.lineWrapping] : []),
 
+      // eslint-disable-next-line react-hooks/refs
       compartmentRef.current.of(
         clickhouseSql({
           upperCaseKeywords: true,
@@ -295,7 +305,7 @@ export default function SQLInlineEditor({
 
   // Only apply expanded styling when multiline is enabled and focused
   const isExpanded = allowMultiline && isFocused;
-  const baseHeight = size === 'xs' ? 32 : 36;
+  const baseHeight = size === 'xs' ? 30 : 36;
 
   return (
     <div

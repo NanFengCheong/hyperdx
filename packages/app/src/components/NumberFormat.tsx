@@ -19,20 +19,22 @@ import {
   IconClock,
   IconCurrencyDollar,
   IconDatabase,
+  IconHourglass,
   IconNumbers,
   IconPercentage,
 } from '@tabler/icons-react';
 
-import { formatNumber } from '../utils';
+import { formatNumber } from '@/utils';
 
 import { ChartConfigDisplaySettings } from './ChartDisplaySettingsDrawer';
 
-const FORMAT_ICONS: Record<string, React.ReactNode> = {
+export const FORMAT_ICONS: Record<string, React.ReactNode> = {
   number: <IconNumbers size={14} />,
   currency: <IconCurrencyDollar size={14} />,
   percent: <IconPercentage size={14} />,
   byte: <IconDatabase size={14} />,
   time: <IconClock size={14} />,
+  duration: <IconHourglass size={14} />,
   data_rate: <IconDatabase size={14} />,
   throughput: <IconNumbers size={14} />,
 };
@@ -131,7 +133,8 @@ const OUTPUT_CATEGORY_OPTIONS: OutputGroup[] = [
       { value: 'number', label: 'Number' },
       { value: 'currency', label: 'Currency' },
       { value: 'percent', label: 'Percentage' },
-      { value: 'time', label: 'Time' },
+      { value: 'duration', label: 'Duration' },
+      { value: 'time', label: 'Time (clock)' },
     ],
   },
   {
@@ -151,9 +154,10 @@ const hasNumericUnit = (output: string) =>
   output === 'byte' || output === 'data_rate' || output === 'throughput';
 
 export const NumberFormatForm: React.FC<{
-  control: Control<ChartConfigDisplaySettings>;
-  setValue: UseFormSetValue<ChartConfigDisplaySettings>;
-}> = ({ control, setValue }) => {
+  control: Control<Pick<ChartConfigDisplaySettings, 'numberFormat'>>;
+  setValue: UseFormSetValue<Pick<ChartConfigDisplaySettings, 'numberFormat'>>;
+  disclaimer?: React.ReactNode;
+}> = ({ control, setValue, disclaimer }) => {
   const format =
     useWatch({ control, name: 'numberFormat' }) ?? DEFAULT_NUMBER_FORMAT;
 
@@ -249,7 +253,7 @@ export const NumberFormatForm: React.FC<{
           </Paper>
         </div>
 
-        {format.output !== 'time' && (
+        {format.output !== 'time' && format.output !== 'duration' && (
           <div>
             <div className="fs-8 mt-2 fw-bold mb-1">Decimals</div>
             <Controller
@@ -293,7 +297,7 @@ export const NumberFormatForm: React.FC<{
                 );
               }}
             />
-          ) : format.output === 'time' ? (
+          ) : format.output === 'time' || format.output === 'duration' ? (
             <Controller
               control={control}
               key="numberFormat.factor"
@@ -357,6 +361,7 @@ export const NumberFormatForm: React.FC<{
             </>
           ) : null}
         </Stack>
+        {disclaimer}
       </Stack>
     </>
   );

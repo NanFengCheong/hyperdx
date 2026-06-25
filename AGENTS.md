@@ -11,13 +11,25 @@ schema-agnostic design, and correlation across all telemetry types in one place.
 
 ## Architecture (WHAT)
 
-This is a **monorepo** with three main packages:
+This is a **monorepo** with six packages:
 
 - `packages/app` - Next.js frontend (TypeScript, Mantine UI, TanStack Query)
 - `packages/api` - Express backend (Node.js 22+, MongoDB for metadata,
-  ClickHouse for telemetry)
+  ClickHouse for telemetry). Also hosts the **MCP server**, **External API v2**,
+  and **OpAMP server** as sub-applications.
 - `packages/common-utils` - Shared TypeScript utilities for query parsing and
   validation
+- `packages/cli` - Terminal CLI and interactive TUI (`hdx`) for searching,
+  tailing, and inspecting logs and traces (Ink/React). Has its own
+  [`AGENTS.md`](packages/cli/AGENTS.md) with detailed architecture and
+  keybindings.
+- `packages/otel-collector` - Custom-built OpenTelemetry Collector (Go, OCB).
+  See its [`README.md`](packages/otel-collector/README.md) for architecture,
+  included components, and upgrade procedures.
+- `packages/hdx-eval` - AI eval framework for benchmarking MCP servers against
+  observability scenarios. Generates deterministic synthetic telemetry, spawns
+  agents, and grades with programmatic checks + LLM-as-judge. See its
+  [`README.md`](packages/hdx-eval/README.md) for setup and usage.
 
 **Data flow**: Apps → OpenTelemetry Collector → ClickHouse (telemetry data) /
 MongoDB (configuration/metadata)
@@ -49,6 +61,16 @@ directory:
 - `agent_docs/development.md` - Development workflows, testing, and common tasks
 - `agent_docs/code_style.md` - Code patterns and best practices (read only when
   actively coding)
+- `agent_docs/observability.md` - Instrumentation standards (tracing, metrics,
+  context) and the shared helpers (read when adding or changing a feature)
+
+**Package-specific guides** (read when working on that package):
+
+- `packages/cli/AGENTS.md` - CLI/TUI architecture, keybindings, web frontend
+  alignment, key patterns
+- `packages/otel-collector/README.md` - Collector build process, included
+  components, upgrade procedures, adding custom components
+- `MCP.md` - MCP server setup and available tools (user-facing)
 
 **After finishing all code edits**, run `yarn lint:fix` to auto-fix formatting
 and lint issues across all packages. Pre-commit hooks handle this when
@@ -66,6 +88,12 @@ before stopping.
    `secondary`, `danger`) - see `agent_docs/code_style.md` for required patterns
 6. **Testing**: Tests live in `__tests__/` directories; use Jest for
    unit/integration tests
+7. **Observability**: This is an observability product - instrument new code as
+   you write it. Every team-scoped operation must carry team/user context
+   (`setBusinessContext`), countable log events should also emit a metric, and
+   spans/metric attributes must stay low-cardinality. Use the shared helpers in
+   `packages/api/src/utils/instrumentation.ts`. See
+   [`agent_docs/observability.md`](agent_docs/observability.md).
 
 ## Running Tests
 
@@ -102,6 +130,13 @@ To run a specific test file or pattern:
 ```bash
 yarn ci:unit <path/to/test.ts>                           # Run specific test file
 yarn ci:unit --testNamePattern="test name pattern"       # Run tests matching pattern
+```
+
+**packages/cli** (type check only, no test suite):
+
+```bash
+cd packages/cli
+npx tsc --noEmit        # Type check
 ```
 
 **Lint & type check across all packages:**
@@ -211,6 +246,14 @@ efficient and accurate:
    your agent to produce tests before writing implementation code. See the
    Testing section below for the commands to use.
 
+5. **Ensure a changeset exists before pushing a PR.** Any change to a published
+   package (`@hyperdx/app`, `@hyperdx/api`, `@hyperdx/otel-collector`, etc.) that
+   is user-facing or affects behavior must include a changeset in `.changeset/`.
+   Add one with `yarn changeset` (or create the markdown file by hand following
+   the format of existing entries), choosing the appropriate semver bump, before
+   pushing the branch. Skip only for changes that don't warrant a release (docs,
+   internal tooling, tests, CI).
+
 ## GitHub Action Workflow (when invoked via @claude)
 
 When working on issues or PRs through the GitHub Action:
@@ -258,6 +301,49 @@ formatting checks pass. Fix any issues before creating the commit.
    side to keep, or whether a change can be safely discarded, stop and ask for
    manual intervention rather than guessing. A wrong guess silently breaks
    things; asking is always cheaper than debugging later.
+
+## Cursor Cloud specific instructions
+
+### Docker requirement
+
+Docker must be installed and running before starting the dev stack or running
+integration/E2E tests. The VM update script handles `yarn install` and
+`yarn build:common-utils`, but Docker daemon startup is a prerequisite that must
+already be available.
+
+### Starting the dev stack
+
+`yarn dev` uses `sh -c` to source `scripts/dev-env.sh`, which contains
+bash-specific syntax (`BASH_SOURCE`). On systems where `/bin/sh` is `dash`
+(e.g. Ubuntu), this fails with "Bad substitution". Work around it by running
+with bash directly:
+
+```bash
+bash -c 'export PATH="/workspace/node_modules/.bin:$PATH" && source ./scripts/dev-env.sh && yarn build:common-utils && dotenvx run --convention=nextjs -- docker compose -p "$HDX_DEV_PROJECT" -f docker-compose.dev.yml up -d && yarn app:dev'
+```
+
+Port isolation assigns a slot based on the worktree directory name. In the
+default `/workspace` directory, the slot is **76**, so services are at:
+
+- **App**: http://localhost:30276
+- **API**: http://localhost:30176
+- **ClickHouse**: http://localhost:30576
+- **MongoDB**: localhost:30476
+
+### Key commands reference
+
+See `AGENTS.md` above and `agent_docs/development.md` for the full command
+reference. Quick summary:
+
+- `make ci-lint` — lint + TypeScript type check
+- `make ci-unit` — unit tests (all packages)
+- `make dev-int FILE=<name>` — integration tests (spins up Docker services)
+- `make dev-e2e FILE=<name>` — E2E tests (Playwright)
+
+### First-time registration
+
+When the dev stack starts fresh (empty MongoDB), the app shows a registration
+page. Create any account to get started — no external auth provider is needed.
 
 ---
 

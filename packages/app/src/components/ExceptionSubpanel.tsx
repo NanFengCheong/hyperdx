@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useMemo } from 'react';
 import cx from 'classnames';
 import { ErrorBoundary } from 'react-error-boundary';
@@ -17,7 +18,7 @@ import { useSourceMappedFrame } from '@/useSourceMappedFrame';
 
 import { Table, TableCellButton } from './Table';
 
-import styles from '../../styles/LogSidePanel.module.scss';
+import styles from '@styles/LogSidePanel.module.scss';
 
 // https://github.com/TanStack/table/discussions/3192#discussioncomment-3873093
 const UNDEFINED_WIDTH = 99999;
@@ -214,7 +215,7 @@ const StacktraceRow = ({
 
   const frame = row.original;
 
-  const { isLoading, enrichedFrame } = useSourceMappedFrame(frame);
+  const { isLoading, enrichedFrame } = useSourceMappedFrame();
 
   const augmentedFrame = enrichedFrame ?? frame;
   const hasContext = !!augmentedFrame.context_line;

@@ -26,7 +26,7 @@ import {
 } from '@/utils/emailService';
 import logger from '@/utils/logger';
 import passport from '@/utils/passport';
-import { validatePassword } from '@/utils/validators';
+import { passwordSchema, validatePassword } from '@/utils/validators';
 
 const registrationSchema = z
   .object({
@@ -550,7 +550,7 @@ router.get('/logout', (req, res, next) => {
     if (err) {
       return next(err);
     }
-    res.redirect(`${config.FRONTEND_URL}/login`);
+    res.redirect(`${config.FRONTEND_REDIRECT_BASE}/login`);
   });
 });
 
@@ -562,7 +562,7 @@ router.post('/team/setup/:token', async (req, res, next) => {
 
     if (!validatePassword(password)) {
       return res.redirect(
-        `${config.FRONTEND_URL}/join-team?err=invalid&token=${token}`,
+        `${config.FRONTEND_REDIRECT_BASE}/join-team?err=invalid&token=${token}`,
       );
     }
 
@@ -583,12 +583,12 @@ router.post('/team/setup/:token', async (req, res, next) => {
         team: teamInvite.teamId,
         roleId: viewerRole?._id,
       }),
-      password, // TODO: validate password
+      password,
       async (err: Error, user: any) => {
         if (err) {
           logger.error({ err: serializeError(err) }, 'Team setup error');
           return res.redirect(
-            `${config.FRONTEND_URL}/join-team?token=${token}&err=500`,
+            `${config.FRONTEND_REDIRECT_BASE}/join-team?token=${token}&err=500`,
           );
         }
 

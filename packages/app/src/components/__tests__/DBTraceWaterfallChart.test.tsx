@@ -6,24 +6,53 @@ import {
 } from '@hyperdx/common-utils/dist/types';
 import { screen, waitFor } from '@testing-library/react';
 import { renderHook } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
-import { TimelineChart } from '@/components/TimelineChart';
-import useOffsetPaginatedQuery from '@/hooks/useOffsetPaginatedQuery';
-import useRowWhere from '@/hooks/useRowWhere';
-
-import { RowSidePanelContext } from '../DBRowSidePanel';
+import { RowSidePanelContext } from '@/components/DBRowSidePanel';
 import {
   DBTraceWaterfallChartContainer,
   getDescendantIds,
   SpanRow,
   useEventsAroundFocus,
-} from '../DBTraceWaterfallChart';
+} from '@/components/DBTraceWaterfallChart';
+import { TimelineChart } from '@/components/TimelineChart';
+import useOffsetPaginatedQuery from '@/hooks/useOffsetPaginatedQuery';
+import useRowWhere from '@/hooks/useRowWhere';
 
 // Mock setup
 jest.mock('@/components/TimelineChart', () => {
+  const flattenText = (value: React.ReactNode): string => {
+    if (value == null || typeof value === 'boolean') {
+      return '';
+    }
+
+    if (typeof value === 'string' || typeof value === 'number') {
+      return String(value);
+    }
+
+    if (Array.isArray(value)) {
+      return value.map(flattenText).join('');
+    }
+
+    if (React.isValidElement<{ children?: React.ReactNode }>(value)) {
+      return flattenText(value.props.children);
+    }
+
+    return '';
+  };
+
   const mockComponent = function MockTimelineChart(props: any) {
     mockComponent.latestProps = props;
-    return <div data-testid="timeline-chart">TimelineChart</div>;
+    return (
+      <div data-testid="timeline-chart">
+        TimelineChart
+        {props.rows?.map((row: any) => (
+          <div key={row.id}>
+            {row.events?.map((event: any) => flattenText(event.body))}
+          </div>
+        ))}
+      </div>
+    );
   };
   mockComponent.latestProps = {};
   return { TimelineChart: mockComponent };
@@ -136,13 +165,14 @@ describe('DBTraceWaterfallChartContainer', () => {
   // Helper functions
   const renderComponent = (
     logTableSource: typeof mockLogTableSource | null = mockLogTableSource,
+    traceId: string = mockTraceId,
   ) => {
     return renderWithMantine(
       <RowSidePanelContext.Provider value={{}}>
         <DBTraceWaterfallChartContainer
           traceTableSource={mockTraceTableSource}
           logTableSource={logTableSource}
-          traceId={mockTraceId}
+          traceId={traceId}
           dateRange={mockDateRange}
           focusDate={mockFocusDate}
         />
@@ -234,6 +264,17 @@ describe('DBTraceWaterfallChartContainer', () => {
     });
   });
 
+  it('escapes trace ids in the generated where clause', () => {
+    setupQueryMocks({ traceData: mockTraceData });
+
+    renderComponent(mockLogTableSource, "trace'with-quote");
+
+    expect(mockUseOffsetPaginatedQuery).toHaveBeenCalled();
+    expect(mockUseOffsetPaginatedQuery.mock.calls[0][0].where).toBe(
+      "TraceId = 'trace\\'with-quote'",
+    );
+  });
+
   it('renders HTTP spans with URL information', async () => {
     // HTTP span with URL and method information
     const mockHttpSpanData = {
@@ -264,13 +305,60 @@ describe('DBTraceWaterfallChartContainer', () => {
     // Verify the chart received the HTTP span with URL
     expect(MockTimelineChart.latestProps.rows.length).toBe(1);
 
-    const row = MockTimelineChart.latestProps.rows[0];
-    expect(row).toBeTruthy();
+    expect(MockTimelineChart.latestProps.rows[0]).toBeTruthy();
+    expect(
+      screen.getByText('http span https://api.example.com/users'),
+    ).toBeInTheDocument();
+  });
 
-    // Check the display text includes the URL
-    expect(row.events[0].body.props.children).toBe(
-      'http span https://api.example.com/users',
-    );
+  it('renders Spans and Logs chips when log source is present', async () => {
+    setupQueryMocks({ traceData: mockTraceData, logData: mockLogData });
+    renderComponent();
+    await waitForLoading();
+
+    expect(screen.getByTestId('show-spans-chip')).toBeInTheDocument();
+    expect(screen.getByTestId('show-logs-chip')).toBeInTheDocument();
+  });
+
+  it('does not render Logs chip when no log source', async () => {
+    setupQueryMocks({ traceData: mockTraceData });
+    renderComponent(null);
+    await waitForLoading();
+
+    expect(screen.getByTestId('show-spans-chip')).toBeInTheDocument();
+    expect(screen.queryByTestId('show-logs-chip')).not.toBeInTheDocument();
+  });
+
+  it('hides log rows when Logs chip is toggled off', async () => {
+    const user = userEvent.setup();
+    setupQueryMocks({ traceData: mockTraceData, logData: mockLogData });
+    renderComponent();
+    await waitForLoading();
+
+    expect(MockTimelineChart.latestProps.rows.length).toBe(2);
+
+    const showLogsChip = screen.getByTestId('show-logs-chip');
+    await user.click(showLogsChip);
+
+    await waitFor(() => {
+      expect(MockTimelineChart.latestProps.rows.length).toBe(1);
+    });
+  });
+
+  it('hides span rows when Spans chip is toggled off', async () => {
+    const user = userEvent.setup();
+    setupQueryMocks({ traceData: mockTraceData, logData: mockLogData });
+    renderComponent();
+    await waitForLoading();
+
+    expect(MockTimelineChart.latestProps.rows.length).toBe(2);
+
+    const showSpansChip = screen.getByTestId('show-spans-chip');
+    await user.click(showSpansChip);
+
+    await waitFor(() => {
+      expect(MockTimelineChart.latestProps.rows.length).toBe(1);
+    });
   });
 });
 

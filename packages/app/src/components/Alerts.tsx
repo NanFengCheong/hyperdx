@@ -23,17 +23,20 @@ import { notifications } from '@mantine/notifications';
 import { IconBrandTelegram, IconSend } from '@tabler/icons-react';
 
 import api from '@/api';
-
-import { WebhookForm } from '../components/TeamSettings/WebhookForm';
+import { WebhookForm } from '@/components/TeamSettings/WebhookForm';
 
 type Webhook = {
   _id: string;
   name: string;
 };
 
-const WebhookChannelForm = <T extends object>(
-  props: Partial<SelectProps<T>>,
-) => {
+const WebhookChannelForm = <T extends FieldValues>({
+  control,
+  name,
+}: {
+  control?: Control<T>;
+  name?: string;
+}) => {
   const { data: webhooks, refetch: refetchWebhooks } = api.useWebhooks([
     WebhookService.Slack,
     WebhookService.Generic,
@@ -61,8 +64,8 @@ const WebhookChannelForm = <T extends object>(
   }, [webhooks]);
 
   const { field } = useController({
-    control: props.control,
-    name: props.name!,
+    control,
+    name: name! as Path<T>,
   });
 
   const handleWebhookCreated = async (webhookId?: string) => {
@@ -76,22 +79,27 @@ const WebhookChannelForm = <T extends object>(
 
   return (
     <div>
-      <Group gap="md" justify="space-between">
-        <Select
-          data-testid="select-webhook"
-          comboboxProps={{
-            withinPortal: false,
-          }}
-          required
-          size="xs"
-          flex={1}
-          placeholder={
-            hasWebhooks ? 'Select a Webhook' : 'No Webhooks available'
-          }
-          data={options}
-          name={props.name!}
-          control={props.control}
-          {...props}
+      <Group gap="md" justify="space-between" align="flex-start">
+        <Controller
+          control={control}
+          name={name! as Path<T>}
+          render={({ field, fieldState }) => (
+            <Select
+              data-testid="select-webhook"
+              comboboxProps={{
+                withinPortal: false,
+              }}
+              required
+              size="xs"
+              flex={1}
+              placeholder={
+                hasWebhooks ? 'Select a Webhook' : 'No Webhooks available'
+              }
+              data={options}
+              {...field}
+              error={fieldState.error?.message}
+            />
+          )}
         />
         <Button
           data-testid="add-new-webhook-button"
@@ -265,7 +273,7 @@ export const AlertChannelForm = ({
   type,
   namePrefix = '',
 }: {
-  control: Control<any>; // TODO: properly type this
+  control: Control<T>;
   type: AlertChannelType;
   namePrefix?: string;
 }) => {
@@ -292,12 +300,55 @@ export const AlertChannelForm = ({
 export const getAlertReferenceLines = ({
   thresholdType,
   threshold,
+  thresholdMax,
   // TODO: zScore
 }: {
-  thresholdType: 'above' | 'below';
+  thresholdType: AlertThresholdType;
   threshold: number;
+  thresholdMax?: number;
 }) => {
-  if (threshold != null && thresholdType === 'below') {
+  if (threshold == null) {
+    return null;
+  }
+  if (thresholdType === AlertThresholdType.BETWEEN && thresholdMax != null) {
+    return (
+      <ReferenceArea
+        y1={threshold}
+        y2={thresholdMax}
+        ifOverflow="extendDomain"
+        fill="red"
+        strokeWidth={0}
+        fillOpacity={0.05}
+      />
+    );
+  }
+  if (
+    thresholdType === AlertThresholdType.NOT_BETWEEN &&
+    thresholdMax != null
+  ) {
+    return [
+      <ReferenceArea
+        key="not-between-lower"
+        y2={threshold}
+        ifOverflow="extendDomain"
+        fill="red"
+        strokeWidth={0}
+        fillOpacity={0.05}
+      />,
+      <ReferenceArea
+        key="not-between-upper"
+        y1={thresholdMax}
+        ifOverflow="extendDomain"
+        fill="red"
+        strokeWidth={0}
+        fillOpacity={0.05}
+      />,
+    ];
+  }
+  if (
+    thresholdType === AlertThresholdType.BELOW ||
+    thresholdType === AlertThresholdType.BELOW_OR_EQUAL
+  ) {
     return (
       <ReferenceArea
         y1={0}
@@ -309,7 +360,10 @@ export const getAlertReferenceLines = ({
       />
     );
   }
-  if (threshold != null && thresholdType === 'above') {
+  if (
+    thresholdType === AlertThresholdType.ABOVE ||
+    thresholdType === AlertThresholdType.ABOVE_EXCLUSIVE
+  ) {
     return (
       <ReferenceArea
         y1={threshold}
@@ -320,22 +374,20 @@ export const getAlertReferenceLines = ({
       />
     );
   }
-  if (threshold != null) {
-    return (
-      <ReferenceLine
-        y={threshold}
-        label={
-          <Label
-            value="Alert Threshold"
-            fill={'white'}
-            fontSize={11}
-            opacity={0.7}
-          />
-        }
-        stroke="red"
-        strokeDasharray="3 3"
-      />
-    );
-  }
-  return null;
+  // For 'equal' and 'not_equal', show a reference line at the threshold
+  return (
+    <ReferenceLine
+      y={threshold}
+      label={
+        <Label
+          value="Alert Threshold"
+          fill={'white'}
+          fontSize={11}
+          opacity={0.7}
+        />
+      }
+      stroke="red"
+      strokeDasharray="3 3"
+    />
+  );
 };

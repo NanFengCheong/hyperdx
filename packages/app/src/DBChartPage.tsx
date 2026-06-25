@@ -35,6 +35,8 @@ import { useBrandDisplayName } from '@/theme/ThemeProvider';
 import { parseTimeQuery, useNewTimeQuery } from '@/timeQuery';
 import { useLocalStorage } from '@/utils';
 
+import OnboardingModal from './components/OnboardingModal';
+
 // Autocomplete can focus on column/map keys
 
 // Sampled field discovery and full field discovery
@@ -59,7 +61,7 @@ function AIAssistant({
     'ai-assistant-alert-dismissed',
     false,
   );
-  const { control, setValue, handleSubmit } = useForm<{
+  const { control, handleSubmit } = useForm<{
     text: string;
     source: string;
   }>({
@@ -147,12 +149,7 @@ function AIAssistant({
   return (
     <Box mb="sm">
       <Group gap="md" align="center" mb="sm">
-        <Button
-          onClick={() => setOpened(o => !o)}
-          size="xs"
-          variant="subtle"
-          color="gray"
-        >
+        <Button onClick={() => setOpened(o => !o)} size="xs" variant="subtle">
           <Group gap="xs">
             {opened ? (
               <IconChevronUp size={14} />
@@ -164,8 +161,9 @@ function AIAssistant({
         </Button>
         <Pill size="xs">Experimental</Pill>
       </Group>
-      <Collapse in={opened}>
+      <Collapse expanded={opened}>
         {opened && (
+          // eslint-disable-next-line react-hooks/refs
           <form onSubmit={handleSubmit(onSubmit)}>
             <Group mb="md">
               <SourceSelectControlled
@@ -234,6 +232,7 @@ function DBChartExplorerPage() {
       <Head>
         <title>Chart Explorer - {brandName}</title>
       </Head>
+      <OnboardingModal />
       <AIAssistant
         setConfig={setChartConfig}
         onTimeRangeSelect={onTimeRangeSelect}

@@ -4,6 +4,7 @@ import alertsRouter from './alerts';
 import dashboardRouter from './dashboards';
 import investigationsRouter from './investigations';
 import meRouter from './me';
+import prometheusRouter from './prometheus';
 import rootRouter from './root';
 import teamRouter from './team';
 import telegramRouter from './telegram';
@@ -16,6 +17,7 @@ export default {
   dashboardRouter,
   investigationsRouter,
   meRouter,
+  prometheusRouter,
   rootRouter,
   teamRouter,
   telegramRouter,

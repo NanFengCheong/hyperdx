@@ -82,7 +82,7 @@ app.use(defaultCors);
 // ---------------------------------------------------------------------
 // ----------------------- Background Jobs -----------------------------
 // ---------------------------------------------------------------------
-if (config.USAGE_STATS_ENABLED) {
+if (config.USAGE_STATS_ENABLED && !config.IS_CI) {
   usageStats();
 }
 // ---------------------------------------------------------------------
@@ -92,6 +92,9 @@ if (config.USAGE_STATS_ENABLED) {
 // ---------------------------------------------------------------------
 // PUBLIC ROUTES
 app.use('/', routers.rootRouter);
+
+// SELF-AUTHENTICATED ROUTES (validated via access key, not session middleware)
+app.use('/mcp', mcpRouter);
 
 // PRIVATE ROUTES
 app.use('/admin', routers.adminRouter);

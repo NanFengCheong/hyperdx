@@ -21,7 +21,6 @@ import mongoose from 'mongoose';
 import { z } from 'zod';
 import { processRequest, validateRequest } from 'zod-express-middleware';
 
-import * as config from '@/config';
 import {
   getTags,
   getTeam,
@@ -166,7 +165,7 @@ router.patch(
   '/clickhouse-settings',
   requirePermission('querysettings:edit'),
   processRequest({
-    body: TeamClickHouseSettingsSchema,
+    body: TeamClickHouseSettingsUpdateSchema,
   }),
   async (
     req,
@@ -349,7 +348,7 @@ router.get('/invitations', async (req, res: TeamInviteExpressRes, next) => {
         createdAt: ti.createdAt.toISOString(),
         email: ti.email,
         name: ti.name,
-        url: `${config.FRONTEND_URL}/join-team?token=${ti.token}`,
+        url: getTeamInviteUrl(ti.token),
       })),
     });
   } catch (e) {

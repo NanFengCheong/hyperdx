@@ -11,6 +11,10 @@ import Dashboard from '@/models/dashboard';
 import { SavedSearch } from '@/models/savedSearch';
 import Team, { type ITeam, type TeamDocument } from '@/models/team';
 
+export function getTeamInviteUrl(token: string) {
+  return `${config.FRONTEND_URL}/join-team?token=${token}`;
+}
+
 const LOCAL_APP_TEAM_ID = '_local_team_';
 export const LOCAL_APP_TEAM = {
   _id: new mongoose.Types.ObjectId(LOCAL_APP_TEAM_ID),
@@ -103,9 +107,24 @@ export function setTeamName(teamId: ObjectId, name: string) {
 
 export function updateTeamClickhouseSettings(
   teamId: ObjectId,
-  settings: TeamClickHouseSettings,
+  settings: TeamClickHouseSettingsUpdate,
 ) {
-  return Team.findByIdAndUpdate(teamId, settings, { new: true });
+  const $set: Record<string, any> = {};
+  const $unset: Record<string, any> = {};
+
+  for (const [key, value] of Object.entries(settings)) {
+    if (value === null) {
+      $unset[key] = '';
+    } else if (value !== undefined) {
+      $set[key] = value;
+    }
+  }
+
+  const update: Record<string, any> = {};
+  if (Object.keys($set).length > 0) update.$set = $set;
+  if (Object.keys($unset).length > 0) update.$unset = $unset;
+
+  return Team.findByIdAndUpdate(teamId, update, { new: true });
 }
 
 export async function getTags(teamId: ObjectId) {

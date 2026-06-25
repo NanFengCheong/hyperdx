@@ -1,54 +1,43 @@
+import { useState } from 'react';
 import {
   Control,
   FieldArrayWithId,
   FieldErrors,
   UseFormClearErrors,
   UseFormSetValue,
-  useWatch,
 } from 'react-hook-form';
-import { NativeSelect, NumberInput } from 'react-hook-form-mantine';
 import { TableConnection } from '@hyperdx/common-utils/dist/core/metadata';
-import { isBuilderChartConfig } from '@hyperdx/common-utils/dist/guards';
+import {
+  HEATMAP_ALLOWED_SOURCE_KINDS,
+  isBuilderChartConfig,
+} from '@hyperdx/common-utils/dist/guards';
 import {
   ChartConfigWithOptTimestamp,
   DisplayType,
   SourceKind,
   TSource,
 } from '@hyperdx/common-utils/dist/types';
-import {
-  Button,
-  Divider,
-  Flex,
-  Group,
-  Paper,
-  Stack,
-  Switch,
-  Text,
-} from '@mantine/core';
+import { Box, Button, Divider, Flex, Group, Switch, Text } from '@mantine/core';
 import { IconBell, IconCirclePlus } from '@tabler/icons-react';
 
-import { AlertChannelForm } from '@/components/Alerts';
-import { AlertScheduleFields } from '@/components/AlertScheduleFields';
 import {
   ChartEditorFormState,
   SavedChartConfigWithSelectArray,
 } from '@/components/ChartEditor/types';
 import MVOptimizationIndicator from '@/components/MaterializedViews/MVOptimizationIndicator';
 import SearchWhereInput from '@/components/SearchInput/SearchWhereInput';
-import SourceSchemaPreview from '@/components/SourceSchemaPreview';
+import SourceSchemaPreview, {
+  isSourceSchemaPreviewEnabled,
+} from '@/components/SourceSchemaPreview';
 import { SourceSelectControlled } from '@/components/SourceSelect';
 import { SQLInlineEditorControlled } from '@/components/SQLEditor/SQLInlineEditor';
 import { IS_LOCAL_MODE } from '@/config';
-import { optionsToSelectData } from '@/utils';
-import {
-  ALERT_CHANNEL_OPTIONS,
-  DEFAULT_TILE_ALERT,
-  intervalToMinutes,
-  TILE_ALERT_INTERVAL_OPTIONS,
-  TILE_ALERT_THRESHOLD_TYPE_OPTIONS,
-} from '@/utils/alerts';
+import { DEFAULT_TILE_ALERT } from '@/utils/alerts';
 
+import { OnClickFormButton } from './OnClickForm/OnClickFormButton';
 import { ChartSeriesEditor } from './ChartSeriesEditor';
+import { HeatmapSeriesEditor } from './HeatmapSeriesEditor';
+import { TileAlertEditor } from './TileAlertEditor';
 
 type ChartEditorControlsProps = {
   control: Control<ChartEditorFormState>;
@@ -59,6 +48,7 @@ type ChartEditorControlsProps = {
   append: (value: SavedChartConfigWithSelectArray['select'][number]) => void;
   removeSeries: (index: number) => void;
   swapSeries: (from: number, to: number) => void;
+  duplicateSeries: (index: number) => void;
   tableSource?: TSource;
   tableConnection: TableConnection;
   databaseName?: string;
@@ -75,6 +65,7 @@ type ChartEditorControlsProps = {
   chartConfigForExplanations?: ChartConfigWithOptTimestamp;
   onSubmit: (suppressErrorNotification?: boolean) => void;
   openDisplaySettings: () => void;
+  openHeatmapSettings: () => void;
 };
 
 export function ChartEditorControls({
@@ -86,6 +77,7 @@ export function ChartEditorControls({
   append,
   removeSeries,
   swapSeries,
+  duplicateSeries,
   tableSource,
   tableConnection,
   databaseName,
@@ -102,18 +94,14 @@ export function ChartEditorControls({
   chartConfigForExplanations,
   onSubmit,
   openDisplaySettings,
+  openHeatmapSettings,
 }: ChartEditorControlsProps) {
-  const alertChannelType = useWatch({ control, name: 'alert.channel.type' });
-  const alertScheduleOffsetMinutes = useWatch({
-    control,
-    name: 'alert.scheduleOffsetMinutes',
-  });
-  const maxAlertScheduleOffsetMinutes = alert?.interval
-    ? Math.max(intervalToMinutes(alert.interval) - 1, 0)
-    : 0;
-  const alertIntervalLabel = alert?.interval
-    ? TILE_ALERT_INTERVAL_OPTIONS[alert.interval]
-    : undefined;
+  const canAddSeries =
+    displayType !== DisplayType.Number &&
+    displayType !== DisplayType.Pie &&
+    displayType !== DisplayType.Heatmap;
+  const [isSourceSchemaPreviewOpen, setIsSourceSchemaPreviewOpen] =
+    useState(false);
 
   return (
     <>
@@ -127,14 +115,25 @@ export function ChartEditorControls({
             control={control}
             name="source"
             data-testid="source-selector"
-            sourceSchemaPreview={
-              <SourceSchemaPreview source={tableSource} variant="text" />
+            allowedSourceKinds={
+              displayType === DisplayType.Heatmap
+                ? [...HEATMAP_ALLOWED_SOURCE_KINDS]
+                : undefined
             }
+            onSchemaPreview={() => setIsSourceSchemaPreviewOpen(true)}
+            isSchemaPreviewEnabled={isSourceSchemaPreviewEnabled(tableSource)}
+          />
+          <SourceSchemaPreview
+            source={tableSource}
+            controlled
+            open={isSourceSchemaPreviewOpen}
+            onClose={() => setIsSourceSchemaPreviewOpen(false)}
           />
         </Group>
         <Group>
           {tableSource &&
             activeTab !== 'search' &&
+            activeTab !== 'heatmap' &&
             chartConfigForExplanations &&
             isBuilderChartConfig(chartConfigForExplanations) && (
               <MVOptimizationIndicator
@@ -144,7 +143,15 @@ export function ChartEditorControls({
             )}
         </Group>
       </Flex>
-      {displayType !== DisplayType.Search && Array.isArray(select) ? (
+      {displayType === DisplayType.Heatmap && Array.isArray(select) ? (
+        <HeatmapSeriesEditor
+          control={control}
+          setValue={setValue}
+          tableSource={tableSource}
+          onSubmit={onSubmit}
+          onOpenDisplaySettings={openHeatmapSettings}
+        />
+      ) : displayType !== DisplayType.Search && Array.isArray(select) ? (
         <>
           {fields.map((field, index) => (
             <ChartSeriesEditor
@@ -158,6 +165,7 @@ export function ChartEditorControls({
               onRemoveSeries={removeSeries}
               length={fields.length}
               onSwapSeries={swapSeries}
+              onDuplicateSeries={duplicateSeries}
               onSubmit={onSubmit}
               setValue={setValue}
               connectionId={tableSource?.connection}
@@ -167,6 +175,7 @@ export function ChartEditorControls({
               showHaving={
                 fields.length === 1 && displayType === DisplayType.Table
               }
+              showDuplicate={canAddSeries}
               tableName={tableName ?? ''}
               tableSource={tableSource}
               errors={
@@ -238,25 +247,24 @@ export function ChartEditorControls({
           <Divider mt="md" mb="sm" />
           <Flex mt={4} align="center" justify="space-between">
             <Group gap="xs">
-              {displayType !== DisplayType.Number &&
-                displayType !== DisplayType.Pie && (
-                  <Button
-                    variant="subtle"
-                    size="sm"
-                    color="gray"
-                    onClick={() => {
-                      append({
-                        aggFn: 'count',
-                        aggCondition: '',
-                        aggConditionLanguage: 'lucene',
-                        valueExpression: '',
-                      });
-                    }}
-                  >
-                    <IconCirclePlus size={14} className="me-2" />
-                    Add Series
-                  </Button>
-                )}
+              {canAddSeries && (
+                <Button
+                  variant="subtle"
+                  size="sm"
+                  color="gray"
+                  onClick={() => {
+                    append({
+                      aggFn: 'count',
+                      aggCondition: '',
+                      aggConditionLanguage: 'lucene',
+                      valueExpression: '',
+                    });
+                  }}
+                >
+                  <IconCirclePlus size={14} className="me-2" />
+                  Add Series
+                </Button>
+              )}
               {fields.length == 2 && displayType !== DisplayType.Number && (
                 <Switch
                   label="As Ratio"
@@ -274,30 +282,38 @@ export function ChartEditorControls({
                 />
               )}
               {(displayType === DisplayType.Line ||
+                displayType === DisplayType.StackedBar ||
                 displayType === DisplayType.Number) &&
                 dashboardId &&
+                !alert &&
                 !IS_LOCAL_MODE && (
                   <Button
                     variant="subtle"
                     data-testid="alert-button"
                     size="sm"
-                    color={alert ? 'red' : 'gray'}
-                    onClick={() =>
-                      setValue('alert', alert ? undefined : DEFAULT_TILE_ALERT)
-                    }
+                    onClick={() => setValue('alert', DEFAULT_TILE_ALERT)}
                   >
                     <IconBell size={14} className="me-2" />
-                    {!alert ? 'Add Alert' : 'Remove Alert'}
+                    Add Alert
                   </Button>
                 )}
             </Group>
-            <Button
-              onClick={openDisplaySettings}
-              size="compact-sm"
-              variant="secondary"
-            >
-              Display Settings
-            </Button>
+            <Group>
+              {displayType === DisplayType.Table && (
+                <OnClickFormButton
+                  control={control}
+                  setValue={setValue}
+                  onSubmit={onSubmit}
+                />
+              )}
+              <Button
+                onClick={openDisplaySettings}
+                size="compact-sm"
+                variant="secondary"
+              >
+                Display Settings
+              </Button>
+            </Group>
           </Flex>
         </>
       ) : (
@@ -334,76 +350,14 @@ export function ChartEditorControls({
         </Flex>
       )}
       {alert && !isRawSqlInput && (
-        <Paper my="sm">
-          <Stack gap="xs" data-testid="alert-details">
-            <Paper px="md" py="sm" radius="xs">
-              <Text size="xxs" opacity={0.5} mb={4}>
-                Trigger
-              </Text>
-              <Group gap="xs">
-                <Text size="sm" opacity={0.7}>
-                  Alert when the value
-                </Text>
-                <NativeSelect
-                  data={optionsToSelectData(TILE_ALERT_THRESHOLD_TYPE_OPTIONS)}
-                  size="xs"
-                  name={`alert.thresholdType`}
-                  control={control}
-                />
-                <NumberInput
-                  size="xs"
-                  w={80}
-                  control={control}
-                  name={`alert.threshold`}
-                />
-                over
-                <NativeSelect
-                  data={optionsToSelectData(TILE_ALERT_INTERVAL_OPTIONS)}
-                  size="xs"
-                  name={`alert.interval`}
-                  control={control}
-                />
-                <Text size="sm" opacity={0.7}>
-                  window via
-                </Text>
-                <NativeSelect
-                  data={optionsToSelectData(ALERT_CHANNEL_OPTIONS)}
-                  size="xs"
-                  name={`alert.channel.type`}
-                  control={control}
-                />
-              </Group>
-              {alert?.createdBy && (
-                <Text size="xs" opacity={0.6} mt="xs">
-                  Created by {alert.createdBy.name || alert.createdBy.email}
-                </Text>
-              )}
-              <AlertScheduleFields
-                control={control}
-                setValue={setValue}
-                scheduleOffsetName="alert.scheduleOffsetMinutes"
-                scheduleStartAtName="alert.scheduleStartAt"
-                scheduleOffsetMinutes={alertScheduleOffsetMinutes}
-                maxScheduleOffsetMinutes={maxAlertScheduleOffsetMinutes}
-                offsetWindowLabel={
-                  alertIntervalLabel
-                    ? `from each ${alertIntervalLabel} window`
-                    : 'from each alert window'
-                }
-              />
-            </Paper>
-            <Paper px="md" py="sm" radius="xs">
-              <Text size="xxs" opacity={0.5} mb={4}>
-                Send to
-              </Text>
-              <AlertChannelForm
-                control={control}
-                type={alertChannelType}
-                namePrefix="alert."
-              />
-            </Paper>
-          </Stack>
-        </Paper>
+        <Box mt="sm">
+          <TileAlertEditor
+            control={control}
+            setValue={setValue}
+            alert={alert}
+            onRemove={() => setValue('alert', undefined)}
+          />
+        </Box>
       )}
     </>
   );

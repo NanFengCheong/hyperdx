@@ -122,12 +122,28 @@ export default [
       ...nextPlugin.configs.recommended.rules,
       ...nextPlugin.configs['core-web-vitals'].rules,
       ...reactHooksPlugin.configs.recommended.rules,
-      ...eslintReactPlugin.configs.recommended.rules,
-      // Disable rules from eslint-plugin-react-hooks that have equivalent rules in @eslint-react
-      ...eslintReactPlugin.configs['disable-conflict-eslint-plugin-react-hooks'].rules,
       ...eslintReactPlugin.configs['recommended-type-checked'].rules,
+      
+      // Non-default react-hooks rules
+      'react-hooks/set-state-in-render': 'error',
       'react-hooks/set-state-in-effect': 'warn',
       'react-hooks/exhaustive-deps': 'error',
+      
+      // Disable rules from @eslint-react that have equivalent rules enabled in eslint-plugin-react-hooks
+      '@eslint-react/rules-of-hooks': 'off',
+      '@eslint-react/component-hook-factories': 'off',
+      '@eslint-react/exhaustive-deps': 'off',
+      '@eslint-react/error-boundaries': 'off',
+      '@eslint-react/immutability': 'off',
+      '@eslint-react/purity': 'off',
+      '@eslint-react/refs': 'off',
+      '@eslint-react/set-state-in-effect': 'off',
+      '@eslint-react/set-state-in-render': 'off',
+      '@eslint-react/no-nested-component-definitions': 'off',
+      '@eslint-react/no-nested-lazy-component-declarations': 'off',
+      '@eslint-react/unsupported-syntax': 'off',
+      '@eslint-react/use-memo': 'off',
+      
       'react-hook-form/no-use-watch': 'error',
       '@eslint-react/no-unstable-default-props': 'error',
       '@typescript-eslint/ban-ts-comment': 'warn',
@@ -137,7 +153,7 @@ export default [
       '@typescript-eslint/no-unsafe-type-assertion': 'warn',
       '@typescript-eslint/no-unused-expressions': 'warn',
       '@typescript-eslint/no-unused-vars': [
-        'warn',
+        'error',
         {
           argsIgnorePattern: '^_',
           varsIgnorePattern: '^_',
@@ -163,6 +179,18 @@ export default [
         ...DATE_SYNTAX_RESTRICTIONS,
       ],
       'no-console': ['error', { allow: ['warn', 'error'] }],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              regex: '^\\.\\.(/|$)',
+              message:
+                'Use the @/ path alias instead of parent-relative imports (../).',
+            },
+          ],
+        },
+      ],
     },
     languageOptions: {
       parser: tseslint.parser,
@@ -225,6 +253,8 @@ export default [
       'playwright/no-networkidle': 'off', // temporary until we have a better way to deal with react re-renders
       // Drop date rules — Date.now() is fine in e2e tests for unique IDs/timestamps
       'no-restricted-syntax': ['error', ...UI_SYNTAX_RESTRICTIONS],
+      // e2e tests live outside src/, so no @/ alias reaches sibling test files
+      'no-restricted-imports': 'off',
     },
   },
   ...storybook.configs['flat/recommended'],

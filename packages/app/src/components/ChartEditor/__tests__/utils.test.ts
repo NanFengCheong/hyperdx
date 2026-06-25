@@ -6,18 +6,19 @@ import type {
   TSource,
 } from '@hyperdx/common-utils/dist/types';
 import {
+  AlertThresholdType,
   DisplayType,
   MetricsDataType,
   SourceKind,
 } from '@hyperdx/common-utils/dist/types';
 
-import type { ChartEditorFormState } from '../types';
+import type { ChartEditorFormState } from '@/components/ChartEditor/types';
 import {
   convertFormStateToChartConfig,
   convertFormStateToSavedChartConfig,
   convertSavedChartConfigToFormState,
   validateChartForm,
-} from '../utils';
+} from '@/components/ChartEditor/utils';
 
 jest.mock('../../SearchInput', () => ({
   getStoredLanguage: jest.fn().mockReturnValue('lucene'),
@@ -48,6 +49,25 @@ const metricSource: TMetricSource = {
   timestampValueExpression: 'TimeUnix',
   metricTables: { gauge: 'gauge_table' } as TMetricSource['metricTables'],
   resourceAttributesExpression: 'ResourceAttributes',
+};
+
+const traceSource: TSource = {
+  id: 'source-trace',
+  name: 'Trace Source',
+  kind: SourceKind.Trace,
+  connection: 'conn-1',
+  from: { databaseName: 'db', tableName: 'spans' },
+  timestampValueExpression: 'Timestamp',
+  durationExpression: 'Duration',
+  spanIdExpression: 'SpanId',
+  traceIdExpression: 'TraceId',
+  parentSpanIdExpression: 'ParentSpanId',
+  defaultTableSelectExpression: 'SpanName',
+  implicitColumnExpression: 'SpanName',
+  statusCodeExpression: 'StatusCode',
+  spanNameExpression: 'SpanName',
+  spanKindExpression: 'SpanKind',
+  durationPrecision: 9,
 };
 
 const seriesItem = {
@@ -102,15 +122,23 @@ describe('convertFormStateToSavedChartConfig', () => {
     });
   });
 
-  it('returns undefined for sql config with an unsupported displayType', () => {
+  it('returns markdown config even when configType is sql', () => {
     const form: ChartEditorFormState = {
       configType: 'sql',
       displayType: DisplayType.Markdown,
+      markdown: '## Note',
       sqlTemplate: 'SELECT 1',
       connection: 'conn-1',
       series: [],
     };
-    expect(convertFormStateToSavedChartConfig(form, undefined)).toBeUndefined();
+    const result = convertFormStateToSavedChartConfig(
+      form,
+      undefined,
+    ) as BuilderSavedChartConfig;
+    expect(result).toBeDefined();
+    expect(result.displayType).toBe(DisplayType.Markdown);
+    expect(result.markdown).toBe('## Note');
+    expect(result.select).toEqual([]);
   });
 
   it('uses sqlTemplate empty string as default when undefined', () => {
@@ -260,6 +288,41 @@ describe('convertFormStateToSavedChartConfig', () => {
       logSource,
     ) as BuilderSavedChartConfig;
     expect(result.where).toBe('');
+  });
+
+  it('returns config for Markdown displayType without a source', () => {
+    const form: ChartEditorFormState = {
+      displayType: DisplayType.Markdown,
+      markdown: '## Hello World',
+      source: '',
+      series: [],
+    };
+    const result = convertFormStateToSavedChartConfig(
+      form,
+      undefined,
+    ) as BuilderSavedChartConfig;
+    expect(result).toBeDefined();
+    expect(result.displayType).toBe(DisplayType.Markdown);
+    expect(result.markdown).toBe('## Hello World');
+    expect(result.source).toBe('');
+    expect(result.select).toEqual([]);
+    expect(result.where).toBe('');
+  });
+
+  it('returns config for Markdown displayType with a source', () => {
+    const form: ChartEditorFormState = {
+      displayType: DisplayType.Markdown,
+      markdown: '## With Source',
+      series: [],
+    };
+    const result = convertFormStateToSavedChartConfig(
+      form,
+      logSource,
+    ) as BuilderSavedChartConfig;
+    expect(result).toBeDefined();
+    expect(result.displayType).toBe(DisplayType.Markdown);
+    expect(result.source).toBe('source-log');
+    expect(result.markdown).toBe('## With Source');
   });
 });
 
@@ -610,6 +673,133 @@ describe('validateChartForm', () => {
     ).toHaveLength(0);
   });
 
+  it('errors when raw SQL chart has alert but SQL is missing time filters and interval', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        configType: 'sql',
+        displayType: DisplayType.Line,
+        sqlTemplate: 'SELECT count() FROM logs',
+        connection: 'conn-1',
+        alert: {
+          interval: '1h',
+          threshold: 100,
+          thresholdType: 'above',
+          channel: { type: 'webhook' },
+        } as ChartEditorFormState['alert'],
+      }),
+      undefined,
+      setError,
+    );
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        path: 'sqlTemplate',
+        message:
+          'SQL used for alerts must include an interval parameter or macro.',
+      }),
+    );
+  });
+
+  it('does not error when raw SQL chart has alert and SQL includes required params', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        configType: 'sql',
+        displayType: DisplayType.Line,
+        sqlTemplate:
+          'SELECT toStartOfInterval(ts, INTERVAL {intervalSeconds:Int64} SECOND) AS ts, count() FROM logs WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64}) AND ts <= fromUnixTimestamp64Milli({endDateMilliseconds:Int64}) GROUP BY ts',
+        connection: 'conn-1',
+        alert: {
+          interval: '1h',
+          threshold: 100,
+          thresholdType: 'above',
+          channel: { type: 'webhook' },
+        } as ChartEditorFormState['alert'],
+      }),
+      undefined,
+      setError,
+    );
+    expect(
+      errors.filter(
+        e => e.path === 'sqlTemplate' && e.message.includes('alert'),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('does not validate SQL template for alerts when no alert is configured', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        configType: 'sql',
+        displayType: DisplayType.Line,
+        sqlTemplate: 'SELECT count() FROM logs',
+        connection: 'conn-1',
+        alert: undefined,
+      }),
+      undefined,
+      setError,
+    );
+    expect(
+      errors.filter(
+        e => e.path === 'sqlTemplate' && e.message.includes('alert'),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('does not error when raw SQL Number chart has alert with date range params but no interval', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        configType: 'sql',
+        displayType: DisplayType.Number,
+        sqlTemplate:
+          'SELECT count() FROM logs WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64}) AND ts <= fromUnixTimestamp64Milli({endDateMilliseconds:Int64})',
+        connection: 'conn-1',
+        alert: {
+          interval: '1h',
+          threshold: 100,
+          thresholdType: 'above',
+          channel: { type: 'webhook' },
+        } as ChartEditorFormState['alert'],
+      }),
+      undefined,
+      setError,
+    );
+    expect(
+      errors.filter(
+        e => e.path === 'sqlTemplate' && e.message.includes('alert'),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('still requires interval params for raw SQL Line chart alerts', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        configType: 'sql',
+        displayType: DisplayType.Line,
+        sqlTemplate:
+          'SELECT count() FROM logs WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64}) AND ts <= fromUnixTimestamp64Milli({endDateMilliseconds:Int64})',
+        connection: 'conn-1',
+        alert: {
+          interval: '1h',
+          threshold: 100,
+          thresholdType: 'above',
+          channel: { type: 'webhook' },
+        } as ChartEditorFormState['alert'],
+      }),
+      undefined,
+      setError,
+    );
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        path: 'sqlTemplate',
+        message:
+          'SQL used for alerts must include an interval parameter or macro.',
+      }),
+    );
+  });
+
   // ── Source validation ────────────────────────────────────────────────
 
   it('errors when builder chart has no source', () => {
@@ -928,6 +1118,148 @@ describe('validateChartForm', () => {
     expect(errors.filter(e => e.path === 'series')).toHaveLength(0);
   });
 
+  // ── Alert thresholdMax validation ───────────────────────────────────
+
+  it('errors when between alert is missing thresholdMax', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        source: 'source-log',
+        alert: {
+          interval: '1h',
+          threshold: 10,
+          thresholdType: AlertThresholdType.BETWEEN,
+          channel: { type: 'webhook' },
+        } as ChartEditorFormState['alert'],
+      }),
+      logSource,
+      setError,
+    );
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        path: 'alert.thresholdMax',
+        message:
+          'Upper bound is required for between/not between threshold types',
+      }),
+    );
+  });
+
+  it('errors when not_between alert is missing thresholdMax', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        source: 'source-log',
+        alert: {
+          interval: '1h',
+          threshold: 10,
+          thresholdType: AlertThresholdType.NOT_BETWEEN,
+          channel: { type: 'webhook' },
+        } as ChartEditorFormState['alert'],
+      }),
+      logSource,
+      setError,
+    );
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        path: 'alert.thresholdMax',
+      }),
+    );
+  });
+
+  it('errors when thresholdMax is less than threshold', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        source: 'source-log',
+        alert: {
+          interval: '1h',
+          threshold: 10,
+          thresholdMax: 5,
+          thresholdType: AlertThresholdType.BETWEEN,
+          channel: { type: 'webhook' },
+        } as ChartEditorFormState['alert'],
+      }),
+      logSource,
+      setError,
+    );
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        path: 'alert.thresholdMax',
+        message:
+          'Alert threshold upper bound must be greater than or equal to the lower bound',
+      }),
+    );
+  });
+
+  it('does not error when thresholdMax equals threshold', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        source: 'source-log',
+        alert: {
+          interval: '1h',
+          threshold: 10,
+          thresholdMax: 10,
+          thresholdType: AlertThresholdType.BETWEEN,
+          channel: { type: 'webhook' },
+        } as ChartEditorFormState['alert'],
+      }),
+      logSource,
+      setError,
+    );
+    expect(errors.filter(e => e.path === 'alert.thresholdMax')).toHaveLength(0);
+  });
+
+  it('does not error when thresholdMax is greater than threshold for between', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        source: 'source-log',
+        alert: {
+          interval: '1h',
+          threshold: 10,
+          thresholdMax: 20,
+          thresholdType: AlertThresholdType.BETWEEN,
+          channel: { type: 'webhook' },
+        } as ChartEditorFormState['alert'],
+      }),
+      logSource,
+      setError,
+    );
+    expect(errors.filter(e => e.path === 'alert.thresholdMax')).toHaveLength(0);
+  });
+
+  it('does not validate thresholdMax for non-range threshold types', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        source: 'source-log',
+        alert: {
+          interval: '1h',
+          threshold: 10,
+          thresholdType: AlertThresholdType.ABOVE,
+          channel: { type: 'webhook' },
+        } as ChartEditorFormState['alert'],
+      }),
+      logSource,
+      setError,
+    );
+    expect(errors.filter(e => e.path === 'alert.thresholdMax')).toHaveLength(0);
+  });
+
+  it('does not validate thresholdMax when no alert is configured', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        source: 'source-log',
+        alert: undefined,
+      }),
+      logSource,
+      setError,
+    );
+    expect(errors.filter(e => e.path === 'alert.thresholdMax')).toHaveLength(0);
+  });
+
   // ── Multiple validation errors at once ───────────────────────────────
 
   it('accumulates multiple errors across different validation rules', () => {
@@ -979,6 +1311,167 @@ describe('validateChartForm', () => {
     expect(setError).toHaveBeenCalledWith(
       'sqlTemplate',
       expect.objectContaining({ type: 'manual' }),
+    );
+  });
+
+  // ── Heatmap-specific validation ───────────────────────────────────────
+
+  it('returns no errors for a valid heatmap chart with trace source', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        displayType: DisplayType.Heatmap,
+        source: 'source-trace',
+        series: [
+          {
+            ...seriesItem,
+            valueExpression: 'Duration / 1e6',
+            countExpression: 'count()',
+            heatmapScaleType: 'log',
+          },
+        ],
+      }),
+      traceSource,
+      setError,
+    );
+    expect(errors).toHaveLength(0);
+  });
+
+  it('rejects heatmap chart with multiple series', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        displayType: DisplayType.Heatmap,
+        source: 'source-trace',
+        series: [
+          { ...seriesItem, valueExpression: 'Duration / 1e6' },
+          { ...seriesItem, valueExpression: 'other' },
+        ],
+      }),
+      traceSource,
+      setError,
+    );
+    expect(errors).toContainEqual(expect.objectContaining({ path: 'series' }));
+  });
+
+  it('rejects heatmap chart without a value expression', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        displayType: DisplayType.Heatmap,
+        source: 'source-trace',
+        series: [{ ...seriesItem, valueExpression: '' }],
+      }),
+      traceSource,
+      setError,
+    );
+    expect(errors).toContainEqual(
+      expect.objectContaining({ path: 'series.0.valueExpression' }),
+    );
+  });
+});
+
+describe('color round-trip (sql/promql Number tile)', () => {
+  it('preserves color through convertFormStateToSavedChartConfig for sql Number tile', () => {
+    const form: ChartEditorFormState = {
+      configType: 'sql',
+      displayType: DisplayType.Number,
+      sqlTemplate: 'SELECT count() FROM logs',
+      connection: 'conn-1',
+      color: 'chart-success',
+      series: [],
+    };
+    const result = convertFormStateToSavedChartConfig(
+      form,
+      undefined,
+    ) as RawSqlSavedChartConfig;
+    expect(result).toBeDefined();
+    expect(result.color).toBe('chart-success');
+  });
+
+  it('preserves color through convertFormStateToChartConfig for sql Number tile', () => {
+    const form: ChartEditorFormState = {
+      configType: 'sql',
+      displayType: DisplayType.Number,
+      sqlTemplate: 'SELECT count() FROM logs',
+      connection: 'conn-1',
+      color: 'chart-orange',
+      series: [],
+    };
+    const result = convertFormStateToChartConfig(form, dateRange, undefined);
+    expect(result).toBeDefined();
+    expect((result as any).color).toBe('chart-orange');
+  });
+
+  it('preserves color through convertFormStateToSavedChartConfig for promql Number tile', () => {
+    const form: ChartEditorFormState = {
+      configType: 'promql',
+      displayType: DisplayType.Number,
+      promqlExpression: 'up',
+      connection: 'conn-1',
+      color: 'chart-warning',
+      series: [],
+    };
+    const result = convertFormStateToSavedChartConfig(form, undefined);
+    expect(result).toBeDefined();
+    expect((result as any).color).toBe('chart-warning');
+  });
+
+  it('preserves color through convertFormStateToChartConfig for promql Number tile', () => {
+    const form: ChartEditorFormState = {
+      configType: 'promql',
+      displayType: DisplayType.Number,
+      promqlExpression: 'up',
+      connection: 'conn-1',
+      color: 'chart-error',
+      series: [],
+    };
+    const result = convertFormStateToChartConfig(form, dateRange, undefined);
+    expect(result).toBeDefined();
+    expect((result as any).color).toBe('chart-error');
+  });
+
+  it('omits color when not set on sql Number tile', () => {
+    const form: ChartEditorFormState = {
+      configType: 'sql',
+      displayType: DisplayType.Number,
+      sqlTemplate: 'SELECT count() FROM logs',
+      connection: 'conn-1',
+      series: [],
+    };
+    const result = convertFormStateToSavedChartConfig(
+      form,
+      undefined,
+    ) as RawSqlSavedChartConfig;
+    expect(result).toBeDefined();
+    expect(result.color).toBeUndefined();
+  });
+});
+
+describe('heatmap round-trip', () => {
+  it('preserves countExpression and heatmapScaleType through form state conversion', () => {
+    const form: ChartEditorFormState = {
+      displayType: DisplayType.Heatmap,
+      source: 'source-trace',
+      where: '',
+      series: [
+        {
+          ...seriesItem,
+          valueExpression: 'Duration / 1e6',
+          countExpression: 'count()',
+          heatmapScaleType: 'linear',
+        },
+      ],
+    };
+    const saved = convertFormStateToSavedChartConfig(form, traceSource);
+    expect(saved).toBeDefined();
+    const restored = convertSavedChartConfigToFormState(saved!);
+    expect(restored.series[0]).toEqual(
+      expect.objectContaining({
+        valueExpression: 'Duration / 1e6',
+        countExpression: 'count()',
+        heatmapScaleType: 'linear',
+      }),
     );
   });
 });

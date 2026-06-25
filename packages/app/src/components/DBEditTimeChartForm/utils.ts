@@ -1,10 +1,12 @@
 import z from 'zod';
 import {
   isBuilderChartConfig,
+  isPromqlChartConfig,
   isRawSqlChartConfig,
   isRawSqlSavedChartConfig,
 } from '@hyperdx/common-utils/dist/guards';
 import {
+  BuilderChartConfigWithDateRange,
   ChartAlertBaseSchema,
   ChartConfigWithDateRange,
   ChartConfigWithOptTimestamp,
@@ -34,6 +36,9 @@ export const isQueryReady = (
   queriedConfig: ChartConfigWithDateRange | undefined,
 ) => {
   if (!queriedConfig) return false;
+  if (isPromqlChartConfig(queriedConfig)) {
+    return !!(queriedConfig.promqlExpression && queriedConfig.connection);
+  }
   if (isRawSqlChartConfig(queriedConfig)) {
     return !!(queriedConfig.sqlTemplate && queriedConfig.connection);
   }
@@ -64,7 +69,11 @@ export function seriesToFilters(select: SelectList): Filter[] {
 
   const filters: Filter[] = select
     .map(({ aggCondition, aggConditionLanguage }) => {
-      if (aggConditionLanguage != null && aggCondition != null) {
+      if (
+        aggConditionLanguage != null &&
+        aggConditionLanguage !== 'promql' &&
+        aggCondition != null
+      ) {
         return {
           type: aggConditionLanguage,
           condition: aggCondition,
@@ -90,6 +99,8 @@ export function displayTypeToActiveTab(displayType: DisplayType): string {
       return 'pie';
     case DisplayType.Number:
       return 'number';
+    case DisplayType.Heatmap:
+      return 'heatmap';
     default:
       return 'time';
   }
@@ -100,6 +111,7 @@ export const TABS_WITH_GENERATED_SQL = new Set([
   'time',
   'number',
   'pie',
+  'heatmap',
 ]);
 
 export function computeDbTimeChartConfig(
@@ -213,21 +225,29 @@ export function buildChartConfigForExplanations({
           }
         : undefined;
 
-  if (!config || isRawSqlChartConfig(config)) {
+  if (!config || isRawSqlChartConfig(config) || isPromqlChartConfig(config)) {
     return undefined;
   }
 
   // Apply the transformations that child components will apply,
   // so that the MV optimization explanation and generated SQL preview
-  // are accurate.
+  // are accurate.  Heatmap is special-cased: it actually runs as two
+  // sequential queries (bounds + bucketed counts) that depend on each
+  // other at runtime, so the SQL preview transforms `config` itself into
+  // both queries on render and the MV indicator is suppressed for this
+  // tab.  Returning `config` unchanged is intentional.
+  const builderConfig = config as BuilderChartConfigWithDateRange;
+
   if (activeTab === 'time') {
-    return convertToTimeChartConfig(config);
+    return convertToTimeChartConfig(builderConfig);
   } else if (activeTab === 'number') {
-    return convertToNumberChartConfig(config);
+    return convertToNumberChartConfig(builderConfig);
   } else if (activeTab === 'table') {
-    return convertToTableChartConfig(config);
+    return convertToTableChartConfig(builderConfig);
   } else if (activeTab === 'pie') {
-    return convertToPieChartConfig(config);
+    return convertToPieChartConfig(builderConfig);
+  } else if (activeTab === 'heatmap') {
+    return config;
   }
 
   return config;

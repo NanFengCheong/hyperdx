@@ -1,12 +1,11 @@
 import { useMemo, useRef, useState } from 'react';
+import { FilterState } from '@hyperdx/common-utils/dist/filters';
 import { Accordion, Group, Text, Tooltip, UnstyledButton } from '@mantine/core';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
-import { FilterState } from '@/searchFilters';
+import { FilterGroup } from '@/components/DBSearchPageFilters';
 
-import { FilterGroup } from '../DBSearchPageFilters';
-
-import classes from '../../../styles/SearchPage.module.scss';
+import classes from '@styles/SearchPage.module.scss';
 
 type NestedFilterGroupProps = {
   name: string;
@@ -14,6 +13,10 @@ type NestedFilterGroupProps = {
     key: string;
     value: (string | boolean)[];
     propertyPath: string;
+    // Canonical (quoted/bracket) SQL form of `key`, used wherever the key
+    // becomes a raw SQL expression (distribution query, "Add column" SELECT).
+    // Falls back to `key` when absent.
+    sqlKey?: string;
   }[];
   selectedValues?: FilterState;
   onChange: (key: string, value: string | boolean) => void;
@@ -22,8 +25,13 @@ type NestedFilterGroupProps = {
   onExcludeClick: (key: string, value: string | boolean) => void;
   onPinClick: (key: string, value: string | boolean) => void;
   isPinned: (key: string, value: string | boolean) => boolean;
+  onSharedPinClick?: (key: string, value: string | boolean) => void;
+  isSharedPinned?: (key: string, value: string | boolean) => boolean;
   onFieldPinClick?: (key: string) => void;
   isFieldPinned?: (key: string) => boolean;
+  onToggleSharedFieldPin?: (key: string) => void;
+  isSharedFieldPinned?: (key: string) => boolean;
+  showFilterCounts?: boolean;
   onColumnToggle?: (column: string) => void;
   displayedColumns?: string[];
   onLoadMore: (key: string) => void;
@@ -48,8 +56,13 @@ export const NestedFilterGroup = ({
   onExcludeClick,
   onPinClick,
   isPinned,
+  onSharedPinClick,
+  isSharedPinned,
   onFieldPinClick,
   isFieldPinned,
+  onToggleSharedFieldPin,
+  isSharedFieldPinned,
+  showFilterCounts,
   onColumnToggle,
   displayedColumns,
   onLoadMore,
@@ -121,7 +134,7 @@ export const NestedFilterGroup = ({
                 color="gray"
               >
                 <Group gap="xs" wrap="nowrap" flex="1">
-                  <Text size="xs" fw="500">
+                  <Text size="xs" fw="500" truncate="end">
                     {name}
                   </Text>
                   <Text size="xs" c="dimmed">
@@ -134,109 +147,122 @@ export const NestedFilterGroup = ({
           <Accordion.Panel
             data-testid="nested-filter-group-panel"
             classNames={{
-              content: 'pl-3 pt-1 pb-0',
+              content: 'px-0 pb-0',
             }}
+            pt={1}
+            pb={0}
+            pl="xs"
           >
-            {isExpanded && (
-              <div className={classes.filterGroupPanel}>
-                {childFilters.length === 0 ? (
-                  <Group m={6} gap="xs">
-                    <Text c="dimmed" size="xs">
-                      No properties found
-                    </Text>
-                  </Group>
-                ) : (
+            <div className={classes.filterGroupPanel}>
+              {childFilters.length === 0 ? (
+                <Group m={6} gap="xs">
+                  <Text c="dimmed" size="xs">
+                    No properties found
+                  </Text>
+                </Group>
+              ) : (
+                <div
+                  ref={scrollContainerRef}
+                  style={{
+                    maxHeight: MAX_VIRTUAL_LIST_HEIGHT,
+                    overflow: 'auto',
+                  }}
+                >
                   <div
-                    ref={scrollContainerRef}
                     style={{
-                      maxHeight: MAX_VIRTUAL_LIST_HEIGHT,
-                      overflow: 'auto',
+                      height: `${rowVirtualizer.getTotalSize()}px`,
+                      width: '100%',
+                      position: 'relative',
                     }}
                   >
-                    <div
-                      style={{
-                        height: `${rowVirtualizer.getTotalSize()}px`,
-                        width: '100%',
-                        position: 'relative',
-                      }}
-                    >
-                      {rowVirtualizer.getVirtualItems().map(virtualRow => {
-                        const child = childFilters[virtualRow.index];
-                        const childSelectedValues = selectedValues[
-                          child.key
-                        ] || {
-                          included: new Set(),
-                          excluded: new Set(),
-                        };
-                        const childHasSelections =
-                          childSelectedValues.included.size +
-                            childSelectedValues.excluded.size >
-                          0;
+                    {rowVirtualizer.getVirtualItems().map(virtualRow => {
+                      const child = childFilters[virtualRow.index];
+                      const childSelectedValues = selectedValues[child.key] || {
+                        included: new Set(),
+                        excluded: new Set(),
+                      };
+                      const childHasSelections =
+                        childSelectedValues.included.size +
+                          childSelectedValues.excluded.size >
+                        0;
 
-                        return (
-                          <div
-                            key={child.key}
-                            data-index={virtualRow.index}
-                            ref={rowVirtualizer.measureElement}
-                            style={{
-                              position: 'absolute',
-                              top: 0,
-                              left: 0,
-                              width: '100%',
-                              transform: `translateY(${virtualRow.start}px)`,
-                              paddingTop: 4,
-                              paddingBottom: 4,
+                      return (
+                        <div
+                          key={child.key}
+                          data-index={virtualRow.index}
+                          ref={rowVirtualizer.measureElement}
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            transform: `translateY(${virtualRow.start}px)`,
+                            paddingTop: 4,
+                            paddingBottom: 4,
+                          }}
+                        >
+                          <FilterGroup
+                            data-testid={`nested-filter-group-${child.key}`}
+                            name={child.propertyPath}
+                            distributionKey={child.sqlKey ?? child.key}
+                            options={child.value.map(value => ({
+                              value: value,
+                              label: value.toString(),
+                            }))}
+                            optionsLoading={false}
+                            selectedValues={childSelectedValues}
+                            onChange={value => onChange(child.key, value)}
+                            onClearClick={() => onClearClick(child.key)}
+                            onOnlyClick={value => onOnlyClick(child.key, value)}
+                            onExcludeClick={value =>
+                              onExcludeClick(child.key, value)
+                            }
+                            valuePins={{
+                              onPinClick: value => onPinClick(child.key, value),
+                              isPinned: value => isPinned(child.key, value),
+                              onSharedPinClick: onSharedPinClick
+                                ? value => onSharedPinClick(child.key, value)
+                                : undefined,
+                              isSharedPinned: isSharedPinned
+                                ? value => isSharedPinned(child.key, value)
+                                : undefined,
                             }}
-                          >
-                            <FilterGroup
-                              data-testid={`nested-filter-group-${child.key}`}
-                              name={child.propertyPath}
-                              distributionKey={child.key}
-                              options={child.value.map(value => ({
-                                value: value,
-                                label: value.toString(),
-                              }))}
-                              optionsLoading={false}
-                              selectedValues={childSelectedValues}
-                              onChange={value => onChange(child.key, value)}
-                              onClearClick={() => onClearClick(child.key)}
-                              onOnlyClick={value =>
-                                onOnlyClick(child.key, value)
-                              }
-                              onExcludeClick={value =>
-                                onExcludeClick(child.key, value)
-                              }
-                              onPinClick={value => onPinClick(child.key, value)}
-                              isPinned={value => isPinned(child.key, value)}
-                              onFieldPinClick={() =>
-                                onFieldPinClick?.(child.key)
-                              }
-                              isFieldPinned={isFieldPinned?.(child.key)}
-                              onColumnToggle={
-                                onColumnToggle
-                                  ? () => onColumnToggle(child.key)
-                                  : undefined
-                              }
-                              isColumnDisplayed={displayedColumns?.includes(
+                            fieldPins={{
+                              onFieldPinClick: () =>
+                                onFieldPinClick?.(child.key),
+                              isFieldPinned: isFieldPinned?.(child.key),
+                              onToggleSharedFieldPin: () =>
+                                onToggleSharedFieldPin?.(child.key),
+                              isSharedFieldPinned: isSharedFieldPinned?.(
                                 child.key,
-                              )}
-                              onLoadMore={() => onLoadMore(child.key)}
-                              loadMoreLoading={
-                                loadMoreLoading[child.key] || false
-                              }
-                              hasLoadedMore={hasLoadedMore[child.key] || false}
-                              isDefaultExpanded={childHasSelections}
-                              chartConfig={chartConfig}
-                              isLive={isLive}
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
+                              ),
+                            }}
+                            onColumnToggle={
+                              onColumnToggle
+                                ? () =>
+                                    onColumnToggle(child.sqlKey ?? child.key)
+                                : undefined
+                            }
+                            isColumnDisplayed={displayedColumns?.includes(
+                              child.sqlKey ?? child.key,
+                            )}
+                            onLoadMore={() => onLoadMore(child.key)}
+                            loadMoreLoading={
+                              loadMoreLoading[child.key] || false
+                            }
+                            hasLoadedMore={hasLoadedMore[child.key] || false}
+                            showFilterCounts={showFilterCounts}
+                            isDefaultExpanded={childHasSelections}
+                            chartConfig={chartConfig}
+                            isLive={isLive}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </Accordion.Panel>
         </div>
       </Accordion.Item>

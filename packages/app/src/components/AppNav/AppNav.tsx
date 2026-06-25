@@ -44,6 +44,7 @@ import { UserPreferencesModal } from '@/UserPreferencesModal';
 import { useUserPreferences } from '@/useUserPreferences';
 import { useWindowSize } from '@/utils';
 
+// eslint-disable-next-line no-restricted-imports -- package.json lives outside src, no @/ alias reaches it
 import packageJson from '../../../package.json';
 
 import {
@@ -52,6 +53,7 @@ import {
   AppNavLink,
   AppNavUserMenu,
 } from './AppNav.components';
+import { AppNavFeedback } from './AppNavFeedback';
 
 import styles from './AppNav.module.scss';
 
@@ -245,9 +247,7 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
   const renderDashboardLink = useCallback(
     (dashboard: Dashboard) => {
       const alerts = dashboard.tiles
-        .map(t =>
-          isBuilderSavedChartConfig(t.config) ? t.config.alert : undefined,
-        )
+        .map(t => t.config.alert)
         .filter(a => a != null);
       return (
         <Link
@@ -495,6 +495,9 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
 
             {/* Help */}
             <AppNavHelpMenu version={APP_VERSION} />
+
+            {/* Feedback */}
+            <AppNavFeedback />
 
             {/* Team Settings (Cloud only) */}
             {!IS_LOCAL_MODE && (

@@ -5,6 +5,10 @@ import {
   tcFromSource,
 } from '@hyperdx/common-utils/dist/core/metadata';
 import {
+  FilterState,
+  filtersToQuery,
+} from '@hyperdx/common-utils/dist/filters';
+import {
   BuilderChartConfigWithDateRange,
   SourceKind,
 } from '@hyperdx/common-utils/dist/types';
@@ -15,6 +19,8 @@ import {
   Button,
   Center,
   Checkbox,
+  Collapse,
+  Divider,
   Flex,
   Group,
   Loader,
@@ -38,8 +44,6 @@ import {
   IconChevronUp,
   IconFilterOff,
   IconMinus,
-  IconPin,
-  IconPinFilled,
   IconPlus,
   IconRefresh,
   IconSearch,
@@ -47,30 +51,50 @@ import {
   IconSitemap,
 } from '@tabler/icons-react';
 
+import api from '@/api';
 import { IS_CLICKHOUSE_BUILD } from '@/config';
 import {
+  DEFAULT_FILTER_KEYS_FETCH_LIMIT,
+  DEFAULT_FILTER_KEYS_FETCH_LIMIT_WITH_MVS,
+} from '@/defaults';
+import {
   useAllFields,
+  useAllFieldsAndValues,
   useColumns,
+  useDateTimeColumns,
   useGetKeyValues,
   useGetValuesDistribution,
   useJsonColumns,
+  useMapColumns,
   useTableMetadata,
 } from '@/hooks/useMetadata';
 import { useMetadataWithSettings } from '@/hooks/useMetadata';
 import useResizable from '@/hooks/useResizable';
+import { usePinnedFiltersApi } from '@/pinnedFilters';
 import {
+  escapeFilterStateKeys,
   FilterStateHook,
   IS_ROOT_SPAN_COLUMN_NAME,
   usePinnedFilters,
 } from '@/searchFilters';
 import { useSource } from '@/source';
-import { mergePath } from '@/utils';
+import { mergePath, useLocalStorage } from '@/utils';
 
+import { FilterSettingsPanel } from './DBSearchPageFilters/FilterSettingsPopover';
 import { NestedFilterGroup } from './DBSearchPageFilters/NestedFilterGroup';
-import { groupFacetsByBaseName } from './DBSearchPageFilters/utils';
+import {
+  PinShareIndicator,
+  PinShareMenu,
+} from './DBSearchPageFilters/PinShareMenu';
+import { SharedFiltersSection } from './DBSearchPageFilters/SharedFilters';
+import {
+  getFilterStateEntry,
+  groupFacetsByBaseName,
+  toQuotedClickHouseKeyExpression,
+} from './DBSearchPageFilters/utils';
 
-import resizeStyles from '../../styles/ResizablePanel.module.scss';
-import classes from '../../styles/SearchPage.module.scss';
+import resizeStyles from '@styles/ResizablePanel.module.scss';
+import classes from '@styles/SearchPage.module.scss';
 
 /* The initial number of values per filter to load */
 const INITIAL_LOAD_LIMIT = 20;
@@ -99,15 +123,33 @@ export function cleanedFacetName(key: string): string {
   return key;
 }
 
+/** Value-level pin callbacks and state (personal + shared). */
+export type ValuePinHandlers = {
+  onPinClick: (value: string | boolean) => void;
+  isPinned: (value: string | boolean) => boolean;
+  onSharedPinClick?: (value: string | boolean) => void;
+  isSharedPinned?: (value: string | boolean) => boolean;
+};
+
+/** Field/group-level pin callbacks and state (personal + shared). */
+export type FieldPinHandlers = {
+  onFieldPinClick?: VoidFunction;
+  isFieldPinned?: boolean;
+  onToggleSharedFieldPin?: VoidFunction;
+  isSharedFieldPinned?: boolean;
+};
+
 type FilterCheckboxProps = {
   columnName: string;
   label: string;
   value?: 'included' | 'excluded' | false;
   pinned: boolean;
+  sharedPinned?: boolean;
   onChange?: (checked: boolean) => void;
   onClickOnly?: VoidFunction;
   onClickExclude?: VoidFunction;
   onClickPin: VoidFunction;
+  onClickSharedPin?: VoidFunction;
   className?: string;
   percentage?: number;
   isPercentageLoading?: boolean;
@@ -143,9 +185,14 @@ const TextButton = ({
 type FilterPercentageProps = {
   percentage: number;
   isLoading?: boolean;
+  'data-testid'?: string;
 };
 
-const FilterPercentage = ({ percentage, isLoading }: FilterPercentageProps) => {
+const FilterPercentage = ({
+  percentage,
+  isLoading,
+  'data-testid': dataTestId,
+}: FilterPercentageProps) => {
   const formattedPercentage =
     percentage < 1
       ? `<1%`
@@ -154,7 +201,11 @@ const FilterPercentage = ({ percentage, isLoading }: FilterPercentageProps) => {
         : `~${Math.round(percentage)}%`;
 
   return (
-    <Text size="xs" className={isLoading ? 'effect-pulse' : ''}>
+    <Text
+      size="xs"
+      className={isLoading ? 'effect-pulse' : ''}
+      data-testid={dataTestId}
+    >
       {formattedPercentage}
     </Text>
   );
@@ -165,19 +216,29 @@ const FilterCheckbox = ({
   value,
   label,
   pinned,
+  sharedPinned,
   onChange,
   onClickOnly,
   onClickExclude,
   onClickPin,
+  onClickSharedPin,
   className,
   percentage,
   isPercentageLoading,
 }: FilterCheckboxProps) => {
+  const [pinMenuOpened, setPinMenuOpened] = useState(false);
   const testIdPrefix = `filter-checkbox-${columnName}-${label}`;
+  const isPinnedAny = pinned || sharedPinned;
   return (
     <div
       className={cx(classes.filterCheckbox, className)}
       data-testid={testIdPrefix}
+      // Keep actions visible while pin menu is open
+      style={
+        pinMenuOpened
+          ? { backgroundColor: 'var(--color-bg-surface)' }
+          : undefined
+      }
     >
       <Group
         gap={8}
@@ -227,12 +288,16 @@ const FilterCheckbox = ({
               <FilterPercentage
                 percentage={percentage}
                 isLoading={isPercentageLoading}
+                data-testid={`filter-distribution-${columnName}-${label}`}
               />
             )}
           </Group>
         </Tooltip>
       </Group>
-      <div className={classes.filterActions}>
+      <div
+        className={classes.filterActions}
+        style={pinMenuOpened ? { display: 'flex' } : undefined}
+      >
         {onClickOnly && (
           <TextButton
             onClick={onClickOnly}
@@ -247,24 +312,26 @@ const FilterCheckbox = ({
             data-testid={`${testIdPrefix}-exclude`}
           />
         )}
-        <ActionIcon
-          onClick={onClickPin}
-          size="xs"
-          variant="subtle"
-          color="gray"
-          aria-label={pinned ? 'Unpin field' : 'Pin field'}
-          role="checkbox"
-          aria-checked={pinned}
+        <PinShareMenu
+          personalPinned={pinned}
+          sharedPinned={sharedPinned ?? false}
+          onTogglePersonalPin={onClickPin}
+          onToggleSharedPin={onClickSharedPin}
+          size={12}
+          onChange={setPinMenuOpened}
           data-testid={`${testIdPrefix}-pin`}
-        >
-          {pinned ? <IconPinFilled size={12} /> : <IconPin size={12} />}
-        </ActionIcon>
+          aria-label={isPinnedAny ? 'Unpin value' : 'Pin value'}
+        />
       </div>
-      {pinned && (
-        <Center me="1px">
-          <IconPinFilled size={12} data-testid={`${testIdPrefix}-pin-pinned`} />
-        </Center>
-      )}
+      <PinShareIndicator
+        personalPinned={pinned}
+        sharedPinned={sharedPinned ?? false}
+        data-testid={
+          sharedPinned
+            ? `${testIdPrefix}-pin-shared`
+            : `${testIdPrefix}-pin-pinned`
+        }
+      />
     </div>
   );
 };
@@ -345,16 +412,15 @@ export type FilterGroupProps = {
   onClearClick: VoidFunction;
   onOnlyClick: (value: string | boolean) => void;
   onExcludeClick: (value: string | boolean) => void;
-  onPinClick: (value: string | boolean) => void;
-  isPinned: (value: string | boolean) => boolean;
-  onFieldPinClick?: VoidFunction;
-  isFieldPinned?: boolean;
+  valuePins: ValuePinHandlers;
+  fieldPins?: FieldPinHandlers;
   onColumnToggle?: VoidFunction;
   isColumnDisplayed?: boolean;
   onLoadMore: (key: string) => void;
   loadMoreLoading: boolean;
   hasLoadedMore: boolean;
   isDefaultExpanded?: boolean;
+  showFilterCounts?: boolean;
   'data-testid'?: string;
   chartConfig: BuilderChartConfigWithDateRange;
   isLive?: boolean;
@@ -377,6 +443,8 @@ const FilterGroupBody = ({
   onExcludeClick,
   isPinned,
   onPinClick,
+  isSharedPinned,
+  onSharedPinClick,
   onLoadMore,
   loadMoreLoading,
   hasLoadedMore,
@@ -390,16 +458,14 @@ const FilterGroupBody = ({
   name: string;
   options: { value: string | boolean; label: string }[];
   optionsLoading?: boolean;
-  selectedValues: {
-    included: Set<string | boolean>;
-    excluded: Set<string | boolean>;
-    range?: { min: number; max: number };
-  };
+  selectedValues: SelectedValues;
   onChange: (value: string | boolean) => void;
   onOnlyClick: (value: string | boolean) => void;
   onExcludeClick: (value: string | boolean) => void;
   isPinned: (value: string | boolean) => boolean;
   onPinClick: (value: string | boolean) => void;
+  isSharedPinned?: (value: string | boolean) => boolean;
+  onSharedPinClick?: (value: string | boolean) => void;
   onLoadMore: (key: string) => void;
   loadMoreLoading: boolean;
   hasLoadedMore: boolean;
@@ -508,18 +574,25 @@ const FilterGroupBody = ({
         );
     }
 
-    // When not searching, sort by pinned, selected, distribution, then alphabetically
+    // When not searching, sort by personal pinned, shared pinned, selected,
+    // distribution, then alphabetically
     return augmentedOptions.toSorted((a, b) => {
       const aPinned = isPinned(a.value);
+      const aShared = isSharedPinned?.(a.value) ?? false;
       const aIncluded = selectedValues.included.has(a.value);
       const aExcluded = selectedValues.excluded.has(a.value);
       const bPinned = isPinned(b.value);
+      const bShared = isSharedPinned?.(b.value) ?? false;
       const bIncluded = selectedValues.included.has(b.value);
       const bExcluded = selectedValues.excluded.has(b.value);
 
-      // First sort by pinned status
+      // First sort by personal pinned status
       if (aPinned && !bPinned) return -1;
       if (!aPinned && bPinned) return 1;
+
+      // Then sort by shared pinned status
+      if (aShared && !bShared) return -1;
+      if (!aShared && bShared) return 1;
 
       // Then sort by included status
       if (aIncluded && !bIncluded) return -1;
@@ -543,6 +616,7 @@ const FilterGroupBody = ({
     search,
     augmentedOptions,
     isPinned,
+    isSharedPinned,
     selectedValues.included,
     selectedValues.excluded,
     distributionData,
@@ -623,6 +697,10 @@ const FilterGroupBody = ({
           onClickOnly={() => onOnlyClick(option.value)}
           onClickExclude={() => onExcludeClick(option.value)}
           onClickPin={() => onPinClick(option.value)}
+          sharedPinned={isSharedPinned?.(option.value)}
+          onClickSharedPin={
+            onSharedPinClick ? () => onSharedPinClick(option.value) : undefined
+          }
           isPercentageLoading={isFetchingDistribution}
           percentage={
             showDistributions && distributionData
@@ -712,10 +790,12 @@ type FilterGroupActionsProps = {
   isFetchingDistribution: boolean;
   isColumnDisplayed: boolean;
   isFieldPinned: boolean;
+  isSharedFieldPinned: boolean;
   totalAppliedFiltersSize: number;
   toggleShowDistributions: VoidFunction;
-  onColumnToggle: VoidFunction;
+  onColumnToggle?: VoidFunction;
   onFieldPinClick: VoidFunction;
+  onToggleSharedFieldPin: VoidFunction;
   onClearClick: VoidFunction;
 };
 function FilterGroupActions({
@@ -725,10 +805,12 @@ function FilterGroupActions({
   isFetchingDistribution,
   isColumnDisplayed,
   isFieldPinned,
+  isSharedFieldPinned,
   totalAppliedFiltersSize,
   toggleShowDistributions,
   onColumnToggle,
   onFieldPinClick,
+  onToggleSharedFieldPin,
   onClearClick,
 }: FilterGroupActionsProps) {
   return (
@@ -764,30 +846,9 @@ function FilterGroupActions({
               )}
             </ActionIcon>
           </Tooltip>
-          <Tooltip
-            label={isColumnDisplayed ? 'Remove Column' : 'Add Column'}
-            position="top"
-            withArrow
-            fz="xxs"
-            color="gray"
-          >
-            <ActionIcon
-              size="xs"
-              variant="subtle"
-              color="gray"
-              onClick={onColumnToggle}
-              data-testid={`toggle-column-button-${name}`}
-            >
-              {isColumnDisplayed ? (
-                <IconMinus size={14} />
-              ) : (
-                <IconPlus size={14} />
-              )}
-            </ActionIcon>
-          </Tooltip>
-          {onFieldPinClick && (
+          {onColumnToggle && (
             <Tooltip
-              label={isFieldPinned ? 'Unpin Field' : 'Pin Field'}
+              label={isColumnDisplayed ? 'Remove Column' : 'Add Column'}
               position="top"
               withArrow
               fz="xxs"
@@ -797,16 +858,23 @@ function FilterGroupActions({
                 size="xs"
                 variant="subtle"
                 color="gray"
-                onClick={onFieldPinClick}
+                onClick={onColumnToggle}
+                data-testid={`toggle-column-button-${name}`}
               >
-                {isFieldPinned ? (
-                  <IconPinFilled size={14} />
+                {isColumnDisplayed ? (
+                  <IconMinus size={14} />
                 ) : (
-                  <IconPin size={14} />
+                  <IconPlus size={14} />
                 )}
               </ActionIcon>
             </Tooltip>
           )}
+          <PinShareMenu
+            personalPinned={isFieldPinned}
+            sharedPinned={isSharedFieldPinned}
+            onTogglePersonalPin={onFieldPinClick}
+            onToggleSharedPin={onToggleSharedFieldPin}
+          />
         </>
       )}
       {totalAppliedFiltersSize > 0 && (
@@ -842,16 +910,15 @@ export const FilterGroup = ({
   onClearClick,
   onOnlyClick,
   onExcludeClick,
-  isPinned,
-  onPinClick,
-  onFieldPinClick,
-  isFieldPinned,
+  valuePins,
+  fieldPins,
   onColumnToggle,
   isColumnDisplayed,
   onLoadMore,
   loadMoreLoading,
   hasLoadedMore,
   isDefaultExpanded,
+  showFilterCounts,
   'data-testid': dataTestId,
   chartConfig,
   isLive,
@@ -931,6 +998,13 @@ export const FilterGroup = ({
               >
                 <Text size="xs" fw="500" truncate="end">
                   {name}
+                  {showFilterCounts && (
+                    <Text
+                      component="span"
+                      size="xs"
+                      c="dimmed"
+                    >{` (${totalAppliedFiltersSize > 0 ? totalAppliedFiltersSize : options.length})`}</Text>
+                  )}
                 </Text>
               </Tooltip>
             </Accordion.Control>
@@ -940,11 +1014,15 @@ export const FilterGroup = ({
               showDistributions={showDistributions}
               isFetchingDistribution={isFetchingDistribution}
               isColumnDisplayed={isColumnDisplayed ?? false}
-              isFieldPinned={isFieldPinned ?? false}
-              totalAppliedFiltersSize={totalAppliedFiltersSize}
+              isFieldPinned={fieldPins?.isFieldPinned ?? false}
+              isSharedFieldPinned={fieldPins?.isSharedFieldPinned ?? false}
               toggleShowDistributions={toggleShowDistributions}
-              onColumnToggle={onColumnToggle ?? voidFunc}
-              onFieldPinClick={onFieldPinClick ?? voidFunc}
+              onColumnToggle={onColumnToggle}
+              onFieldPinClick={fieldPins?.onFieldPinClick ?? voidFunc}
+              onToggleSharedFieldPin={
+                fieldPins?.onToggleSharedFieldPin ?? voidFunc
+              }
+              totalAppliedFiltersSize={totalAppliedFiltersSize}
               onClearClick={onClearClick}
             />
           </Center>
@@ -971,8 +1049,10 @@ export const FilterGroup = ({
                   onChange={onChange}
                   onOnlyClick={onOnlyClick}
                   onExcludeClick={onExcludeClick}
-                  isPinned={isPinned}
-                  onPinClick={onPinClick}
+                  isPinned={valuePins.isPinned}
+                  onPinClick={valuePins.onPinClick}
+                  isSharedPinned={valuePins.isSharedPinned}
+                  onSharedPinClick={valuePins.onSharedPinClick}
                   onLoadMore={onLoadMore}
                   loadMoreLoading={loadMoreLoading}
                   hasLoadedMore={hasLoadedMore}
@@ -994,7 +1074,6 @@ export const FilterGroup = ({
 
 const DBSearchPageFiltersComponent = ({
   filters: filterState,
-  clearAllFilters,
   clearFilter,
   setFilterValue: _setFilterValue,
   isLive,
@@ -1040,27 +1119,107 @@ const DBSearchPageFiltersComponent = ({
     isFieldPinned,
     getPinnedFields,
     pinnedFilters,
+    toggleSharedFieldPin,
+    isSharedFieldPinned,
+    toggleSharedFilterPin,
+    isSharedFilterPinned,
+    resetPersonalPins,
+    resetSharedFilters,
+    hasPersonalPins,
+    hasSharedPins,
   } = usePinnedFilters(sourceId ?? null);
+  const { data: pinnedFiltersApiData } = usePinnedFiltersApi(sourceId ?? null);
+  const [isSharedFiltersVisible, setSharedFiltersVisible] = useLocalStorage(
+    'hdx-shared-filters-visible',
+    true,
+  );
+  const [showFilterCounts, setShowFilterCounts] = useLocalStorage(
+    'hdx-show-filter-counts',
+    true,
+  );
+  const [isFiltersExpanded, setFiltersExpanded] = useLocalStorage(
+    'hdx-filters-expanded',
+    true,
+  );
+  const [isSharedFiltersExpanded, setSharedFiltersExpanded] = useLocalStorage(
+    'hdx-shared-filters-expanded',
+    true,
+  );
+  const [showAllValues, setShowAllValues] = useLocalStorage(
+    'hdx-show-all-filter-values',
+    true,
+  );
   const { size, startResize } = useResizable(16, 'left');
 
-  const { data: jsonColumns } = useJsonColumns({
-    databaseName: chartConfig.from.databaseName,
-    tableName: chartConfig.from.tableName,
-    connectionId: chartConfig.connection,
-  });
-  const { data, isLoading, error } = useAllFields({
-    databaseName: chartConfig.from.databaseName,
-    tableName: chartConfig.from.tableName,
-    connectionId: chartConfig.connection,
-  });
-  const { data: columns } = useColumns({
+  const { data: source } = useSource({ id: sourceId });
+  const sourceTableConnection = tcFromSource(source);
+  const { data: jsonColumns } = useJsonColumns(sourceTableConnection);
+  const { data: mapColumns } = useMapColumns(sourceTableConnection);
+  const filterMode = showAllValues ? ('all' as const) : ('exact' as const);
+
+  const hasMVs = !!sourceTableConnection.metadataMVs;
+  const useExactPipeline = !hasMVs || filterMode === 'exact';
+
+  const { data: me } = api.useMe();
+  const defaultLimit = hasMVs
+    ? DEFAULT_FILTER_KEYS_FETCH_LIMIT_WITH_MVS
+    : DEFAULT_FILTER_KEYS_FETCH_LIMIT;
+  const maxKeys = me?.team?.filterKeysFetchLimit ?? defaultLimit;
+
+  // Special case for live tail
+  const [dateRange, setDateRange] = useState<[Date, Date]>(
+    chartConfig.dateRange,
+  );
+
+  // Exact pipeline step 1: discover keys from column metadata
+  const {
+    data: allFields,
+    isLoading: isFieldsLoading,
+    error: fieldsError,
+  } = useAllFields(
+    {
+      databaseName: chartConfig.from.databaseName,
+      tableName: chartConfig.from.tableName,
+      connectionId: chartConfig.connection,
+      metadataMVs: sourceTableConnection.metadataMVs,
+    },
+    {
+      dateRange,
+      timestampValueExpression: chartConfig.timestampValueExpression,
+      enabled: useExactPipeline,
+    },
+  );
+
+  // MV pipeline: combined key+value rollup query
+  const {
+    data: mvFieldsAndValues,
+    isLoading: isMVLoading,
+    isFetching: isMVFetching,
+    error: mvError,
+  } = useAllFieldsAndValues(
+    {
+      databaseName: chartConfig.from.databaseName,
+      tableName: chartConfig.from.tableName,
+      connectionId: chartConfig.connection,
+      metadataMVs: sourceTableConnection.metadataMVs,
+      dateRange,
+      maxKeys,
+    },
+    { enabled: !useExactPipeline },
+  );
+
+  const isLoading = useExactPipeline ? isFieldsLoading : isMVLoading;
+  const error = useExactPipeline ? fieldsError : mvError;
+
+  const { data: columns, isLoading: isColumnsLoading } = useColumns({
     databaseName: chartConfig.from.databaseName,
     tableName: chartConfig.from.tableName,
     connectionId: chartConfig.connection,
   });
 
-  const { data: source } = useSource({ id: sourceId });
-  const { data: tableMetadata } = useTableMetadata(tcFromSource(source));
+  const dateTimeColumns = useDateTimeColumns(columns);
+
+  const { data: tableMetadata } = useTableMetadata(sourceTableConnection);
 
   useEffect(() => {
     if (error) {
@@ -1076,11 +1235,11 @@ const DBSearchPageFiltersComponent = ({
   const [showMoreFields, setShowMoreFields] = useState(false);
 
   const keysToFetch = useMemo(() => {
-    if (!data) {
+    if (!allFields) {
       return [];
     }
 
-    const strings = data
+    const strings = allFields
       .sort((a, b) => {
         // First show low cardinality fields
         const isLowCardinality = (type: string) =>
@@ -1094,7 +1253,7 @@ const DBSearchPageFiltersComponent = ({
       .map(({ path, type }) => {
         return {
           type,
-          path: mergePath(path, jsonColumns ?? []),
+          path: mergePath(path, jsonColumns ?? [], mapColumns ?? []),
           isMapSubField: path.length > 1,
         };
       })
@@ -1104,7 +1263,8 @@ const DBSearchPageFiltersComponent = ({
           field.type.includes('LowCardinality') || // query only low cardinality fields by default
           field.isMapSubField || // always include Map/JSON sub-fields (e.g. LogAttributes, ResourceAttributes keys)
           Object.keys(filterState).includes(field.path) || // keep selected fields
-          isFieldPinned(field.path), // keep pinned fields
+          isFieldPinned(field.path) || // keep personally pinned fields
+          isSharedFieldPinned(field.path), // keep team-shared fields
       )
       .map(({ path }) => path)
       .filter(
@@ -1112,12 +1272,15 @@ const DBSearchPageFiltersComponent = ({
           !['body', 'timestamp', '_hdx_body'].includes(path.toLowerCase()),
       );
     return strings;
-  }, [data, jsonColumns, filterState, showMoreFields, isFieldPinned]);
-
-  // Special case for live tail
-  const [dateRange, setDateRange] = useState<[Date, Date]>(
-    chartConfig.dateRange,
-  );
+  }, [
+    allFields,
+    jsonColumns,
+    mapColumns,
+    filterState,
+    showMoreFields,
+    isFieldPinned,
+    isSharedFieldPinned,
+  ]);
 
   useEffect(() => {
     if (!isLive) {
@@ -1133,15 +1296,69 @@ const DBSearchPageFiltersComponent = ({
 
   const showRefreshButton = isLive && dateRange !== chartConfig.dateRange;
 
+  // In 'all' mode, strip WHERE/filters so we get all values regardless of
+  // the current search query. In 'exact' mode, keep the full chart config
+  // so values are scoped to the current query results.
+  const facetsChartConfig = useMemo(
+    () =>
+      filterMode === 'all'
+        ? { ...chartConfig, dateRange, where: '', filters: [] }
+        : { ...chartConfig, dateRange },
+    [chartConfig, dateRange, filterMode],
+  );
+
+  // Conditionally backtick-quote facet keys that contain special characters and
+  // match known column names, so they can be used in the ClickHouse query to get
+  // key values.
+  const knownColumns = useMemo(
+    () => (columns ? new Set(columns.map(c => c.name)) : new Set<string>()),
+    [columns],
+  );
+  const { escapedKeysToFetch, sqlKeyToUiKey } = useMemo(() => {
+    // Don't fetch any keys until the column list is loaded,
+    // since we need the real column names to escape correctly.
+    if (isColumnsLoading) {
+      return { escapedKeysToFetch: [], sqlKeyToUiKey: new Map() };
+    }
+
+    const sqlKeyToUiKey = new Map<string, string>();
+    const escapedKeysToFetch = keysToFetch.map(key => {
+      const sqlKey = toQuotedClickHouseKeyExpression(key, knownColumns);
+      sqlKeyToUiKey.set(sqlKey, key);
+      return sqlKey;
+    });
+    return { escapedKeysToFetch, sqlKeyToUiKey };
+  }, [isColumnsLoading, keysToFetch, knownColumns]);
+
+  // Exact pipeline step 2: fetch values for discovered keys
   const {
-    data: facets,
-    isLoading: isFacetsLoading,
-    isFetching: isFacetsFetching,
-  } = useGetKeyValues({
-    chartConfig: { ...chartConfig, dateRange },
-    limit: INITIAL_LOAD_LIMIT,
-    keys: keysToFetch,
-  });
+    data: rawExactFacets,
+    isLoading: isExactFacetsLoading,
+    isFetching: isExactFacetsFetching,
+  } = useGetKeyValues(
+    {
+      chartConfig: facetsChartConfig,
+      limit: INITIAL_LOAD_LIMIT,
+      keys: escapedKeysToFetch,
+    },
+    { enabled: useExactPipeline },
+  );
+
+  // Map the (escaped) result keys back to the original UI keys.
+  const exactFacets = useMemo(
+    () =>
+      rawExactFacets?.map(f => ({
+        ...f,
+        key: sqlKeyToUiKey.get(f.key) ?? f.key,
+      })),
+    [rawExactFacets, sqlKeyToUiKey],
+  );
+
+  const facets = useExactPipeline ? exactFacets : mvFieldsAndValues;
+  const isFacetsLoading = useExactPipeline ? isExactFacetsLoading : isMVLoading;
+  const isFacetsFetching = useExactPipeline
+    ? isExactFacetsFetching
+    : isMVFetching;
 
   // Merge pinned filter values into the queried facets, so that pinned values are always available
   const facetsWithPinnedValues = useMemo(() => {
@@ -1173,17 +1390,54 @@ const DBSearchPageFiltersComponent = ({
     async (key: string) => {
       setLoadMoreLoadingKeys(prev => new Set(prev).add(key));
       try {
-        const newKeyVals = await metadata.getKeyValuesWithMVs({
-          chartConfig: {
-            ...chartConfig,
+        // Coerce dot-form Map sub-keys (LogAttributes.foo) into bracket form
+        // (LogAttributes['foo']) and conditionally backtick-quote special-char
+        // identifiers before handing them to ClickHouse. `getKeyValues` no
+        // longer escapes, so the caller must pass a valid SQL key; dot form ends
+        // up in filterState after setFilterValue's parseKeyPath().join('.')
+        // normalization or after a Lucene URL round-trip, and ClickHouse
+        // cannot resolve it as map access.
+        const sqlKey = toQuotedClickHouseKeyExpression(key, knownColumns);
+        let newValues: string[];
+        if (!useExactPipeline) {
+          const results = await metadata.getAllKeyValues({
+            databaseName: chartConfig.from.databaseName,
+            tableName: chartConfig.from.tableName,
+            connectionId: chartConfig.connection,
+            keyExpressions: [sqlKey],
+            maxValuesPerKey: LOAD_MORE_LOAD_LIMIT,
+            metadataMVs: sourceTableConnection.metadataMVs,
             dateRange,
-          },
-          keys: [key],
-          limit: LOAD_MORE_LOAD_LIMIT,
-          disableRowLimit: true,
-          source,
-        });
-        const newValues = newKeyVals[0].value?.map(val => val.toString()) ?? [];
+            timestampValueExpression: chartConfig.timestampValueExpression,
+          });
+          newValues = results[0] ? results[0].value : [];
+        } else {
+          // Drop this key's own filter from the WHERE clause so "Load more"
+          // can surface alternative values when the dropdown has self-restricted
+          // to the user's current selection (exact filter mode, with selections
+          // on this key). Other dimensions' filters and the free-text where
+          // stay applied so counts remain search-aware for unrelated fields.
+          // Strip under both bracket and dot forms since filterState may carry
+          // either depending on how the filter was authored.
+          const strippedFilterState: FilterState = { ...filterState };
+          delete strippedFilterState[key];
+          if (sqlKey !== key) delete strippedFilterState[sqlKey];
+          const newKeyVals = await metadata.getKeyValuesWithMVs({
+            chartConfig: {
+              ...chartConfig,
+              dateRange,
+              filters: filtersToQuery(
+                escapeFilterStateKeys(strippedFilterState, knownColumns),
+                { dateTimeColumns },
+              ),
+            },
+            keys: [sqlKey],
+            limit: LOAD_MORE_LOAD_LIMIT,
+            disableRowLimit: true,
+            source,
+          });
+          newValues = newKeyVals[0].value?.map(val => val.toString()) ?? [];
+        }
         if (newValues.length > 0) {
           setExtraFacets(prev => ({
             ...prev,
@@ -1200,8 +1454,74 @@ const DBSearchPageFiltersComponent = ({
         });
       }
     },
-    [chartConfig, setExtraFacets, dateRange, metadata, source],
+    [
+      chartConfig,
+      setExtraFacets,
+      dateRange,
+      dateTimeColumns,
+      filterState,
+      metadata,
+      source,
+      useExactPipeline,
+      sourceTableConnection.metadataMVs,
+      knownColumns,
+    ],
   );
+
+  // Build the set of team-pinned fields for the Shared Filters section,
+  // so we can avoid duplicating them in the regular Filters list below.
+  const sharedFilterKeys = useMemo(() => {
+    if (!isSharedFiltersVisible || !pinnedFiltersApiData?.team) {
+      return new Set<string>();
+    }
+    const team = pinnedFiltersApiData.team;
+    return new Set([...team.fields, ...Object.keys(team.filters)]);
+  }, [isSharedFiltersVisible, pinnedFiltersApiData]);
+
+  // Build the facet list for the Shared Filters section.
+  // For each team-pinned field: merge pinned values with dynamic facet values.
+  const sharedFacets = useMemo(() => {
+    if (sharedFilterKeys.size === 0) return [];
+
+    const facetMap = new Map(
+      (facetsWithPinnedValues ?? []).map(f => [f.key, f.value]),
+    );
+
+    return Array.from(sharedFilterKeys).map(key => {
+      const teamVals = pinnedFiltersApiData?.team?.filters[key] ?? [];
+      const dynamicValues = facetMap.get(key) ?? [];
+
+      let merged: (string | boolean)[];
+      if (teamVals.length > 0) {
+        merged = [...teamVals];
+        for (const v of dynamicValues) {
+          if (!merged.some(existing => existing === v)) {
+            merged.push(v);
+          }
+        }
+      } else {
+        // Field-only pin — show dynamic values
+        merged = [...dynamicValues];
+      }
+
+      // Merge in extra values loaded via "Load more"
+      const extraValues = extraFacets[key];
+      if (extraValues && extraValues.length > 0) {
+        for (const v of extraValues) {
+          if (!merged.includes(v)) {
+            merged.push(v);
+          }
+        }
+      }
+
+      return { key, value: merged };
+    });
+  }, [
+    sharedFilterKeys,
+    facetsWithPinnedValues,
+    pinnedFiltersApiData,
+    extraFacets,
+  ]);
 
   const shownFacets = useMemo(() => {
     const _facets: { key: string; value: (string | boolean)[] }[] = [];
@@ -1209,6 +1529,11 @@ const DBSearchPageFiltersComponent = ({
       const facet = structuredClone(_facet);
       if (jsonColumns?.some(col => facet.key.startsWith(col))) {
         facet.key = `toString(${facet.key})`;
+      }
+
+      // Skip fields already shown in the Shared Filters section
+      if (sharedFilterKeys.has(facet.key)) {
+        continue;
       }
 
       // don't include empty facets, unless they are already selected or pinned
@@ -1236,7 +1561,8 @@ const DBSearchPageFiltersComponent = ({
     }
     // get remaining filterState that are not in _facets
     const remainingFilterState = Object.keys(filterState).filter(
-      key => !_facets.some(facet => facet.key === key),
+      key =>
+        !_facets.some(facet => facet.key === key) && !sharedFilterKeys.has(key),
     );
     for (const key of remainingFilterState) {
       _facets.push({
@@ -1252,11 +1578,18 @@ const DBSearchPageFiltersComponent = ({
       return aIsPk && !bIsPk ? -1 : bIsPk && !aIsPk ? 1 : 0;
     });
 
-    // prioritize facets that are pinned
+    // prioritize facets that are pinned (either personal or shared)
     _facets.sort((a, b) => {
-      const aPinned = isFieldPinned(a.key);
-      const bPinned = isFieldPinned(b.key);
+      const aPinned = isFieldPinned(a.key) || isSharedFieldPinned(a.key);
+      const bPinned = isFieldPinned(b.key) || isSharedFieldPinned(b.key);
       return aPinned && !bPinned ? -1 : bPinned && !aPinned ? 1 : 0;
+    });
+
+    // among pinned, prioritize shared over personal
+    _facets.sort((a, b) => {
+      const aShared = isSharedFieldPinned(a.key);
+      const bShared = isSharedFieldPinned(b.key);
+      return aShared && !bShared ? -1 : bShared && !aShared ? 1 : 0;
     });
 
     // prioritize facets that have checked items
@@ -1282,16 +1615,46 @@ const DBSearchPageFiltersComponent = ({
     tableMetadata,
     extraFacets,
     isFieldPinned,
+    isSharedFieldPinned,
     jsonColumns,
+    sharedFilterKeys,
   ]);
 
-  const showClearAllButton = useMemo(
+  // Check if shared facets have active selections
+  const showSharedClearButton = useMemo(
     () =>
-      Object.values(filterState).some(
-        f => f.included.size > 0 || f.excluded.size > 0 || f.range != null,
-      ),
-    [filterState],
+      sharedFacets.some(facet => {
+        const f = filterState[facet.key];
+        return (
+          f && (f.included.size > 0 || f.excluded.size > 0 || f.range != null)
+        );
+      }),
+    [sharedFacets, filterState],
   );
+
+  // Check if non-shared facets have active selections
+  const showFiltersClearButton = useMemo(
+    () =>
+      shownFacets.some(facet => {
+        const f = filterState[facet.key];
+        return (
+          f && (f.included.size > 0 || f.excluded.size > 0 || f.range != null)
+        );
+      }),
+    [shownFacets, filterState],
+  );
+
+  const clearSharedSelections = useCallback(() => {
+    for (const facet of sharedFacets) {
+      clearFilter(facet.key);
+    }
+  }, [sharedFacets, clearFilter]);
+
+  const clearRegularSelections = useCallback(() => {
+    for (const facet of shownFacets) {
+      clearFilter(facet.key);
+    }
+  }, [shownFacets, clearFilter]);
 
   const parentSpanIdExpr =
     source?.kind === SourceKind.Trace
@@ -1329,9 +1692,197 @@ const DBSearchPageFiltersComponent = ({
     );
   }, [filterState, source, parentSpanIdExpr]);
 
-  const { grouped, nonGrouped } = useMemo(
-    () => groupFacetsByBaseName(shownFacets),
-    [shownFacets],
+  /**
+   * Renders a list of facets as FilterGroup and NestedFilterGroup components.
+   * Used for both the Shared Filters section and the regular Filters section.
+   */
+  const renderFacetList = useCallback(
+    (
+      facets: { key: string; value: (string | boolean)[] }[],
+      options?: { keyPrefix?: string; isDefaultExpanded?: boolean },
+    ) => {
+      const { keyPrefix = '', isDefaultExpanded: forceExpanded } =
+        options ?? {};
+      const { grouped, nonGrouped } = groupFacetsByBaseName(facets);
+
+      const makeValuePins = (key: string): ValuePinHandlers => ({
+        onPinClick: (value: string | boolean) => toggleFilterPin(key, value),
+        isPinned: (value: string | boolean) => isFilterPinned(key, value),
+        onSharedPinClick: (value: string | boolean) =>
+          toggleSharedFilterPin(key, value),
+        isSharedPinned: (value: string | boolean) =>
+          isSharedFilterPinned(key, value),
+      });
+
+      const makeFieldPins = (key: string): FieldPinHandlers => ({
+        onFieldPinClick: () => toggleFieldPin(key),
+        isFieldPinned: isFieldPinned(key),
+        onToggleSharedFieldPin: () => toggleSharedFieldPin(key),
+        isSharedFieldPinned: isSharedFieldPinned(key),
+      });
+
+      return (
+        <>
+          {grouped.map(group => (
+            <NestedFilterGroup
+              key={`${keyPrefix}${group.key}`}
+              data-testid={`${keyPrefix}nested-filter-group-${group.key}`}
+              name={group.key}
+              // sqlKey is the canonical (quoted/bracket) SQL form used wherever
+              // the key becomes raw SQL (distribution query, "Add column"
+              // SELECT); child.key stays clean for the UI.
+              childFilters={group.children.map(child => ({
+                ...child,
+                sqlKey: toQuotedClickHouseKeyExpression(
+                  child.key,
+                  knownColumns,
+                ),
+              }))}
+              selectedValues={group.children.reduce((acc, child) => {
+                acc[child.key] = getFilterStateEntry(
+                  filterState,
+                  child.key,
+                ) ?? {
+                  included: new Set(),
+                  excluded: new Set(),
+                };
+                return acc;
+              }, {} as FilterState)}
+              onChange={(key, value) => setFilterValue(key, value)}
+              onClearClick={key => clearFilter(key)}
+              onOnlyClick={(key, value) => setFilterValue(key, value, 'only')}
+              onExcludeClick={(key, value) =>
+                setFilterValue(key, value, 'exclude')
+              }
+              onPinClick={(key, value) => toggleFilterPin(key, value)}
+              isPinned={(key, value) => isFilterPinned(key, value)}
+              onSharedPinClick={(key, value) =>
+                toggleSharedFilterPin(key, value)
+              }
+              isSharedPinned={(key, value) => isSharedFilterPinned(key, value)}
+              onFieldPinClick={key => toggleFieldPin(key)}
+              isFieldPinned={key => isFieldPinned(key)}
+              onToggleSharedFieldPin={key => toggleSharedFieldPin(key)}
+              isSharedFieldPinned={key => isSharedFieldPinned(key)}
+              showFilterCounts={showFilterCounts}
+              onColumnToggle={onColumnToggle}
+              displayedColumns={displayedColumns}
+              onLoadMore={loadMoreFilterValuesForKey}
+              loadMoreLoading={group.children.reduce(
+                (acc, child) => {
+                  acc[child.key] = loadMoreLoadingKeys.has(child.key);
+                  return acc;
+                },
+                {} as Record<string, boolean>,
+              )}
+              hasLoadedMore={group.children.reduce(
+                (acc, child) => {
+                  acc[child.key] = Boolean(extraFacets[child.key]);
+                  return acc;
+                },
+                {} as Record<string, boolean>,
+              )}
+              isDefaultExpanded={
+                forceExpanded ??
+                group.children.some(child => {
+                  const entry = getFilterStateEntry(filterState, child.key);
+                  return (
+                    (entry &&
+                      (entry.included.size > 0 || entry.excluded.size > 0)) ||
+                    isFieldPinned(child.key) ||
+                    isSharedFieldPinned(child.key)
+                  );
+                })
+              }
+              chartConfig={chartConfig}
+              isLive={isLive}
+            />
+          ))}
+          {nonGrouped.map(facet => {
+            const facetSqlKey = toQuotedClickHouseKeyExpression(
+              facet.key,
+              knownColumns,
+            );
+            return (
+              <FilterGroup
+                key={`${keyPrefix}${facet.key}`}
+                data-testid={`${keyPrefix}filter-group-${facet.key}`}
+                name={cleanedFacetName(facet.key)}
+                distributionKey={facetSqlKey}
+                showFilterCounts={showFilterCounts}
+                options={facet.value.map(value => ({
+                  value,
+                  label: value.toString(),
+                }))}
+                optionsLoading={isFacetsLoading}
+                selectedValues={
+                  getFilterStateEntry(filterState, facet.key) ?? {
+                    included: new Set(),
+                    excluded: new Set(),
+                  }
+                }
+                onChange={value => setFilterValue(facet.key, value)}
+                onClearClick={() => clearFilter(facet.key)}
+                onOnlyClick={value => setFilterValue(facet.key, value, 'only')}
+                onExcludeClick={value =>
+                  setFilterValue(facet.key, value, 'exclude')
+                }
+                valuePins={makeValuePins(facet.key)}
+                fieldPins={makeFieldPins(facet.key)}
+                onColumnToggle={
+                  onColumnToggle ? () => onColumnToggle(facetSqlKey) : undefined
+                }
+                isColumnDisplayed={displayedColumns?.includes(facetSqlKey)}
+                onLoadMore={loadMoreFilterValuesForKey}
+                loadMoreLoading={loadMoreLoadingKeys.has(facet.key)}
+                hasLoadedMore={Boolean(extraFacets[facet.key])}
+                isDefaultExpanded={(() => {
+                  const entry = getFilterStateEntry(filterState, facet.key);
+                  return (
+                    forceExpanded ??
+                    (isFieldPrimary(tableMetadata, facet.key) ||
+                      isFieldPinned(facet.key) ||
+                      isSharedFieldPinned(facet.key) ||
+                      (entry != null &&
+                        (entry.included.size > 0 ||
+                          entry.excluded.size > 0 ||
+                          entry.range != null)))
+                  );
+                })()}
+                chartConfig={chartConfig}
+                isLive={isLive}
+                onRangeChange={range => setFilterRange(facet.key, range)}
+              />
+            );
+          })}
+        </>
+      );
+    },
+    [
+      filterState,
+      setFilterValue,
+      clearFilter,
+      toggleFilterPin,
+      isFilterPinned,
+      toggleSharedFilterPin,
+      isSharedFilterPinned,
+      toggleFieldPin,
+      isFieldPinned,
+      toggleSharedFieldPin,
+      isSharedFieldPinned,
+      onColumnToggle,
+      displayedColumns,
+      loadMoreFilterValuesForKey,
+      loadMoreLoadingKeys,
+      extraFacets,
+      showFilterCounts,
+      isFacetsLoading,
+      chartConfig,
+      isLive,
+      setFilterRange,
+      tableMetadata,
+      knownColumns,
+    ],
   );
 
   return (
@@ -1352,18 +1903,42 @@ const DBSearchPageFiltersComponent = ({
             <Text size="xxs" c="dimmed" fw="bold">
               Analysis Mode
             </Text>
-            {onCollapse && (
-              <Tooltip label="Hide filters" position="bottom">
-                <ActionIcon
-                  variant="subtle"
-                  size="xs"
-                  onClick={onCollapse}
-                  aria-label="Hide filters"
-                >
-                  <IconArrowBarToLeft size={14} />
-                </ActionIcon>
-              </Tooltip>
-            )}
+            <Group gap={0}>
+              {showRefreshButton && (
+                <TextButton
+                  label={
+                    <IconRefresh
+                      size={14}
+                      onClick={() => setDateRange(chartConfig.dateRange)}
+                    />
+                  }
+                />
+              )}
+              <FilterSettingsPanel
+                isSharedFiltersVisible={isSharedFiltersVisible}
+                onSharedFiltersVisibilityChange={setSharedFiltersVisible}
+                showFilterCounts={showFilterCounts}
+                onShowFilterCountsChange={setShowFilterCounts}
+                hasPersonalPins={hasPersonalPins}
+                onResetPersonalPins={resetPersonalPins}
+                hasSharedPins={hasSharedPins}
+                onResetSharedFilters={resetSharedFilters}
+                showAllValues={showAllValues}
+                onShowAllValuesChange={setShowAllValues}
+              />
+              {onCollapse && (
+                <Tooltip label="Hide filters" position="bottom">
+                  <ActionIcon
+                    variant="subtle"
+                    size="xs"
+                    onClick={onCollapse}
+                    aria-label="Hide filters"
+                  >
+                    <IconArrowBarToLeft size={14} />
+                  </ActionIcon>
+                </Tooltip>
+              )}
+            </Group>
           </Flex>
           <Tabs
             value={analysisMode}
@@ -1391,248 +1966,186 @@ const DBSearchPageFiltersComponent = ({
             </Tabs.List>
           </Tabs>
 
-          <Flex align="center" justify="space-between">
-            <Flex className={isFacetsFetching ? 'effect-pulse' : ''}>
-              <Text size="xxs" c="dimmed" fw="bold">
-                Filters {isFacetsFetching && '···'}
-              </Text>
-              {showRefreshButton && (
-                <TextButton
-                  label={
-                    <IconRefresh
-                      size={14}
-                      className="ms-1"
-                      onClick={() => setDateRange(chartConfig.dateRange)}
-                    />
-                  }
-                />
-              )}
-            </Flex>
-            {showClearAllButton && (
-              <TextButton
-                label="Clear all"
-                onClick={() => {
-                  clearAllFilters();
-                }}
-              />
-            )}
-          </Flex>
-
-          {analysisMode === 'results' && (
-            <Checkbox
-              size={13 as any}
-              checked={denoiseResults}
-              ms="6px"
-              label={
-                <Tooltip
-                  openDelay={200}
-                  color="gray"
-                  position="right"
-                  withArrow
-                  label="Denoise results will visually remove events matching common event patterns from the results table."
-                >
-                  <Text size="xs" mt="-2px" component="div">
-                    <Group gap={2}>
-                      <IconShadow
-                        size={14}
-                        style={{ display: 'inline', verticalAlign: 'middle' }}
-                      />
-                      Denoise Results
-                    </Group>
-                  </Text>
-                </Tooltip>
+          {isSharedFiltersVisible && (
+            <SharedFiltersSection
+              hasSharedFacets={sharedFacets.length > 0}
+              opened={isSharedFiltersExpanded}
+              onToggle={() =>
+                setSharedFiltersExpanded(!isSharedFiltersExpanded)
               }
-              onChange={() => setDenoiseResults(!denoiseResults)}
-            />
+              showClearButton={showSharedClearButton}
+              onClearSelections={clearSharedSelections}
+            >
+              {renderFacetList(sharedFacets, {
+                keyPrefix: 'shared-',
+                isDefaultExpanded: true,
+              })}
+            </SharedFiltersSection>
           )}
 
-          {source?.kind === SourceKind.Trace &&
-            source.parentSpanIdExpression && (
-              <Checkbox
-                size={13 as any}
-                checked={isRootSpansOnly}
-                ms="6px"
-                label={
+          {/* Divider between shared and regular filters */}
+          {isSharedFiltersVisible && sharedFacets.length > 0 && (
+            <Divider color="dark.4" />
+          )}
+
+          {/* Collapsible "Filters" section */}
+          <Stack gap="xs">
+            <Flex align="center" justify="space-between">
+              <UnstyledButton
+                onClick={() => setFiltersExpanded(!isFiltersExpanded)}
+                style={{ flex: 1 }}
+              >
+                <Text
+                  size="xxs"
+                  c="dimmed"
+                  fw="bold"
+                  className={isFacetsFetching ? 'effect-pulse' : ''}
+                >
+                  Filters {isFacetsFetching && '···'}
+                </Text>
+              </UnstyledButton>
+              <Group gap={0} wrap="nowrap">
+                {showFiltersClearButton && (
                   <Tooltip
-                    openDelay={200}
-                    color="gray"
-                    position="right"
+                    label="Clear Filters"
+                    position="top"
                     withArrow
-                    label="Only show root spans (spans with no parent span)."
+                    fz="xxs"
+                    color="gray"
                   >
-                    <Text size="xs" mt="-2px" component="div">
-                      <Group gap={2}>
-                        <IconSitemap
-                          size={14}
-                          style={{ display: 'inline', verticalAlign: 'middle' }}
-                        />
-                        Root Spans Only
-                      </Group>
-                    </Text>
+                    <ActionIcon
+                      variant="subtle"
+                      color="gray"
+                      size="xs"
+                      onClick={clearRegularSelections}
+                      aria-label="Clear Filters"
+                    >
+                      <IconFilterOff size={14} />
+                    </ActionIcon>
                   </Tooltip>
-                }
-                onChange={event => setRootSpansOnly(event.target.checked)}
-              />
-            )}
-
-          {isLoading || isFacetsLoading ? (
-            <Flex align="center" justify="center">
-              <Loader size="xs" color="gray" />
+                )}
+                <UnstyledButton
+                  onClick={() => setFiltersExpanded(!isFiltersExpanded)}
+                >
+                  <IconChevronDown
+                    size={14}
+                    color="var(--mantine-color-gray-6)"
+                    style={{
+                      transition: 'transform 0.2s ease-in-out',
+                      transform: isFiltersExpanded
+                        ? 'rotate(0deg)'
+                        : 'rotate(-90deg)',
+                    }}
+                  />
+                </UnstyledButton>
+              </Group>
             </Flex>
-          ) : (
-            shownFacets.length === 0 && (
-              <Text size="xxs">No filters available</Text>
-            )
-          )}
-          {/* Show facets even when loading to ensure pinned filters are visible while loading */}
-          <>
-            {/* Render grouped facets as nested filter groups */}
-            {grouped.map(group => (
-              <NestedFilterGroup
-                key={group.key}
-                data-testid={`nested-filter-group-${group.key}`}
-                name={group.key}
-                childFilters={group.children}
-                selectedValues={group.children.reduce(
-                  (acc, child) => {
-                    acc[child.key] = filterState[child.key]
-                      ? filterState[child.key]
-                      : { included: new Set(), excluded: new Set() };
-                    return acc;
-                  },
-                  {} as Record<
-                    string,
-                    {
-                      included: Set<string | boolean>;
-                      excluded: Set<string | boolean>;
+            <Collapse expanded={isFiltersExpanded}>
+              <Stack gap="sm">
+                {analysisMode === 'results' && (
+                  <Checkbox
+                    size={13 as any}
+                    checked={denoiseResults}
+                    ms="6px"
+                    label={
+                      <Tooltip
+                        openDelay={200}
+                        color="gray"
+                        position="right"
+                        withArrow
+                        label="Denoise results will visually remove events matching common event patterns from the results table."
+                      >
+                        <Text size="xs" mt="-2px" component="div">
+                          <Group gap={2}>
+                            <IconShadow
+                              size={14}
+                              style={{
+                                display: 'inline',
+                                verticalAlign: 'middle',
+                              }}
+                            />
+                            Denoise Results
+                          </Group>
+                        </Text>
+                      </Tooltip>
                     }
-                  >,
+                    onChange={() => setDenoiseResults(!denoiseResults)}
+                  />
                 )}
-                onChange={(key, value) => {
-                  setFilterValue(key, value);
-                }}
-                onClearClick={key => clearFilter(key)}
-                onOnlyClick={(key, value) => {
-                  setFilterValue(key, value, 'only');
-                }}
-                onExcludeClick={(key, value) => {
-                  setFilterValue(key, value, 'exclude');
-                }}
-                onPinClick={(key, value) => toggleFilterPin(key, value)}
-                isPinned={(key, value) => isFilterPinned(key, value)}
-                onFieldPinClick={key => toggleFieldPin(key)}
-                isFieldPinned={key => isFieldPinned(key)}
-                onColumnToggle={onColumnToggle}
-                displayedColumns={displayedColumns}
-                onLoadMore={loadMoreFilterValuesForKey}
-                loadMoreLoading={group.children.reduce(
-                  (acc, child) => {
-                    acc[child.key] = loadMoreLoadingKeys.has(child.key);
-                    return acc;
-                  },
-                  {} as Record<string, boolean>,
-                )}
-                hasLoadedMore={group.children.reduce(
-                  (acc, child) => {
-                    acc[child.key] = Boolean(extraFacets[child.key]);
-                    return acc;
-                  },
-                  {} as Record<string, boolean>,
-                )}
-                isDefaultExpanded={
-                  // open by default if has selected values or pinned children
-                  group.children.some(
-                    child =>
-                      (filterState[child.key] &&
-                        (filterState[child.key].included.size > 0 ||
-                          filterState[child.key].excluded.size > 0)) ||
-                      isFieldPinned(child.key),
+
+                {source?.kind === SourceKind.Trace &&
+                  source.parentSpanIdExpression && (
+                    <Checkbox
+                      size={13 as any}
+                      checked={isRootSpansOnly}
+                      ms="6px"
+                      label={
+                        <Tooltip
+                          openDelay={200}
+                          color="gray"
+                          position="right"
+                          withArrow
+                          label="Only show root spans (spans with no parent span)."
+                        >
+                          <Text size="xs" mt="-2px" component="div">
+                            <Group gap={2}>
+                              <IconSitemap
+                                size={14}
+                                style={{
+                                  display: 'inline',
+                                  verticalAlign: 'middle',
+                                }}
+                              />
+                              Root Spans Only
+                            </Group>
+                          </Text>
+                        </Tooltip>
+                      }
+                      onChange={event => setRootSpansOnly(event.target.checked)}
+                    />
+                  )}
+
+                {isLoading || isFacetsLoading ? (
+                  <Flex align="center" justify="center">
+                    <Loader size="xs" color="gray" />
+                  </Flex>
+                ) : (
+                  shownFacets.length === 0 && (
+                    <Text size="xxs">No filters available</Text>
                   )
-                }
-                chartConfig={chartConfig}
-                isLive={isLive}
-              />
-            ))}
+                )}
+                {/* Show facets even when loading to ensure pinned filters are visible while loading */}
+                {renderFacetList(shownFacets)}
 
-            {/* Render non-grouped facets as regular filter groups */}
-            {nonGrouped.map(facet => (
-              <FilterGroup
-                key={facet.key}
-                data-testid={`filter-group-${facet.key}`}
-                name={cleanedFacetName(facet.key)}
-                options={facet.value.map(value => ({
-                  value,
-                  label: value.toString(),
-                }))}
-                optionsLoading={isFacetsLoading}
-                selectedValues={
-                  filterState[facet.key]
-                    ? filterState[facet.key]
-                    : { included: new Set(), excluded: new Set() }
-                }
-                onChange={value => {
-                  setFilterValue(facet.key, value);
-                }}
-                onClearClick={() => clearFilter(facet.key)}
-                onOnlyClick={value => {
-                  setFilterValue(facet.key, value, 'only');
-                }}
-                onExcludeClick={value => {
-                  setFilterValue(facet.key, value, 'exclude');
-                }}
-                onPinClick={value => toggleFilterPin(facet.key, value)}
-                isPinned={value => isFilterPinned(facet.key, value)}
-                onFieldPinClick={() => toggleFieldPin(facet.key)}
-                isFieldPinned={isFieldPinned(facet.key)}
-                onColumnToggle={
-                  onColumnToggle ? () => onColumnToggle(facet.key) : undefined
-                }
-                isColumnDisplayed={displayedColumns?.includes(facet.key)}
-                onLoadMore={loadMoreFilterValuesForKey}
-                loadMoreLoading={loadMoreLoadingKeys.has(facet.key)}
-                hasLoadedMore={Boolean(extraFacets[facet.key])}
-                isDefaultExpanded={
-                  // open by default if PK, or has selected values
-                  isFieldPrimary(tableMetadata, facet.key) ||
-                  isFieldPinned(facet.key) ||
-                  (filterState[facet.key] &&
-                    (filterState[facet.key].included.size > 0 ||
-                      filterState[facet.key].excluded.size > 0 ||
-                      filterState[facet.key].range != null))
-                }
-                chartConfig={chartConfig}
-                isLive={isLive}
-                onRangeChange={range => setFilterRange(facet.key, range)}
-              />
-            ))}
-          </>
+                <Button
+                  variant="secondary"
+                  size="compact-xs"
+                  loading={isFacetsFetching}
+                  rightSection={
+                    showMoreFields ? (
+                      <IconChevronUp size={14} />
+                    ) : (
+                      <IconChevronDown size={14} />
+                    )
+                  }
+                  onClick={() => setShowMoreFields(!showMoreFields)}
+                >
+                  {showMoreFields ? 'Less filters' : 'More filters'}
+                </Button>
 
-          <Button
-            variant="secondary"
-            size="compact-xs"
-            loading={isFacetsFetching}
-            rightSection={
-              showMoreFields ? (
-                <IconChevronUp size={14} />
-              ) : (
-                <IconChevronDown size={14} />
-              )
-            }
-            onClick={() => setShowMoreFields(!showMoreFields)}
-          >
-            {showMoreFields ? 'Less filters' : 'More filters'}
-          </Button>
-
-          {showMoreFields && (
-            <div>
-              <Text size="xs" fw="bold">
-                Not seeing a filter?
-              </Text>
-              <Text size="xxs">
-                {`Try searching instead (e.g. column:foo)`}
-              </Text>
-            </div>
-          )}
+                {showMoreFields && (
+                  <div>
+                    <Text size="xs" fw="bold">
+                      Not seeing a filter?
+                    </Text>
+                    <Text size="xxs">
+                      {`Try searching instead (e.g. column:foo)`}
+                    </Text>
+                  </div>
+                )}
+              </Stack>
+            </Collapse>
+          </Stack>
         </Stack>
       </ScrollArea>
     </Box>

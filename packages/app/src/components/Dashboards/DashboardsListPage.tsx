@@ -3,7 +3,6 @@ import Head from 'next/head';
 import Link from 'next/link';
 import Router from 'next/router';
 import { useQueryState } from 'nuqs';
-import { isBuilderSavedChartConfig } from '@hyperdx/common-utils/dist/guards';
 import {
   ActionIcon,
   Anchor,
@@ -46,18 +45,13 @@ import {
   useDeleteDashboard,
 } from '@/dashboard';
 import { useFavorites } from '@/favorites';
+import { withAppNav } from '@/layout';
 import { useBrandDisplayName } from '@/theme/ThemeProvider';
 import { useConfirm } from '@/useConfirm';
 import { groupByTags } from '@/utils/groupByTags';
 
-import { withAppNav } from '../../layout';
-
 function getDashboardAlerts(tiles: Dashboard['tiles']) {
-  return tiles
-    .map(t =>
-      isBuilderSavedChartConfig(t.config) ? t.config.alert : undefined,
-    )
-    .filter(a => a != null);
+  return tiles.map(t => t.config.alert).filter(a => a != null);
 }
 
 const PRESET_DASHBOARDS = [
@@ -190,7 +184,7 @@ export default function DashboardsListPage() {
       <Head>
         <title>Dashboards - {brandName}</title>
       </Head>
-      <PageHeader>Dashboards</PageHeader>
+      <PageHeader title="Dashboards" />
       <Container
         maw={1200}
         py="lg"

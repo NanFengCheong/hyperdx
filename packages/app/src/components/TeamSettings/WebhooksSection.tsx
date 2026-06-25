@@ -17,7 +17,7 @@ import {
   getWebhookServiceConfig,
   getWebhookServiceName,
   groupWebhooksByService,
-} from '../../utils/webhookIcons';
+} from '@/utils/webhookIcons';
 
 import { WebhookForm } from './WebhookForm';
 

@@ -2,7 +2,7 @@
  * SearchPage - Page object for the /search page
  * Encapsulates all interactions with the search interface
  */
-import { Locator, Page } from '@playwright/test';
+import { expect, Locator, Page } from '@playwright/test';
 
 import { FilterComponent } from '../components/FilterComponent';
 import { InfrastructurePanelComponent } from '../components/InfrastructurePanelComponent';
@@ -23,6 +23,7 @@ export class SearchPage {
   readonly infrastructure: InfrastructurePanelComponent;
   readonly filters: FilterComponent;
   readonly savedSearchModal: SavedSearchModalComponent;
+  readonly savedSearchNameTitle: Locator;
   readonly alertModal: SearchPageAlertModalComponent;
   readonly defaultTimeout: number = 3000;
   private readonly alertsButtonLocator: Locator;
@@ -53,6 +54,9 @@ export class SearchPage {
     this.savedSearchModal = new SavedSearchModalComponent(page);
     this.alertModal = new SearchPageAlertModalComponent(page);
     this.alertsButtonLocator = page.getByTestId('alerts-button');
+    this.savedSearchNameTitle = page.locator(
+      '[data-testid="saved-search-name"]',
+    );
 
     // Define page-specific locators
     this.searchForm = page.getByTestId('search-form');
@@ -61,7 +65,7 @@ export class SearchPage {
     this.saveSearchButton = page.getByTestId('save-search-button');
     this.updateSearchButton = page.getByTestId('update-search-button');
     const whereLanguageSwitch = page.getByTestId('where-language-switch');
-    this.languageSelect = whereLanguageSwitch.getByRole('textbox', {
+    this.languageSelect = whereLanguageSwitch.getByRole('combobox', {
       name: 'Query language',
     });
     this.sqlTab = page.getByRole('option', { name: 'SQL', exact: true });
@@ -69,12 +73,24 @@ export class SearchPage {
     this.sourceSelector = page.getByTestId('source-selector');
   }
 
-  get createNewSourceItem() {
-    return this.page.getByRole('option', { name: 'Create New Source' });
+  get sourceActionsMenu() {
+    return this.page.getByTestId('source-actions-menu');
   }
 
-  get editSourcesItem() {
-    return this.page.getByRole('option', { name: 'Edit Sources' });
+  get createNewSourceItem() {
+    return this.page.getByRole('menuitem', { name: 'Create new source' });
+  }
+
+  get editSourceItem() {
+    return this.page.getByRole('menuitem', { name: 'Edit source' });
+  }
+
+  get manageSourcesItem() {
+    return this.page.getByRole('menuitem', { name: 'Manage sources' });
+  }
+
+  get viewSchemaItem() {
+    return this.page.getByRole('menuitem', { name: 'View schema' });
   }
 
   /**
@@ -94,8 +110,8 @@ export class SearchPage {
   }
 
   async openEditSourceModal() {
-    await this.sourceSelector.click();
-    await this.editSourcesItem.click();
+    await this.sourceActionsMenu.click();
+    await this.editSourceItem.click();
   }
 
   async sourceModalShowOptionalFields() {
@@ -218,6 +234,15 @@ export class SearchPage {
   }
 
   /**
+   * Locator for the results table's error state (rendered by ChartErrorState
+   * when the underlying ClickHouse query fails). Assert `toHaveCount(0)` to
+   * confirm the results loaded without error.
+   */
+  getTableError() {
+    return this.page.getByText(/Error loading/i);
+  }
+
+  /**
    * Get SELECT editor (CodeMirror)
    */
   getSELECTEditor() {
@@ -291,6 +316,18 @@ export class SearchPage {
     await this.page.mouse.up();
   }
 
+  /**
+   * Returns a locator for the yellow Mantine notification shown when one or
+   * more sidebar filters are dropped because they don't exist on the newly
+   * selected source's schema.
+   *
+   * The message format from DBSearchPage.tsx:
+   *   "N filter(s) didn't apply to this source and was/were removed."
+   */
+  getDroppedFiltersToast() {
+    return this.page.getByText(/filter.* didn't apply to this source/i);
+  }
+
   // Getters for assertions in spec files
 
   get form() {
@@ -327,5 +364,14 @@ export class SearchPage {
 
   get otherSources() {
     return this.page.getByRole('option', { selected: false });
+  }
+
+  get totalCountText() {
+    return this.page.getByTestId('search-total-count');
+  }
+
+  async waitForTotalCountLoaded(timeout = 15_000) {
+    await expect(this.totalCountText).toBeVisible({ timeout });
+    await expect(this.totalCountText).not.toContainText('···', { timeout });
   }
 }

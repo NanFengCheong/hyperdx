@@ -1,10 +1,18 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import * as React from 'react';
-import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import cx from 'classnames';
-import { format } from 'date-fns';
 import { JSONTree } from 'react-json-tree';
-import { Alert, Button, CloseButton, Kbd, Text, Tooltip } from '@mantine/core';
+import {
+  Alert,
+  Button,
+  Group,
+  Kbd,
+  Modal,
+  Stack,
+  Text,
+  Tooltip,
+} from '@mantine/core';
 import {
   IconChevronDown,
   IconChevronRight,
@@ -22,7 +30,7 @@ import { FormatTime } from './useFormatTime';
 import { useSourceMappedFrame } from './useSourceMappedFrame';
 import { useLocalStorage } from './utils';
 
-import styles from '../styles/LogSidePanel.module.scss';
+import styles from '@styles/LogSidePanel.module.scss';
 
 export const CollapsibleSection = ({
   title,
@@ -124,7 +132,7 @@ const StacktraceRow = ({
 
   const frame = row.original;
 
-  const { isLoading, enrichedFrame } = useSourceMappedFrame(frame);
+  const { isLoading, enrichedFrame } = useSourceMappedFrame();
 
   const augmentedFrame = enrichedFrame ?? frame;
   const hasContext = !!augmentedFrame.context_line;
@@ -444,7 +452,7 @@ export const NetworkBody = ({
         const parsed = JSON.parse(body);
         return parsed;
       }
-    } catch (e) {
+    } catch {
       return null;
     }
   }, [body]);
@@ -486,37 +494,49 @@ export const NetworkBody = ({
 /**
  * Keyboard shortcuts
  */
-export const LogSidePanelKbdShortcuts = () => {
-  const [isDismissed, setDismissed] = useLocalStorage<boolean>(
-    'kbd-shortcuts-dismissed',
-    false,
-  );
+const SHORTCUTS = [
+  { keys: ['esc'], label: 'Close panel' },
+  { keys: ['←', '→'], label: 'Navigate between events' },
+  { keys: ['↑', '↓'], label: 'Navigate between events' },
+  { keys: ['k', 'j'], label: 'Navigate between events' },
+  { keys: ['⌘/Ctrl', 'scroll'], label: 'Zoom trace timeline' },
+] as const;
 
-  const handleDismiss = React.useCallback(() => {
-    setDismissed(true);
-  }, [setDismissed]);
-
-  if (isDismissed) {
-    return null;
-  }
-
+export const KeyboardShortcutsModal = ({
+  opened,
+  onClose,
+}: {
+  opened: boolean;
+  onClose: () => void;
+}) => {
   return (
-    <div className={styles.kbdShortcuts}>
-      <div className="d-flex justify-content-between align-items-center ">
-        <div className="d-flex align-items-center gap-3">
-          <div>
-            Use <Kbd className="me-1">←</Kbd>
-            <Kbd>→</Kbd> arrow keys or <Kbd className="me-1">k</Kbd>
-            <Kbd>j</Kbd> to move through events
-          </div>
-          <div className={styles.kbdDivider} />
-          <div>
-            <Kbd>ESC</Kbd> to close
-          </div>
-        </div>
-        <CloseButton aria-label="Hide" onClick={handleDismiss} />
-      </div>
-    </div>
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      title="Keyboard Shortcuts"
+      size="sm"
+      centered
+    >
+      <Stack gap="sm">
+        {SHORTCUTS.map(({ keys, label }) => (
+          <Group key={label} justify="space-between">
+            <Group gap={4}>
+              {keys.map((key, i) => (
+                <React.Fragment key={key}>
+                  {i > 0 && (
+                    <Text span size="xs" c="dimmed">
+                      +
+                    </Text>
+                  )}
+                  <Kbd size="xs">{key}</Kbd>
+                </React.Fragment>
+              ))}
+            </Group>
+            <Text size="sm">{label}</Text>
+          </Group>
+        ))}
+      </Stack>
+    </Modal>
   );
 };
 

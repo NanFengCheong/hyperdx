@@ -8,7 +8,7 @@ import {
 } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 
-import useOffsetPaginatedQuery from '../useOffsetPaginatedQuery';
+import useOffsetPaginatedQuery from '@/hooks/useOffsetPaginatedQuery';
 
 // Mock the API module
 jest.mock('@/api', () => ({
@@ -60,7 +60,6 @@ jest.mock('@hyperdx/common-utils/dist/core/renderChartConfig', () => ({
 
 // Import mocked modules after jest.mock calls
 import { getClickhouseClient } from '@hyperdx/app/src/clickhouse';
-import { MVOptimizationExplanation } from '@hyperdx/common-utils/dist/core/materializedViews';
 import { renderChartConfig } from '@hyperdx/common-utils/dist/core/renderChartConfig';
 import { isBuilderChartConfig } from '@hyperdx/common-utils/dist/guards';
 

@@ -12,7 +12,17 @@ echo ""
 echo "Visit the HyperDX UI at $FRONTEND_URL"
 echo ""
 
-# Use concurrently to run both the API and App servers
+node /etc/local/refresh-env.js
+
+# Optionally include the dashboard provisioner task
+EXTRA_NAMES=""
+EXTRA_CMDS=""
+if [ -n "$DASHBOARD_PROVISIONER_DIR" ]; then
+  EXTRA_NAMES=",DASH-PROVISION"
+  EXTRA_CMDS="./packages/api/bin/hyperdx task provision-dashboards"
+fi
+
+# Use concurrently to run all services
 ./node_modules/.bin/concurrently \
   "--kill-others-on-fail" \
   "--names=API,APP,ALERT-TASK,RETENTION-TASK" \

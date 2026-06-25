@@ -51,7 +51,6 @@ export default function TeamMembersSection() {
   // eslint-disable-next-line no-restricted-syntax
   const now = useMemo(() => Date.now(), []);
 
-  const { data: team } = api.useTeam();
   const {
     data: members,
     isLoading: isLoadingMembers,

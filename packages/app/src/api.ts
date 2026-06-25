@@ -3,6 +3,7 @@ import type { HTTPError, Options, ResponsePromise } from 'ky';
 import ky from 'ky-universal';
 import type {
   Alert,
+  AlertApiResponse,
   AlertsApiResponse,
   InstallationApiResponse,
   MeApiResponse,
@@ -10,6 +11,7 @@ import type {
   PresetDashboardFilter,
   RotateApiKeyApiResponse,
   TeamApiResponse,
+  TeamClickHouseSettingsUpdate,
   TeamInvitationsApiResponse,
   TeamMembersApiResponse,
   TeamTagsApiResponse,
@@ -23,11 +25,7 @@ import type { UseQueryOptions } from '@tanstack/react-query';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { IS_LOCAL_MODE } from './config';
-import {
-  Dashboard,
-  fetchLocalDashboards,
-  getLocalDashboardTags,
-} from './dashboard';
+import { getLocalDashboardTags } from './dashboard';
 type ServicesResponse = {
   data: Record<
     string,
@@ -127,64 +125,6 @@ const api = {
       },
     });
   },
-  useDashboards(options?: UseQueryOptions<Dashboard[] | null, Error>) {
-    return useQuery({
-      queryKey: [`dashboards`],
-      queryFn: IS_LOCAL_MODE
-        ? async () => fetchLocalDashboards()
-        : () => hdxServer(`dashboards`, { method: 'GET' }).json<Dashboard[]>(),
-      ...options,
-    });
-  },
-  useCreateDashboard() {
-    return useMutation({
-      mutationFn: async ({
-        name,
-        charts,
-        query,
-        tags,
-      }: {
-        name: string;
-        charts: Dashboard['tiles'];
-        query: string;
-        tags: string[];
-      }) =>
-        hdxServer(`dashboards`, {
-          method: 'POST',
-          json: { name, charts, query, tags },
-        }).json<Dashboard>(),
-    });
-  },
-  useUpdateDashboard() {
-    return useMutation({
-      mutationFn: async ({
-        id,
-        name,
-        charts,
-        query,
-        tags,
-      }: {
-        id: string;
-        name: string;
-        charts: Dashboard['tiles'];
-        query: string;
-        tags: string[];
-      }) =>
-        hdxServer(`dashboards/${id}`, {
-          method: 'PUT',
-          json: { name, charts, query, tags },
-        }).json<Dashboard>(),
-    });
-  },
-  useDeleteDashboard() {
-    return useMutation({
-      mutationFn: async ({ id }: { id: string }) => {
-        await hdxServer(`dashboards/${id}`, {
-          method: 'DELETE',
-        });
-      },
-    });
-  },
   usePresetDashboardFilters(
     presetDashboard: PresetDashboard,
     sourceId: string,
@@ -236,9 +176,12 @@ const api = {
         }).json<PresetDashboardFilter>(),
     });
   },
+  getAlertsQueryKey: () => ['alerts'] as const,
+  getAlertQueryKey: (alertId: string | undefined) =>
+    ['alert', alertId] as const,
   useAlerts() {
     return useQuery({
-      queryKey: [`alerts`],
+      queryKey: api.getAlertsQueryKey(),
       queryFn: () => hdxServer(`alerts`).json<AlertsApiResponse>(),
     });
   },
@@ -399,11 +342,7 @@ const api = {
     return useMutation<
       UpdateClickHouseSettingsApiResponse,
       HTTPError,
-      {
-        searchRowLimit?: number;
-        fieldMetadataDisabled?: boolean;
-        metadataMaxRowsToRead?: number;
-      }
+      TeamClickHouseSettingsUpdate
     >({
       mutationFn: async settings =>
         hdxServer(`team/clickhouse-settings`, {
@@ -778,9 +717,17 @@ const api = {
         queryParams?: Record<string, string>;
         headers?: Record<string, string>;
         body?: string;
+        webhookId?: string;
       }
     >({
-      mutationFn: async ({ service, url, queryParams, headers, body }) =>
+      mutationFn: async ({
+        service,
+        url,
+        queryParams,
+        headers,
+        body,
+        webhookId,
+      }) =>
         hdxServer(`webhooks/test`, {
           method: 'POST',
           json: {
@@ -789,6 +736,7 @@ const api = {
             queryParams: queryParams || {},
             headers: headers || {},
             body,
+            ...(webhookId && { webhookId }),
           },
         }).json<WebhookTestApiResponse>(),
     });

@@ -9,13 +9,14 @@ import {
   SegmentedControl,
   Select,
   Slider,
+  Switch,
   Tabs,
   Text,
   Tooltip,
 } from '@mantine/core';
 
-import variantClasses from '../../../../styles/variants.module.scss';
-import componentClasses from '../components.module.scss';
+import componentClasses from '@/theme/themes/components.module.scss';
+import variantClasses from '@styles/variants.module.scss';
 
 /**
  * ClickStack Theme
@@ -30,6 +31,7 @@ const makeTheme = ({
   fontFamily?: string;
 }): MantineThemeOverride => ({
   cursorType: 'pointer',
+  defaultRadius: 'sm',
   fontFamily,
   primaryColor: 'yellow',
   primaryShade: 6,
@@ -284,7 +286,7 @@ const makeTheme = ({
       },
     }),
     SegmentedControl: SegmentedControl.extend({
-      styles: (_theme, props) => ({
+      styles: () => ({
         root: {
           background: 'var(--color-bg-field)',
         },
@@ -299,6 +301,9 @@ const makeTheme = ({
           '--tabs-color': 'var(--color-text-brand)',
         },
       }),
+      styles: {
+        tabLabel: { textAlign: 'left' },
+      },
     }),
     Checkbox: Checkbox.extend({
       vars: () => ({
@@ -316,6 +321,18 @@ const makeTheme = ({
           '--radio-icon-color': 'var(--click-global-color-background-default)',
         },
       }),
+    }),
+    Switch: Switch.extend({
+      vars: () => ({
+        root: {
+          '--switch-color': 'var(--click-global-color-accent-default)',
+        },
+      }),
+      // Note: checked-state track-label color and thumb background are
+      // overridden globally in `clickstack/_tokens.scss` via an
+      // attribute selector on the checkbox input, because Mantine
+      // forces those values via a `:checked +` sibling selector that
+      // can't be reached from this Mantine vars/styles API.
     }),
     ActionIcon: ActionIcon.extend({
       defaultProps: {

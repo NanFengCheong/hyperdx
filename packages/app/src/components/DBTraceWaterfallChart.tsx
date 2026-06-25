@@ -1,6 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import _, { omit } from 'lodash';
 import { useForm } from 'react-hook-form';
+import SqlString from 'sqlstring';
 import TimestampNano from 'timestamp-nano';
 import { tcFromSource } from '@hyperdx/common-utils/dist/core/metadata';
 import {
@@ -16,15 +24,14 @@ import {
   Anchor,
   Box,
   Center,
-  Checkbox,
+  Chip,
   Code,
-  Divider,
   Group,
   Kbd,
   Text,
   Tooltip,
 } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
+import { useDisclosure, useElementSize } from '@mantine/hooks';
 import {
   IconChevronDown,
   IconChevronRight,
@@ -35,7 +42,6 @@ import { ContactSupportText } from '@/components/ContactSupportText';
 import SearchInputV2 from '@/components/SearchInput/SearchInputV2';
 import { TimelineChart } from '@/components/TimelineChart';
 import useOffsetPaginatedQuery from '@/hooks/useOffsetPaginatedQuery';
-import useResizable from '@/hooks/useResizable';
 import useRowWhere, { WithClause } from '@/hooks/useRowWhere';
 import useWaterfallSearchState from '@/hooks/useWaterfallSearchState';
 import {
@@ -52,6 +58,7 @@ import {
   getChartColorSuccessHighlight,
   getChartColorWarning,
   getChartColorWarningHighlight,
+  parseTimestampToMs,
 } from '@/utils';
 import {
   getHighlightedAttributesFromData,
@@ -61,7 +68,6 @@ import {
 import { DBHighlightedAttributesList } from './DBHighlightedAttributesList';
 
 import styles from '@/../styles/LogSidePanel.module.scss';
-import resizeStyles from '@/../styles/ResizablePanel.module.scss';
 
 export type SpanRow = {
   Body: string;
@@ -81,6 +87,10 @@ export type SpanRow = {
     Attributes: Record<string, any>;
   }>;
   __hdx_hidden?: boolean | 1 | 0;
+};
+
+type TimestampedRow = {
+  Timestamp: string;
 };
 
 function textColor(condition: { isError: boolean; isWarn: boolean }): string {
@@ -269,7 +279,7 @@ function getConfig(
     select,
     from: source.from,
     timestampValueExpression: source.timestampValueExpression,
-    where: `${alias.TraceId} = '${traceId}'`,
+    where: `${alias.TraceId} = ${SqlString.escape(traceId)}`,
     limit: { limit: 50000 },
     connection: source.connection,
   };
@@ -358,10 +368,12 @@ export function useEventsAroundFocus({
       const rowWhereResult = getRowWhere(
         omit(cd, ['SpanAttributes', 'SpanEvents', '__hdx_hidden']),
       );
+
       return {
         // Keep all fields available for display
         ...cd,
         // Added for typing
+        Timestamp: cd?.Timestamp,
         SpanId: cd?.SpanId,
         __hdx_hidden: cd?.__hdx_hidden,
         type,
@@ -423,6 +435,7 @@ export function DBTraceWaterfallChartContainer({
   onClick,
   highlightedRowWhere,
   initialRowHighlightHint,
+  emptyState,
 }: {
   traceTableSource: TTraceSource;
   logTableSource: TLogSource | null;
@@ -440,8 +453,8 @@ export function DBTraceWaterfallChartContainer({
     spanId: string;
     body: string;
   };
+  emptyState?: ReactNode;
 }) {
-  const { size, startResize } = useResizable(30, 'bottom');
   const formatTime = useFormatTime();
 
   const {
@@ -501,21 +514,24 @@ export function DBTraceWaterfallChartContainer({
   const isFetching = traceIsFetching || logIsFetching;
   const error = traceError || logError;
 
-  const rows: any[] = useMemo(
-    () => [...traceRowsData, ...logRowsData],
-    [traceRowsData, logRowsData],
-  );
+  const rows: any[] = useMemo(() => {
+    const nextRows: Array<(typeof traceRowsData)[number] & TimestampedRow> = [
+      ...traceRowsData,
+      ...logRowsData,
+    ];
+    nextRows.sort((a, b) => {
+      const aDate = TimestampNano.fromString(a.Timestamp);
+      const bDate = TimestampNano.fromString(b.Timestamp);
+      const secDiff = aDate.getTimeT() - bDate.getTimeT();
+      if (secDiff === 0) {
+        return aDate.getNano() - bDate.getNano();
+      } else {
+        return secDiff;
+      }
+    });
 
-  rows.sort((a, b) => {
-    const aDate = TimestampNano.fromString(a.Timestamp);
-    const bDate = TimestampNano.fromString(b.Timestamp);
-    const secDiff = aDate.getTimeT() - bDate.getTimeT();
-    if (secDiff === 0) {
-      return aDate.getNano() - bDate.getNano();
-    } else {
-      return secDiff;
-    }
-  });
+    return nextRows;
+  }, [traceRowsData, logRowsData]);
 
   const highlightedAttributeValues = useMemo(() => {
     const visibleTraceRowsData = traceRowsData?.filter(
@@ -556,23 +572,46 @@ export function DBTraceWaterfallChartContainer({
     logRowsMeta,
   ]);
 
+  // Auto-select the originating span once when the panel opens — but only if
+  // nothing is already selected. Two cases must NOT trigger a (re-)select:
+  //   - the user explicitly cleared the selection (closing the span detail), and
+  //   - a selection was restored from the URL on load (deep link / reload).
+  // We mark the hint applied as soon as a selection exists or we apply it
+  // ourselves, so it never fires twice for the same hint; it re-fires only when
+  // the hint genuinely changes (different originating span / trace).
+  const appliedHighlightHintRef = useRef<string | null>(null);
   useEffect(() => {
-    if (initialRowHighlightHint && onClick && highlightedRowWhere == null) {
-      const initialRowHighlightIndex = rows.findIndex(row => {
-        return (
-          row.Timestamp === initialRowHighlightHint.timestamp &&
-          row.SpanId === initialRowHighlightHint.spanId &&
-          row.Body === initialRowHighlightHint.body
-        );
-      });
+    if (!initialRowHighlightHint || !onClick) {
+      return;
+    }
 
-      if (initialRowHighlightIndex !== -1) {
-        onClick?.({
-          id: rows[initialRowHighlightIndex].id,
-          type: rows[initialRowHighlightIndex].type ?? '',
-          aliasWith: rows[initialRowHighlightIndex].aliasWith,
-        });
-      }
+    const hintKey = `${initialRowHighlightHint.timestamp}|${initialRowHighlightHint.spanId}|${initialRowHighlightHint.body}`;
+    if (appliedHighlightHintRef.current === hintKey) {
+      return;
+    }
+
+    // A selection already exists (restored from the URL, or user-chosen). Honor
+    // it and record the hint so we never override it — now or later.
+    if (highlightedRowWhere != null) {
+      appliedHighlightHintRef.current = hintKey;
+      return;
+    }
+
+    const initialRowHighlightIndex = rows.findIndex(row => {
+      return (
+        row.Timestamp === initialRowHighlightHint.timestamp &&
+        row.SpanId === initialRowHighlightHint.spanId &&
+        row.Body === initialRowHighlightHint.body
+      );
+    });
+
+    if (initialRowHighlightIndex !== -1) {
+      appliedHighlightHintRef.current = hintKey;
+      onClick({
+        id: rows[initialRowHighlightIndex].id,
+        type: rows[initialRowHighlightIndex].type ?? '',
+        aliasWith: rows[initialRowHighlightIndex].aliasWith,
+      });
     }
   }, [initialRowHighlightHint, rows, onClick, highlightedRowWhere]);
 
@@ -598,6 +637,8 @@ export function DBTraceWaterfallChartContainer({
 
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [showSpanEvents, setShowSpanEvents] = useState(true);
+  const [showSpans, setShowSpans] = useState(true);
+  const [showLogs, setShowLogs] = useState(true);
 
   const { nodesMap, flattenedNodes } = useMemo(() => {
     const rootNodes: Node[] = [];
@@ -725,14 +766,34 @@ export function DBTraceWaterfallChartContainer({
     [nodesMap],
   );
 
-  const spanCount = flattenedNodes.length;
-  const errorCount = flattenedNodes.filter(
+  const visibleNodes = useMemo(() => {
+    if (showSpans && showLogs) return flattenedNodes;
+    return flattenedNodes.filter(node => {
+      if (node.type === SourceKind.Log) return showLogs;
+      return showSpans;
+    });
+  }, [flattenedNodes, showSpans, showLogs]);
+
+  const spanCount = visibleNodes.filter(
+    node => node.type !== SourceKind.Log,
+  ).length;
+  const logCount = visibleNodes.filter(
+    node => node.type === SourceKind.Log,
+  ).length;
+  const errorCount = visibleNodes.filter(
     node =>
       node.StatusCode === 'Error' ||
       node.SeverityText?.toLowerCase() === 'error',
   ).length;
 
-  const spanCountString = `${spanCount} span${spanCount !== 1 ? 's' : ''}`;
+  const countParts: string[] = [];
+  if (spanCount > 0) {
+    countParts.push(`${spanCount} span${spanCount !== 1 ? 's' : ''}`);
+  }
+  if (logCount > 0) {
+    countParts.push(`${logCount} log${logCount !== 1 ? 's' : ''}`);
+  }
+  const itemCountString = countParts.join(', ') || '0 items';
   const errorCountString = `${errorCount} error${errorCount !== 1 ? 's' : ''}`;
 
   // TODO: Add duration filter?
@@ -741,7 +802,7 @@ export function DBTraceWaterfallChartContainer({
   // All units in ms!
   const foundMinOffset =
     rows?.reduce((acc, result) => {
-      return Math.min(acc, new Date(result.Timestamp).getTime());
+      return Math.min(acc, parseTimestampToMs(result.Timestamp));
     }, Number.MAX_SAFE_INTEGER) ?? 0;
   const minOffset =
     foundMinOffset === Number.MAX_SAFE_INTEGER ? 0 : foundMinOffset;
@@ -751,9 +812,9 @@ export function DBTraceWaterfallChartContainer({
 
   const timelineRows = useMemo(
     () =>
-      flattenedNodes.map((result, i) => {
+      visibleNodes.map(result => {
         const tookMs = (result.Duration || 0) * 1000;
-        const startOffset = new Date(result.Timestamp).getTime();
+        const startOffset = parseTimestampToMs(result.Timestamp);
         const start = startOffset - minOffset;
         const end = start + tookMs;
 
@@ -787,7 +848,7 @@ export function DBTraceWaterfallChartContainer({
         const markers =
           showSpanEvents && result.SpanEvents
             ? result.SpanEvents.map(spanEvent => ({
-                timestamp: new Date(spanEvent.Timestamp).getTime() - minOffset,
+                timestamp: parseTimestampToMs(spanEvent.Timestamp) - minOffset,
                 name: spanEvent.Name,
                 attributes: spanEvent.Attributes || {},
               }))
@@ -897,10 +958,6 @@ export function DBTraceWaterfallChartContainer({
               </div>
             </div>
           ),
-          style: {
-            // paddingTop: 1,
-            marginTop: i === 0 ? 32 : 0,
-          },
           isActive: isHighlighted,
           events: [
             {
@@ -928,7 +985,7 @@ export function DBTraceWaterfallChartContainer({
       }),
     [
       collapsedIds,
-      flattenedNodes,
+      visibleNodes,
       formatTime,
       highlightedRowWhere,
       isFilterActive,
@@ -940,12 +997,12 @@ export function DBTraceWaterfallChartContainer({
       setCollapseTooltipShown,
     ],
   );
-  // TODO: Highlighting support
-  const initialScrollRowIndex = flattenedNodes.findIndex(v => {
+  const initialScrollRowIndex = visibleNodes.findIndex(v => {
     return v.id === highlightedRowWhere;
   });
 
-  const heightPx = (size / 100) * window.innerHeight;
+  const { ref: timelineWrapperRef, height: timelineWrapperHeight } =
+    useElementSize();
 
   return (
     <>
@@ -996,17 +1053,57 @@ export function DBTraceWaterfallChartContainer({
       <Group my="xs" justify="space-between">
         <Group gap="md">
           <Text size="xs">
-            {spanCountString},{' '}
+            {itemCountString},{' '}
             <span className={errorCount ? 'text-danger' : ''}>
               {errorCountString}
             </span>
           </Text>
-          <Checkbox
-            size="xs"
-            label="Show span events"
-            checked={showSpanEvents}
-            onChange={() => setShowSpanEvents(!showSpanEvents)}
-          />
+          <Group gap="xs" align="center">
+            <Text size="xs" c="dimmed">
+              Show:
+            </Text>
+            <Group gap={4}>
+              <Chip
+                size="xs"
+                color="gray"
+                checked={showSpans}
+                onChange={() => setShowSpans(!showSpans)}
+                data-testid="show-spans-chip"
+                styles={{
+                  label: { paddingInline: 8, height: 22, minHeight: 22 },
+                }}
+              >
+                Spans
+              </Chip>
+              {logTableSource && (
+                <Chip
+                  size="xs"
+                  color="gray"
+                  checked={showLogs}
+                  onChange={() => setShowLogs(!showLogs)}
+                  data-testid="show-logs-chip"
+                  styles={{
+                    label: { paddingInline: 8, height: 22, minHeight: 22 },
+                  }}
+                >
+                  Logs
+                </Chip>
+              )}
+              <Chip
+                size="xs"
+                color="gray"
+                checked={showSpanEvents}
+                onChange={() => setShowSpanEvents(!showSpanEvents)}
+                disabled={!showSpans}
+                data-testid="show-span-events-chip"
+                styles={{
+                  label: { paddingInline: 8, height: 22, minHeight: 22 },
+                }}
+              >
+                Span events
+              </Chip>
+            </Group>
+          </Group>
         </Group>
         <span>
           <Anchor
@@ -1033,10 +1130,11 @@ export function DBTraceWaterfallChartContainer({
         <DBHighlightedAttributesList attributes={highlightedAttributeValues} />
       )}
       <div
+        ref={timelineWrapperRef}
         style={{
           position: 'relative',
           overflow: 'hidden',
-          maxHeight: `${heightPx}px`,
+          flex: 1,
         }}
       >
         {isFetching ? (
@@ -1059,36 +1157,31 @@ export function DBTraceWaterfallChartContainer({
           <div>
             An unknown error occurred. <ContactSupportText />
           </div>
-        ) : flattenedNodes.length === 0 ? (
-          <div className="my-3">No matching spans or logs found</div>
+        ) : visibleNodes.length === 0 ? (
+          flattenedNodes.length > 0 ? (
+            <div className="my-3">All items are hidden by filters</div>
+          ) : (
+            (emptyState ?? (
+              <div className="my-3">No matching spans or logs found</div>
+            ))
+          )
         ) : (
           <TimelineChart
-            maxHeight={heightPx}
+            maxHeight={timelineWrapperHeight}
             rowHeight={22}
             labelWidth={300}
-            onEventClick={(event: {
-              id: string;
-              type?: string;
-              aliasWith?: WithClause[];
-            }) => {
+            onEventClick={event => {
               onClick?.({
                 id: event.id,
                 type: event.type ?? '',
-                aliasWith: event.aliasWith ?? [],
+                aliasWith: [],
               });
             }}
-            cursors={[]}
             rows={timelineRows}
             initialScrollRowIndex={initialScrollRowIndex}
           />
         )}
       </div>
-      <Divider
-        mt="md"
-        className={resizeStyles.resizeYHandle}
-        onMouseDown={startResize}
-        style={{ position: 'relative', bottom: 0 }}
-      />
     </>
   );
 }

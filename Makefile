@@ -174,7 +174,7 @@ dev-int-common-utils:
 ci-int:
 	@mkdir -p $(HDX_CI_LOGS_DIR)
 	docker compose -p $(HDX_CI_PROJECT) -f ./docker-compose.ci.yml up -d --quiet-pull
-	bash -c 'set -o pipefail; npx nx run-many -t ci:int --parallel=false 2>&1 | tee $(HDX_CI_LOGS_DIR)/ci-int.log'; ret=$$?; \
+	bash -c 'set -o pipefail; npx nx run-many -t ci:int --parallel=false --output-style=stream 2>&1 | tee $(HDX_CI_LOGS_DIR)/ci-int.log'; ret=$$?; \
 	docker compose -p $(HDX_CI_PROJECT) -f ./docker-compose.ci.yml down; \
 	$(call archive-int-logs); \
 	exit $$ret
@@ -186,6 +186,10 @@ dev-unit:
 .PHONY: ci-unit
 ci-unit:
 	npx nx run-many -t ci:unit
+
+.PHONY: ci-triage
+ci-triage:
+	node --test .github/scripts/__tests__/pr-triage-classify.test.js
 
 # ---------------------------------------------------------------------------
 # E2E tests — port isolation is handled by scripts/test-e2e.sh

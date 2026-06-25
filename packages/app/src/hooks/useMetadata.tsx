@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import objectHash from 'object-hash';
 import {
   ColumnMeta,
+  ColumnMetaType,
   filterColumnMetaByType,
   JSDataType,
 } from '@hyperdx/common-utils/dist/clickhouse';
@@ -10,7 +11,12 @@ import {
   TableConnection,
   TableMetadata,
 } from '@hyperdx/common-utils/dist/core/metadata';
-import { BuilderChartConfigWithDateRange } from '@hyperdx/common-utils/dist/types';
+import {
+  BuilderChartConfigWithDateRange,
+  isLogSource,
+  isTraceSource,
+  MetadataMaterializedViews,
+} from '@hyperdx/common-utils/dist/types';
 import {
   keepPreviousData,
   useQuery,
@@ -96,6 +102,64 @@ export function useColumns(
   });
 }
 
+// Derives a map of DateTime/Date column name → ClickHouse type.
+export function useDateTimeColumns(
+  columns: ColumnMetaType[] | undefined,
+): Map<string, string> {
+  return useMemo(
+    () =>
+      new Map(
+        filterColumnMetaByType(columns ?? [], [JSDataType.Date])?.map(
+          c => [c.name, c.type] as const,
+        ),
+      ),
+    [columns],
+  );
+}
+
+/**
+ * Resolves the Date/DateTime columns from two sources, with the live
+ * query result taking precedence.
+ *
+ * - **Table schema** (`schemaColumns`): every column on the table, available
+ *   before any query runs — but blind to SELECT aliases and computed
+ *   expressions, which don't exist on the table.
+ * - **Query result** (fed via the returned `onResolvedColumnsChange`): the
+ *   resolved type of every column the current query actually returns, including
+ *   aliases (`Timestamp AS time`) and expressions (`toDate(Timestamp)`). These
+ *   are exactly the cells a user can click to filter on, so they win.
+ */
+export function useResolvedDateTimeColumns(
+  schemaColumns: ColumnMetaType[] | undefined,
+): {
+  dateTimeColumns: Map<string, string>;
+  onResolvedColumnsChange: (meta: ColumnMetaType[]) => void;
+} {
+  const schemaDateTimeColumns = useDateTimeColumns(schemaColumns);
+
+  const [resultColumns, setResultColumns] = useState<ColumnMetaType[]>([]);
+  const resultDateTimeColumns = useDateTimeColumns(resultColumns);
+
+  const dateTimeColumns = useMemo(() => {
+    const merged = new Map(schemaDateTimeColumns);
+
+    // The query result is authoritative for the columns it returns. A column
+    // can be a date on the table yet non-date as displayed (e.g.
+    // `toString(Timestamp) AS Timestamp`); drop any such column so its string
+    // value isn't wrongly date-wrapped.
+    for (const { name } of resultColumns) {
+      if (!resultDateTimeColumns.has(name)) merged.delete(name);
+    }
+    // Add or override the columns the query reports as dates — this is what
+    // brings in aliases and computed expressions absent from the schema.
+    for (const [name, type] of resultDateTimeColumns) merged.set(name, type);
+
+    return merged;
+  }, [schemaDateTimeColumns, resultDateTimeColumns, resultColumns]);
+
+  return { dateTimeColumns, onResolvedColumnsChange: setResultColumns };
+}
+
 export function useJsonColumns(
   tableConnection: TableConnection | undefined,
   options?: Partial<UseQueryOptions<string[]>>,
@@ -121,16 +185,52 @@ export function useJsonColumns(
   });
 }
 
+// Mirrors `useJsonColumns` for Map-typed columns. Used by `mergePath`
+// callers (notably `DBSearchPageFilters`) so numeric-looking sub-keys on a
+// Map render as `Map['key']` instead of the illegal array `Map[N+1]`.
+// HDX-4369.
+export function useMapColumns(
+  tableConnection: TableConnection | undefined,
+  options?: Partial<UseQueryOptions<string[]>>,
+) {
+  const metadata = useMetadataWithSettings();
+  return useQuery<string[]>({
+    queryKey: ['useMetadata.useMapColumns', tableConnection],
+    queryFn: async () => {
+      if (!tableConnection) return [];
+      const columns = await metadata.getColumns(tableConnection);
+      return (
+        filterColumnMetaByType(columns, [JSDataType.Map])?.map(
+          column => column.name,
+        ) ?? []
+      );
+    },
+    enabled:
+      tableConnection &&
+      !!tableConnection.databaseName &&
+      !!tableConnection.tableName &&
+      !!tableConnection.connectionId,
+    ...options,
+  });
+}
+
 export function useMultipleAllFields(
   tableConnections: TableConnection[],
-  options?: Partial<UseQueryOptions<Field[]>>,
+  options?: Partial<UseQueryOptions<Field[]>> & {
+    dateRange?: [Date, Date];
+    timestampValueExpression?: string;
+  },
 ) {
   const metadata = useMetadataWithSettings();
   const { data: me, isFetched } = api.useMe();
+  const { dateRange, timestampValueExpression, ...queryOptions } =
+    options ?? {};
   return useQuery<Field[]>({
     queryKey: [
       'useMetadata.useMultipleAllFields',
       ...tableConnections.map(tc => ({ ...tc })),
+      dateRange ? [dateRange[0].getTime(), dateRange[1].getTime()] : undefined,
+      timestampValueExpression,
     ],
     queryFn: async () => {
       const team = me?.team;
@@ -139,7 +239,9 @@ export function useMultipleAllFields(
       }
 
       const promiseResults = await Promise.allSettled(
-        tableConnections.map(tc => metadata.getAllFields(tc)),
+        tableConnections.map(tc =>
+          metadata.getAllFields({ ...tc, dateRange, timestampValueExpression }),
+        ),
       );
 
       const fields2d: Field[][] = promiseResults.map(result => {
@@ -164,13 +266,16 @@ export function useMultipleAllFields(
         tc => !!tc.databaseName && !!tc.tableName && !!tc.connectionId,
       ) &&
       isFetched,
-    ...options,
+    ...queryOptions,
   });
 }
 
 export function useAllFields(
   tableConnection: TableConnection | undefined,
-  options?: Partial<UseQueryOptions<Field[]>>,
+  options?: Partial<UseQueryOptions<Field[]>> & {
+    dateRange?: [Date, Date];
+    timestampValueExpression?: string;
+  },
 ) {
   return useMultipleAllFields(
     tableConnection ? [tableConnection] : [],
@@ -212,6 +317,8 @@ export function useMultipleGetKeyValues(
     keys,
     limit,
     disableRowLimit,
+    mode = 'exact',
+    metadataMVs: metadataMVsOverride,
   }: {
     chartConfigs:
       | BuilderChartConfigWithDateRange
@@ -219,6 +326,9 @@ export function useMultipleGetKeyValues(
     keys: string[];
     limit?: number;
     disableRowLimit?: boolean;
+    mode?: 'all' | 'exact';
+    /** Pass directly to skip source-based resolution (e.g. when chartConfig has no source) */
+    metadataMVs?: MetadataMaterializedViews;
   },
   options?: Omit<UseQueryOptions<any, Error>, 'queryKey'>,
 ) {
@@ -235,12 +345,46 @@ export function useMultipleGetKeyValues(
   const query = useQuery<{ key: string; value: string[] }[]>({
     queryKey: [
       'useMetadata.useGetKeyValues',
+      mode,
+      metadataMVsOverride,
       ...chartConfigsArr.map(cc => ({ ...cc })),
       ...keys,
       disableRowLimit,
       maxKeys,
     ],
     queryFn: async ({ signal }) => {
+      if (mode === 'all') {
+        const firstConfig = chartConfigsArr[0];
+        if (!firstConfig || keys.length === 0) return [];
+
+        // Use explicit override, or resolve from source
+        const firstSource = firstConfig.source
+          ? sources?.find(s => s.id === firstConfig.source)
+          : undefined;
+        const metadataMVs =
+          metadataMVsOverride ??
+          (firstSource &&
+          (isLogSource(firstSource) || isTraceSource(firstSource))
+            ? firstSource.metadataMaterializedViews
+            : undefined);
+
+        const { databaseName, tableName } = firstConfig.from;
+        const connectionId = firstConfig.connection;
+        const dateRange = firstConfig.dateRange;
+
+        return metadata.getAllKeyValues({
+          databaseName,
+          tableName,
+          keyExpressions: keys.slice(0, maxKeys),
+          connectionId,
+          metadataMVs,
+          dateRange,
+          timestampValueExpression: firstConfig.timestampValueExpression,
+          signal,
+        });
+      }
+
+      // 'exact' mode
       return (
         await Promise.all(
           chartConfigsArr.map(chartConfig => {
@@ -312,11 +456,15 @@ export function useGetKeyValues(
     keys,
     limit,
     disableRowLimit,
+    mode,
+    metadataMVs,
   }: {
     chartConfig?: BuilderChartConfigWithDateRange;
     keys: string[];
     limit?: number;
     disableRowLimit?: boolean;
+    mode?: 'all' | 'exact';
+    metadataMVs?: MetadataMaterializedViews;
   },
   options?: Omit<UseQueryOptions<any, Error>, 'queryKey'>,
 ) {
@@ -326,9 +474,80 @@ export function useGetKeyValues(
       keys,
       limit,
       disableRowLimit,
+      mode,
+      metadataMVs,
     },
     options,
   );
+}
+
+/**
+ * Combined key + value discovery in a single rollup query.
+ * Returns all fields and their top N values without needing a separate
+ * useAllFields + useGetKeyValues chain.
+ */
+export function useAllFieldsAndValues(
+  {
+    databaseName,
+    tableName,
+    connectionId,
+    metadataMVs,
+    dateRange,
+    maxValuesPerKey,
+    maxKeys,
+  }: {
+    databaseName: string;
+    tableName: string;
+    connectionId: string;
+    metadataMVs?: MetadataMaterializedViews;
+    dateRange?: [Date, Date];
+    maxValuesPerKey?: number;
+    maxKeys?: number;
+  },
+  options?: Omit<UseQueryOptions<any, Error>, 'queryKey'>,
+) {
+  const metadata = useMetadataWithSettings();
+  const { data: me } = api.useMe();
+  const { enabled = true } = options || {};
+  const fieldMetadataDisabled = !!me?.team?.fieldMetadataDisabled;
+
+  return useQuery<{ key: string; value: string[] }[]>({
+    queryKey: [
+      'useMetadata.useAllFieldsAndValues',
+      databaseName,
+      tableName,
+      connectionId,
+      metadataMVs,
+      dateRange?.[0]?.getTime(),
+      dateRange?.[1]?.getTime(),
+      maxValuesPerKey,
+      maxKeys,
+    ],
+    queryFn: async ({ signal }) => {
+      if (fieldMetadataDisabled) {
+        return [];
+      }
+      return metadata.getAllFieldsAndValues({
+        databaseName,
+        tableName,
+        connectionId,
+        metadataMVs,
+        dateRange,
+        maxValuesPerKey,
+        maxKeys,
+        signal,
+      });
+    },
+    staleTime: 1000 * 60 * 5,
+    placeholderData: keepPreviousData,
+    ...options,
+    enabled:
+      !!enabled &&
+      !fieldMetadataDisabled &&
+      !!databaseName &&
+      !!tableName &&
+      !!connectionId,
+  });
 }
 
 export function deduplicateArray<T extends object>(array: T[]): T[] {

@@ -193,13 +193,14 @@ describe('DefaultAlertProvider', () => {
 
         // Validate source is proper ISource object
         const alertSource = result[0].alerts[0].source;
-        expect(alertSource.connection).toBe(connection.id); // Should be ObjectId, not populated IConnection
-        expect(alertSource.name).toBe('Test Source');
-        expect(alertSource.kind).toBe('log');
-        expect(alertSource.team).toBeDefined();
-        expect(alertSource.from?.databaseName).toBe('default');
-        expect(alertSource.from?.tableName).toBe('logs');
-        expect(alertSource.timestampValueExpression).toBe('timestamp');
+        expect(alertSource).toBeDefined();
+        expect(alertSource!.connection).toBe(connection.id); // Should be ObjectId, not populated IConnection
+        expect(alertSource!.name).toBe('Test Source');
+        expect(alertSource!.kind).toBe('log');
+        expect(alertSource!.team).toBeDefined();
+        expect(alertSource!.from?.databaseName).toBe('default');
+        expect(alertSource!.from?.tableName).toBe('logs');
+        expect(alertSource!.timestampValueExpression).toBe('timestamp');
 
         // Ensure it's a plain object, not a mongoose document
         expect((alertSource as any).toObject).toBeUndefined(); // mongoose documents have toObject method
@@ -987,6 +988,44 @@ describe('DefaultAlertProvider', () => {
       expect(params.has('from')).toBe(true);
       expect(params.has('to')).toBe(true);
       expect(params.has('granularity')).toBe(true);
+    });
+
+    it('should include highlightedTileId when tileId is provided', () => {
+      const result = provider.buildChartLink({
+        dashboardId: 'dashboard-123',
+        startTime: new Date('2023-03-17T22:13:03.103Z'),
+        endTime: new Date('2023-03-17T22:13:59.103Z'),
+        granularity: '5m',
+        tileId: 'tile-abc-789',
+      });
+
+      const url = new URL(result);
+      expect(url.searchParams.get('highlightedTileId')).toBe('tile-abc-789');
+    });
+
+    it('should omit highlightedTileId when tileId is undefined', () => {
+      const result = provider.buildChartLink({
+        dashboardId: 'dashboard-123',
+        startTime: new Date('2023-03-17T22:13:03.103Z'),
+        endTime: new Date('2023-03-17T22:13:59.103Z'),
+        granularity: '5m',
+      });
+
+      const url = new URL(result);
+      expect(url.searchParams.has('highlightedTileId')).toBe(false);
+    });
+
+    it('should omit highlightedTileId when tileId is an empty string', () => {
+      const result = provider.buildChartLink({
+        dashboardId: 'dashboard-123',
+        startTime: new Date('2023-03-17T22:13:03.103Z'),
+        endTime: new Date('2023-03-17T22:13:59.103Z'),
+        granularity: '5m',
+        tileId: '',
+      });
+
+      const url = new URL(result);
+      expect(url.searchParams.has('highlightedTileId')).toBe(false);
     });
 
     it('should handle very close dates', () => {

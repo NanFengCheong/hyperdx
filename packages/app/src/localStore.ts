@@ -1,5 +1,6 @@
+import objectHash from 'object-hash';
 import store from 'store2';
-import { hashCode } from '@hyperdx/common-utils/dist/core/utils';
+import type { PinnedFiltersValue } from '@hyperdx/common-utils/dist/types';
 import {
   SavedSearchListApiResponse,
   TSource,
@@ -10,6 +11,12 @@ import { parseJSON } from './utils';
 
 type EntityWithId = { id: string };
 
+const generateRandomId = () =>
+  objectHash({ random: Math.random() }).slice(0, 16);
+
+export const generateDeterministicId = (item: object) =>
+  objectHash(item).slice(0, 16);
+
 /**
  * Generic localStorage CRUD store for local-mode entities.
  * Uses store2 for atomic transact operations and JSON serialization.
@@ -17,6 +24,7 @@ type EntityWithId = { id: string };
 export function createEntityStore<T extends EntityWithId>(
   key: string,
   getDefaultItems?: () => T[],
+  generateObjectId: (item: Omit<T, 'id'>) => string = generateRandomId,
 ) {
   function getAll(): T[] {
     if (getDefaultItems != null && !store.has(key)) {
@@ -31,7 +39,7 @@ export function createEntityStore<T extends EntityWithId>(
     create(item: Omit<T, 'id'>): T {
       const newItem = {
         ...item,
-        id: Math.abs(hashCode(Math.random().toString())).toString(16),
+        id: generateObjectId(item),
       } as T;
       // Seed transact from defaults when the key is absent so that
       // env-var-seeded items are not silently dropped on the first write.
@@ -96,9 +104,22 @@ export const localSources = createEntityStore<TSource>(
     }
     return [];
   },
+  // Make the id deterministic so that local-mode source IDs remain stable across users, for easy local-mode sharing
+  generateDeterministicId,
 );
 
 /** Saved searches store (alerts remain cloud-only; no alert fields persisted locally). */
 export const localSavedSearches = createEntityStore<SavedSearchListApiResponse>(
   'hdx-local-saved-searches',
+);
+
+/** Pinned filters store for local mode. */
+type LocalPinnedFilter = {
+  id: string;
+  source: string;
+  fields: string[];
+  filters: PinnedFiltersValue;
+};
+export const localPinnedFilters = createEntityStore<LocalPinnedFilter>(
+  'hdx-local-pinned-filters',
 );

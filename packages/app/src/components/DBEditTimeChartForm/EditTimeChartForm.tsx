@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
+import {
+  Controller,
+  useFieldArray,
+  useForm,
+  type UseFormSetValue,
+  useWatch,
+} from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { tcFromSource } from '@hyperdx/common-utils/dist/core/metadata';
+import {
+  displayTypeSupportsBuilderAlerts,
+  displayTypeSupportsRawSqlAlerts,
+} from '@hyperdx/common-utils/dist/core/utils';
 import { isRawSqlSavedChartConfig } from '@hyperdx/common-utils/dist/guards';
 import {
   ChartConfigWithDateRange,
@@ -19,11 +29,12 @@ import {
   Text,
   Textarea,
 } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
+import { useDisclosure, usePrevious } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import {
   IconChartLine,
   IconChartPie,
+  IconGrid3x3,
   IconList,
   IconMarkdown,
   IconNumbers,
@@ -34,6 +45,7 @@ import { getPreviousDateRange } from '@/ChartUtils';
 import ChartDisplaySettingsDrawer, {
   ChartConfigDisplaySettings,
 } from '@/components/ChartDisplaySettingsDrawer';
+import PromqlChartEditor from '@/components/ChartEditor/PromqlChartEditor';
 import RawSqlChartEditor from '@/components/ChartEditor/RawSqlChartEditor';
 import {
   ChartEditorFormState,
@@ -46,12 +58,21 @@ import {
   isRawSqlDisplayType,
   validateChartForm,
 } from '@/components/ChartEditor/utils';
+import type { HeatmapScaleType } from '@/components/DBHeatmapChart';
 import { ErrorBoundary } from '@/components/Error/ErrorBoundary';
+import HeatmapSettingsDrawer, {
+  HeatmapSettingsValues,
+} from '@/components/HeatmapSettingsDrawer';
 import { InputControlled } from '@/components/InputControlled';
 import SaveToDashboardModal from '@/components/SaveToDashboardModal';
 import { getStoredLanguage } from '@/components/SearchInput/SearchWhereInput';
+import { IS_PROMQL_ENABLED } from '@/config';
 import HDXMarkdownChart from '@/HDXMarkdownChart';
-import { useSource } from '@/source';
+import {
+  getDurationMsExpression,
+  getFirstSeriesNumberFormat,
+  useSource,
+} from '@/source';
 import { normalizeNoOpAlertScheduleFields } from '@/utils/alerts';
 
 import { ChartActionBar } from './ChartActionBar';
@@ -85,6 +106,25 @@ type EditTimeChartFormProps = {
   autoRun?: boolean;
 };
 
+/** Populate form state with the standard heatmap series + duration numberFormat. */
+function applyHeatmapDefaults(
+  setValue: UseFormSetValue<ChartEditorFormState>,
+  valueExpression: string,
+) {
+  const heatmapSeries: SavedChartConfigWithSelectArray['select'] = [
+    {
+      aggFn: 'count',
+      aggCondition: '',
+      aggConditionLanguage: getStoredLanguage() ?? 'lucene',
+      valueExpression,
+    },
+  ];
+  setValue('select', heatmapSeries);
+  setValue('series', heatmapSeries);
+  setValue('series.0.countExpression', 'count()');
+  setValue('numberFormat', { output: 'duration', factor: 0.001 });
+}
+
 export default function EditTimeChartForm({
   dashboardId,
   chartConfig,
@@ -111,6 +151,7 @@ export default function EditTimeChartForm({
   const {
     control,
     setValue,
+    getValues,
     handleSubmit,
     register,
     setError,
@@ -125,6 +166,7 @@ export default function EditTimeChartForm({
   const {
     fields,
     append,
+    insert: insertSeries,
     remove: removeSeries,
     swap: swapSeries,
   } = useFieldArray({
@@ -132,11 +174,29 @@ export default function EditTimeChartForm({
     name: 'series',
   });
 
+  // Insert a copy of an existing series directly below it so a near-identical
+  // variant (e.g. avg + p95 of the same column) does not have to be re-entered.
+  // structuredClone keeps the copy independent of the source row. The alias is
+  // cleared on the copy: a non-empty alias renders as `AS "<alias>"`, so two
+  // rows sharing one alias produce duplicate column names and ClickHouse rejects
+  // the query. An empty alias renders without `AS`, giving each row a distinct
+  // auto-generated name.
+  const duplicateSeries = useCallback(
+    (index: number) => {
+      insertSeries(index + 1, {
+        ...structuredClone(getValues(`series.${index}`)),
+        alias: '',
+      });
+    },
+    [insertSeries, getValues],
+  );
+
   useEffect(() => {
     onDirtyChange?.(isDirty);
   }, [isDirty, onDirtyChange]);
 
   const select = useWatch({ control, name: 'select' });
+  const series = useWatch({ control, name: 'series' });
   const sourceId = useWatch({ control, name: 'source' });
   const alert = useWatch({ control, name: 'alert' });
   const seriesReturnType = useWatch({ control, name: 'seriesReturnType' });
@@ -147,12 +207,10 @@ export default function EditTimeChartForm({
   const granularity = useWatch({ control, name: 'granularity' });
   const configType = useWatch({ control, name: 'configType' });
 
-  const chartConfigAlert = !isRawSqlSavedChartConfig(chartConfig)
-    ? chartConfig.alert
-    : undefined;
-
+  const chartConfigAlert = chartConfig.alert;
   const isRawSqlInput =
     configType === 'sql' && isRawSqlDisplayType(displayType);
+  const isPromqlInput = configType === 'promql';
 
   const { data: tableSource } = useSource({ id: sourceId });
   const databaseName = tableSource?.from.databaseName;
@@ -160,53 +218,101 @@ export default function EditTimeChartForm({
 
   const activeTab = displayTypeToActiveTab(displayType);
 
+  // When switching display types, remove the alert if the new display type doesn't support alerts
+  const previousDisplayType = usePrevious(displayType);
   useEffect(() => {
-    if (
-      displayType !== DisplayType.Line &&
-      displayType !== DisplayType.Number
-    ) {
+    if (displayType === previousDisplayType) return;
+    const displayTypeSupportsAlerts =
+      configType === 'sql'
+        ? displayTypeSupportsRawSqlAlerts(displayType)
+        : displayTypeSupportsBuilderAlerts(displayType);
+    if (!displayTypeSupportsAlerts) {
       setValue('alert', undefined);
     }
-  }, [displayType, setValue]);
+  }, [configType, displayType, previousDisplayType, setValue]);
 
-  const showGeneratedSql = TABS_WITH_GENERATED_SQL.has(activeTab);
+  const showGeneratedSql =
+    TABS_WITH_GENERATED_SQL.has(activeTab) && !isPromqlInput;
 
   const showSampleEvents =
-    tableSource?.kind !== SourceKind.Metric && !isRawSqlInput;
+    tableSource?.kind !== SourceKind.Metric && !isRawSqlInput && !isPromqlInput;
 
   const [
     alignDateRangeToGranularity,
     fillNulls,
     compareToPreviousPeriod,
+    fitYAxisToData,
     numberFormat,
+    groupByColumnsOnLeft,
+    seriesLimit,
+    color,
+    colorRules,
+    backgroundChart,
   ] = useWatch({
     control,
     name: [
       'alignDateRangeToGranularity',
       'fillNulls',
       'compareToPreviousPeriod',
+      'fitYAxisToData',
       'numberFormat',
+      'groupByColumnsOnLeft',
+      'seriesLimit',
+      'color',
+      'colorRules',
+      'backgroundChart',
     ],
   });
+
+  // Format auto-detected purely from the datasource (e.g. duration for a trace
+  // Duration column), used as the drawer's fallback when no explicit
+  // numberFormat is set. Reads the live `series`, the field the builder edits;
+  // `select` is only synced from `series` on submit and on display-type / source
+  // resets, so it goes stale after an aggregation edit and resolves undefined.
+  // The drawer prioritizes an explicit `numberFormat` over this fallback.
+  const autoDetectedNumberFormat = useMemo(
+    () =>
+      Array.isArray(series)
+        ? getFirstSeriesNumberFormat(series, tableSource)
+        : undefined,
+    [series, tableSource],
+  );
 
   const displaySettings: ChartConfigDisplaySettings = useMemo(
     () => ({
       alignDateRangeToGranularity,
       fillNulls,
       compareToPreviousPeriod,
+      fitYAxisToData,
       numberFormat,
+      groupByColumnsOnLeft,
+      seriesLimit,
+      color,
+      colorRules,
+      backgroundChart,
     }),
     [
       alignDateRangeToGranularity,
       fillNulls,
       compareToPreviousPeriod,
+      fitYAxisToData,
       numberFormat,
+      groupByColumnsOnLeft,
+      seriesLimit,
+      color,
+      colorRules,
+      backgroundChart,
     ],
   );
 
   const [
     displaySettingsOpened,
     { open: openDisplaySettings, close: closeDisplaySettings },
+  ] = useDisclosure(false);
+
+  const [
+    heatmapSettingsOpened,
+    { open: openHeatmapSettings, close: closeHeatmapSettings },
   ] = useDisclosure(false);
 
   // Only update this on submit, otherwise we'll have issues
@@ -241,7 +347,18 @@ export default function EditTimeChartForm({
       if (errors.length > 0) return { errors, config: null };
 
       const savedConfig = convertFormStateToSavedChartConfig(form, tableSource);
-      if (!savedConfig) return { errors: [], config: null };
+      if (!savedConfig) {
+        console.error(
+          'convertFormStateToSavedChartConfig returned undefined after validation passed. ' +
+            'This likely means a new displayType or configType combination is not handled.',
+          {
+            displayType: form.displayType,
+            configType: form.configType,
+            source: form.source,
+          },
+        );
+        return { errors: [], config: null };
+      }
 
       const config = isRawSqlSavedChartConfig(savedConfig)
         ? savedConfig
@@ -351,6 +468,7 @@ export default function EditTimeChartForm({
   const prevGranularityRef = useRef(granularity);
   const prevDisplayTypeRef = useRef(displayType);
   const prevConfigTypeRef = useRef(configType);
+  const prevSourceIdRef = useRef(sourceId);
 
   useEffect(() => {
     // Emulate the granularity picker auto-searching similar to dashboards
@@ -371,9 +489,23 @@ export default function EditTimeChartForm({
       if (displayType === DisplayType.Search && typeof select !== 'string') {
         setValue('select', '');
         setValue('series', []);
-      }
-
-      if (displayType !== DisplayType.Search && !Array.isArray(select)) {
+      } else if (displayType === DisplayType.Heatmap) {
+        // Two entry paths into Heatmap:
+        //   - From Search/RawSQL: select is a string; clear `where` too
+        //   - From another builder tab: select is already an array
+        const fallbackValue = Array.isArray(select)
+          ? (select[0]?.valueExpression ?? '')
+          : '';
+        const defaultValue =
+          tableSource?.kind === SourceKind.Trace &&
+          tableSource.durationExpression
+            ? getDurationMsExpression(tableSource)
+            : fallbackValue;
+        if (typeof select === 'string') {
+          setValue('where', '');
+        }
+        applyHeatmapDefaults(setValue, defaultValue);
+      } else if (!Array.isArray(select)) {
         const defaultSeries: SavedChartConfigWithSelectArray['select'] = [
           {
             aggFn: 'count',
@@ -393,7 +525,23 @@ export default function EditTimeChartForm({
         onSubmit(true);
       }
     }
-  }, [displayType, select, setValue, onSubmit, configType]);
+  }, [displayType, select, setValue, onSubmit, configType, tableSource]);
+
+  // Auto-populate heatmap defaults when source changes while in heatmap mode
+  useEffect(() => {
+    const sourceChanged = sourceId !== prevSourceIdRef.current;
+    prevSourceIdRef.current = sourceId;
+
+    if (
+      sourceChanged &&
+      displayType === DisplayType.Heatmap &&
+      tableSource?.kind === SourceKind.Trace &&
+      tableSource.durationExpression
+    ) {
+      applyHeatmapDefaults(setValue, getDurationMsExpression(tableSource));
+      onSubmit(true);
+    }
+  }, [sourceId, displayType, tableSource, setValue, onSubmit]);
 
   // Emulate the date range picker auto-searching similar to dashboards
   useEffect(() => {
@@ -443,14 +591,68 @@ export default function EditTimeChartForm({
       alignDateRangeToGranularity,
       fillNulls,
       compareToPreviousPeriod,
+      fitYAxisToData,
+      groupByColumnsOnLeft,
+      seriesLimit,
+      color,
+      colorRules,
+      backgroundChart,
     }: ChartConfigDisplaySettings) => {
-      setValue('numberFormat', numberFormat);
+      // Only persist an explicit numberFormat. When the drawer emits undefined
+      // (the user never chose a format), leave it unset so render-time
+      // auto-detection keeps driving the format from the datasource.
+      if (numberFormat !== undefined) {
+        setValue('numberFormat', numberFormat);
+      }
       setValue('alignDateRangeToGranularity', alignDateRangeToGranularity);
       setValue('fillNulls', fillNulls);
       setValue('compareToPreviousPeriod', compareToPreviousPeriod);
+      setValue('fitYAxisToData', fitYAxisToData);
+      setValue('groupByColumnsOnLeft', groupByColumnsOnLeft);
+      // Persist `null` (not undefined) when cleared so the disabled state
+      // survives JSON round-tripping through the URL query state; otherwise
+      // the dropped key lets RHF's `values` sync restore the stale value.
+      setValue('seriesLimit', seriesLimit ?? null);
+      setValue('color', color);
+      setValue('colorRules', colorRules);
+      setValue('backgroundChart', backgroundChart);
       onSubmit();
     },
     [setValue, onSubmit],
+  );
+
+  const handleUpdateHeatmapSettings = useCallback(
+    (data: HeatmapSettingsValues) => {
+      setValue('series.0.valueExpression', data.value);
+      setValue('series.0.countExpression', data.count || 'count()');
+      setValue('series.0.heatmapScaleType', data.scaleType);
+      onSubmit();
+      closeHeatmapSettings();
+    },
+    [setValue, onSubmit, closeHeatmapSettings],
+  );
+
+  const heatmapValueExpression = useWatch({
+    control,
+    name: 'series.0.valueExpression',
+  });
+  const heatmapCountExpression = useWatch({
+    control,
+    name: 'series.0.countExpression',
+  });
+  const heatmapScaleType: HeatmapScaleType =
+    useWatch({
+      control,
+      name: 'series.0.heatmapScaleType',
+    }) ?? 'log';
+
+  const heatmapSettingsDefaults = useMemo(
+    () => ({
+      value: heatmapValueExpression || '',
+      count: heatmapCountExpression || 'count()',
+      scaleType: heatmapScaleType,
+    }),
+    [heatmapValueExpression, heatmapCountExpression, heatmapScaleType],
   );
 
   const tableConnection = useMemo(
@@ -504,6 +706,12 @@ export default function EditTimeChartForm({
                   Search
                 </Tabs.Tab>
                 <Tabs.Tab
+                  value={DisplayType.Heatmap}
+                  leftSection={<IconGrid3x3 size={16} />}
+                >
+                  Heatmap
+                </Tabs.Tab>
+                <Tabs.Tab
                   value={DisplayType.Markdown}
                   leftSection={<IconMarkdown size={16} />}
                 >
@@ -536,6 +744,9 @@ export default function EditTimeChartForm({
                   data={[
                     { label: 'Builder', value: 'builder' },
                     { label: 'SQL', value: 'sql' },
+                    ...(IS_PROMQL_ENABLED
+                      ? [{ label: 'PromQL', value: 'promql' }]
+                      : []),
                   ]}
                 />
               )}
@@ -564,12 +775,21 @@ export default function EditTimeChartForm({
               />
             </Box>
           </div>
+        ) : isPromqlInput ? (
+          <PromqlChartEditor
+            control={control}
+            onSubmit={onSubmit}
+            onOpenDisplaySettings={openDisplaySettings}
+          />
         ) : isRawSqlInput ? (
           <RawSqlChartEditor
             control={control}
             setValue={setValue}
             onOpenDisplaySettings={openDisplaySettings}
+            onSubmit={onSubmit}
             isDashboardForm={isDashboardForm}
+            alert={alert}
+            dashboardId={dashboardId}
           />
         ) : (
           <ChartEditorControls
@@ -581,6 +801,7 @@ export default function EditTimeChartForm({
             append={append}
             removeSeries={removeSeries}
             swapSeries={swapSeries}
+            duplicateSeries={duplicateSeries}
             tableSource={tableSource}
             tableConnection={tableConnection}
             databaseName={databaseName}
@@ -597,6 +818,7 @@ export default function EditTimeChartForm({
             chartConfigForExplanations={chartConfigForExplanations}
             onSubmit={onSubmit}
             openDisplaySettings={openDisplaySettings}
+            openHeatmapSettings={openHeatmapSettings}
           />
         )}
         <ChartActionBar
@@ -642,10 +864,21 @@ export default function EditTimeChartForm({
       <ChartDisplaySettingsDrawer
         opened={displaySettingsOpened}
         settings={displaySettings}
+        defaultNumberFormat={autoDetectedNumberFormat}
         previousDateRange={!dashboardId ? previousDateRange : undefined}
         displayType={displayType}
+        configType={configType}
         onChange={handleUpdateDisplaySettings}
         onClose={closeDisplaySettings}
+        isPerSeriesNumberFormatAllowed={configType !== 'sql'}
+      />
+      <HeatmapSettingsDrawer
+        opened={heatmapSettingsOpened}
+        onClose={closeHeatmapSettings}
+        connection={tableConnection}
+        parentRef={parentRef}
+        defaultValues={heatmapSettingsDefaults}
+        onSubmit={handleUpdateHeatmapSettings}
       />
     </div>
   );

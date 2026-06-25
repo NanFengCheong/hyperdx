@@ -6,6 +6,7 @@ import {
   HDX_EXPORTER_ENABLED,
   HDX_INTERNAL_COLLECTOR_URL,
   HDX_SERVICE_NAME,
+  HDX_TRACES_COLLECTOR_URL,
 } from '@/config';
 import type { NextApiConfigResponseData } from '@/types';
 

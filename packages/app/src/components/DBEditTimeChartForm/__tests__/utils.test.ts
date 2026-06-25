@@ -7,7 +7,6 @@ import {
 } from '@hyperdx/common-utils/dist/types';
 
 import { ChartEditorFormState } from '@/components/ChartEditor/types';
-
 import {
   buildChartConfigForExplanations,
   buildSampleEventsConfig,
@@ -16,7 +15,7 @@ import {
   isQueryReady,
   seriesToFilters,
   TABS_WITH_GENERATED_SQL,
-} from '../utils';
+} from '@/components/DBEditTimeChartForm/utils';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -133,7 +132,6 @@ describe('isQueryReady', () => {
 
   it('returns truthy for metric sources with metricTables but empty tableName', () => {
     expect(
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
       isQueryReady({
         ...builderConfig,
         from: { databaseName: 'default', tableName: '' },
@@ -230,11 +228,12 @@ describe('displayTypeToActiveTab', () => {
 // ---------------------------------------------------------------------------
 
 describe('TABS_WITH_GENERATED_SQL', () => {
-  it('includes table, time, number, pie', () => {
+  it('includes table, time, number, pie, heatmap', () => {
     expect(TABS_WITH_GENERATED_SQL.has('table')).toBe(true);
     expect(TABS_WITH_GENERATED_SQL.has('time')).toBe(true);
     expect(TABS_WITH_GENERATED_SQL.has('number')).toBe(true);
     expect(TABS_WITH_GENERATED_SQL.has('pie')).toBe(true);
+    expect(TABS_WITH_GENERATED_SQL.has('heatmap')).toBe(true);
   });
 
   it('excludes search, markdown', () => {
@@ -409,6 +408,39 @@ describe('buildChartConfigForExplanations', () => {
     });
 
     expect(result).toBeDefined();
+  });
+
+  it("applies the tile's series limit so the SQL preview matches the chart query", () => {
+    const result = buildChartConfigForExplanations({
+      ...baseParams,
+      queriedConfig: builderConfig,
+      queriedSourceId: logSource.id,
+      tableSource: logSource,
+      activeTab: 'time',
+      dbTimeChartConfig: {
+        ...builderConfig,
+        seriesLimit: 3,
+      } as ChartConfigWithDateRange,
+    });
+
+    expect(result).toBeDefined();
+    // @ts-expect-error union types..
+    expect(result!.seriesLimit).toBe(3);
+  });
+
+  it('omits seriesLimit (capping disabled) when the tile has no limit', () => {
+    const result = buildChartConfigForExplanations({
+      ...baseParams,
+      queriedConfig: builderConfig,
+      queriedSourceId: logSource.id,
+      tableSource: logSource,
+      activeTab: 'time',
+      dbTimeChartConfig: builderConfig,
+    });
+
+    expect(result).toBeDefined();
+    // @ts-expect-error union types..
+    expect(result!.seriesLimit).toBeUndefined();
   });
 
   it.each(['table', 'number', 'pie'] as const)(

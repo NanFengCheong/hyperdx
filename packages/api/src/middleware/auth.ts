@@ -3,7 +3,6 @@ import {
   resolvePermissions,
 } from '@hyperdx/common-utils/dist/permissions';
 import { Connection } from '@hyperdx/common-utils/dist/types';
-import { setTraceAttributes } from '@hyperdx/node-opentelemetry';
 import type { NextFunction, Request, Response } from 'express';
 import { serializeError } from 'serialize-error';
 
@@ -50,7 +49,7 @@ export async function redirectToDashboard(req: Request, res: Response) {
       { userId: req?.user?._id },
       'Password login for user failed, user or team not found',
     );
-    res.redirect(`${config.FRONTEND_URL}/login?err=unknown`);
+    res.redirect(303, `${config.FRONTEND_REDIRECT_BASE}/login?err=unknown`);
   }
 }
 
@@ -77,7 +76,9 @@ export function handleAuthError(
         ? 'passwordAuthNotAllowed'
         : 'unknown';
 
-  res.redirect(`${config.FRONTEND_URL}/login?err=${returnErr}`);
+  // 303 forces GET on the redirected request even when the original request
+  // was a POST (e.g. /login/password failure path).
+  res.redirect(303, `${config.FRONTEND_REDIRECT_BASE}/login?err=${returnErr}`);
 }
 
 export async function validateUserAccessKey(
@@ -127,6 +128,12 @@ export function isUserAuthenticated(
       // @ts-ignore
       team: '_local_team_',
     };
+    setBusinessContext({
+      teamId: '_local_team_',
+      userId: '_local_user_',
+      'hyperdx.local_mode': true,
+      ...getStaticFeatureFlags(),
+    });
     return next();
   }
 

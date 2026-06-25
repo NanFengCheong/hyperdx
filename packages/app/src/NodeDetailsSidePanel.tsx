@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { StringParam, useQueryParam, withDefault } from 'use-query-params';
+import { parseAsString, useQueryState } from 'nuqs';
 import { tcFromSource } from '@hyperdx/common-utils/dist/core/metadata';
 import { convertDateRangeToGranularityString } from '@hyperdx/common-utils/dist/core/utils';
 import { TLogSource, TMetricSource } from '@hyperdx/common-utils/dist/types';
@@ -30,7 +30,7 @@ import DBSqlRowTableWithSideBar from './components/DBSqlRowTableWithSidebar';
 import { useQueriedChartConfig } from './hooks/useChartConfig';
 import { useGetKeyValues, useTableMetadata } from './hooks/useMetadata';
 
-import styles from '../styles/LogSidePanel.module.scss';
+import styles from '@styles/LogSidePanel.module.scss';
 
 const CHART_HEIGHT = 300;
 const defaultTimeRange = parseTimeQuery('Past 1h', false);
@@ -40,7 +40,7 @@ const PodDetailsProperty = React.memo(
     if (!value) return null;
     return (
       <div className="pe-4">
-        <Text size="xs" color="gray">
+        <Text size="xs" c="gray">
           {label}
         </Text>
         <Text size="sm">{value}</Text>
@@ -61,7 +61,7 @@ const NodeDetails = ({
   const where = `${metricSource.resourceAttributesExpression}.k8s.node.name:"${name}"`;
   const groupBy = ['k8s.node.name'];
 
-  const { data, isError, isLoading } = useQueriedChartConfig(
+  const { data } = useQueriedChartConfig(
     convertV1ChartConfigToV2(
       {
         series: [
@@ -183,7 +183,7 @@ function NodeLogs({
                 passHref
                 legacyBehavior
               >
-                <Anchor size="xs" color="dimmed">
+                <Anchor size="xs" c="dimmed">
                   Search <IconExternalLink size={12} style={{ display: 'inline' }} />
                 </Anchor>
               </Link> 
@@ -242,12 +242,9 @@ export default function NodeDetailsSidePanel({
   metricSource: TMetricSource;
   logSource: TLogSource;
 }) {
-  const [nodeName, setNodeName] = useQueryParam(
+  const [nodeName, setNodeName] = useQueryState(
     'nodeName',
-    withDefault(StringParam, ''),
-    {
-      updateType: 'replaceIn',
-    },
+    parseAsString.withDefault(''),
   );
 
   const contextZIndex = useZIndex();
@@ -333,7 +330,7 @@ export default function NodeDetailsSidePanel({
   ]);
 
   const handleClose = React.useCallback(() => {
-    setNodeName(undefined);
+    setNodeName(null);
   }, [setNodeName]);
 
   if (!nodeName) {

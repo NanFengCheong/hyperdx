@@ -263,6 +263,10 @@ test.describe('Saved Search Functionality', () => {
 
         // Wait for the search page to load
         await expect(page.getByTestId('search-page')).toBeVisible();
+        await expect(searchPage.savedSearchNameTitle).toBeVisible();
+        await expect(searchPage.savedSearchNameTitle).toHaveText(
+          'Info Logs Navigation Test',
+        );
       });
 
       await test.step('Verify saved search loaded and executed automatically', async () => {
@@ -635,8 +639,6 @@ test.describe('Saved Search Functionality', () => {
       });
 
       await test.step('Verify both filters are restored', async () => {
-        await searchPage.filters.openFilterGroup(firstFilterGroup);
-        await searchPage.filters.openFilterGroup(secondFilterGroup);
         await expect(
           searchPage.filters.getFilterCheckboxInput(
             firstFilterGroup,

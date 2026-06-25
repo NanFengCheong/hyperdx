@@ -1,7 +1,9 @@
 import { omit, pick } from 'lodash';
 import { Path, UseFormSetError } from 'react-hook-form';
+import { validateRawSqlForAlert } from '@hyperdx/common-utils/dist/core/utils';
 import {
   isBuilderSavedChartConfig,
+  isPromqlSavedChartConfig,
   isRawSqlSavedChartConfig,
 } from '@hyperdx/common-utils/dist/guards';
 import {
@@ -11,7 +13,10 @@ import {
   getSampleWeightExpression,
   isLogSource,
   isMetricSource,
+  isRangeThresholdType,
   isTraceSource,
+  PromqlChartConfig,
+  PromqlSavedChartConfig,
   RawSqlChartConfig,
   RawSqlSavedChartConfig,
   SavedChartConfig,
@@ -19,14 +24,14 @@ import {
   TSource,
 } from '@hyperdx/common-utils/dist/types';
 
-import { getStoredLanguage } from '../SearchInput';
+import { getStoredLanguage } from '@/components/SearchInput';
 
 import { ChartEditorFormState } from './types';
 
 function normalizeChartConfig<
   C extends Pick<
     BuilderSavedChartConfig,
-    'select' | 'having' | 'orderBy' | 'displayType' | 'metricTables'
+    'select' | 'having' | 'orderBy' | 'displayType' | 'metricTables' | 'onClick'
   >,
 >(config: C, source: TSource): C {
   const isMetricSource = source.kind === SourceKind.Metric;
@@ -43,6 +48,10 @@ function normalizeChartConfig<
       config.displayType === DisplayType.Table ? config.having : undefined,
     orderBy:
       config.displayType === DisplayType.Table ? config.orderBy : undefined,
+    onClick:
+      config.onClick && config.displayType === DisplayType.Table
+        ? config.onClick
+        : undefined,
   };
 }
 
@@ -64,6 +73,29 @@ export function convertFormStateToSavedChartConfig(
   form: ChartEditorFormState,
   source: TSource | undefined,
 ): SavedChartConfig | undefined {
+  if (form.configType === 'promql') {
+    const promqlConfig: PromqlSavedChartConfig = {
+      configType: 'promql',
+      ...pick(form, [
+        'name',
+        'displayType',
+        'numberFormat',
+        'color',
+        'granularity',
+        'compareToPreviousPeriod',
+        'fillNulls',
+        'alignDateRangeToGranularity',
+        'alert',
+        'step',
+      ]),
+      promqlExpression: form.promqlExpression ?? '',
+      connection: form.connection ?? '',
+      source: form.source || undefined,
+    };
+
+    return promqlConfig;
+  }
+
   if (form.configType === 'sql' && isRawSqlDisplayType(form.displayType)) {
     const rawSqlConfig: RawSqlSavedChartConfig = {
       configType: 'sql',
@@ -71,16 +103,29 @@ export function convertFormStateToSavedChartConfig(
         'name',
         'displayType',
         'numberFormat',
+        'color',
         'granularity',
         'compareToPreviousPeriod',
         'fillNulls',
         'alignDateRangeToGranularity',
+        'alert',
+        'onClick',
       ]),
       sqlTemplate: form.sqlTemplate ?? '',
       connection: form.connection ?? '',
       source: form.source || undefined,
     };
     return rawSqlConfig;
+  }
+
+  if (form.displayType === DisplayType.Markdown) {
+    const config: BuilderSavedChartConfig = {
+      ...omit(form, ['series', 'configType', 'sqlTemplate']),
+      select: [],
+      where: form.where ?? '',
+      source: source?.id ?? form.source ?? '',
+    };
+    return config;
   }
 
   if (source) {
@@ -107,6 +152,28 @@ export function convertFormStateToChartConfig(
   dateRange: ChartConfigWithDateRange['dateRange'],
   source: TSource | undefined,
 ): ChartConfigWithDateRange | undefined {
+  if (form.configType === 'promql') {
+    const promqlConfig: PromqlChartConfig = {
+      configType: 'promql',
+      ...pick(form, [
+        'displayType',
+        'numberFormat',
+        'color',
+        'granularity',
+        'compareToPreviousPeriod',
+        'fillNulls',
+        'alignDateRangeToGranularity',
+        'step',
+      ]),
+      promqlExpression: form.promqlExpression ?? '',
+      connection: source?.connection ?? form.connection ?? '',
+      source: form.source || undefined,
+      from: source?.from,
+    };
+
+    return { ...promqlConfig, dateRange };
+  }
+
   if (form.configType === 'sql' && isRawSqlDisplayType(form.displayType)) {
     const rawSqlConfig: RawSqlChartConfig = {
       configType: 'sql',
@@ -114,10 +181,12 @@ export function convertFormStateToChartConfig(
         'name',
         'displayType',
         'numberFormat',
+        'color',
         'granularity',
         'compareToPreviousPeriod',
         'fillNulls',
         'alignDateRangeToGranularity',
+        'onClick',
       ]),
       sqlTemplate: form.sqlTemplate ?? '',
       connection: form.connection ?? '',
@@ -126,6 +195,15 @@ export function convertFormStateToChartConfig(
       implicitColumnExpression:
         source && (isLogSource(source) || isTraceSource(source))
           ? source.implicitColumnExpression
+          : undefined,
+      // Body expression is only populated for log sources; trace sources use
+      // `spanNameExpression` for display, which has a different semantic for
+      // bare-text search and should not auto-fall-back.
+      bodyExpression:
+        source && isLogSource(source) ? source.bodyExpression : undefined,
+      useTextIndexForImplicitColumn:
+        source && (isLogSource(source) || isTraceSource(source))
+          ? source.useTextIndexForImplicitColumn
           : undefined,
       metricTables:
         source && isMetricSource(source) ? source.metricTables : undefined,
@@ -150,6 +228,12 @@ export function convertFormStateToChartConfig(
         isLogSource(source) || isTraceSource(source)
           ? source.implicitColumnExpression
           : undefined,
+      // Logs-only body fallback (see comment above for raw-sql config).
+      bodyExpression: isLogSource(source) ? source.bodyExpression : undefined,
+      useTextIndexForImplicitColumn:
+        isLogSource(source) || isTraceSource(source)
+          ? source.useTextIndexForImplicitColumn
+          : undefined,
       sampleWeightExpression: getSampleWeightExpression(source),
       metricTables: isMetricSource(source) ? source.metricTables : undefined,
       where: form.where ?? '',
@@ -169,7 +253,11 @@ export function convertSavedChartConfigToFormState(
 ): ChartEditorFormState {
   return {
     ...config,
-    configType: isRawSqlSavedChartConfig(config) ? 'sql' : 'builder',
+    configType: isPromqlSavedChartConfig(config)
+      ? 'promql'
+      : isRawSqlSavedChartConfig(config)
+        ? 'sql'
+        : 'builder',
     series:
       isBuilderSavedChartConfig(config) && Array.isArray(config.select)
         ? config.select.map(s => ({
@@ -205,7 +293,7 @@ export const validateChartForm = (
   if (
     !isRawSqlChart &&
     form.displayType !== DisplayType.Markdown &&
-    !form.source
+    (!form.source || !source)
   ) {
     errors.push({ path: `source`, message: 'Source is required' });
   }
@@ -246,17 +334,67 @@ export const validateChartForm = (
     });
   }
 
-  // Validate number and pie charts only have one series
+  // Validate raw SQL alert has required time filters and interval parameters
+  if (isRawSqlChart && form.alert) {
+    const config = {
+      configType: 'sql',
+      sqlTemplate: form.sqlTemplate ?? '',
+      connection: form.connection ?? '',
+      from: source?.from,
+      displayType: form.displayType,
+    } satisfies RawSqlChartConfig;
+    const { errors: alertErrors } = validateRawSqlForAlert(config);
+    if (alertErrors.length > 0) {
+      errors.push({
+        path: `sqlTemplate`,
+        message: alertErrors.join('. '),
+      });
+    }
+  }
+
+  // Validate thresholdMax for range threshold types (between / not between)
+  if (form.alert && isRangeThresholdType(form.alert.thresholdType)) {
+    if (form.alert.thresholdMax == null) {
+      errors.push({
+        path: 'alert.thresholdMax',
+        message:
+          'Upper bound is required for between/not between threshold types',
+      });
+    } else if (form.alert.thresholdMax < form.alert.threshold) {
+      errors.push({
+        path: 'alert.thresholdMax',
+        message:
+          'Alert threshold upper bound must be greater than or equal to the lower bound',
+      });
+    }
+  }
+
+  // Validate number, pie, and heatmap charts only have one series
   if (
     !isRawSqlChart &&
     Array.isArray(form.series) &&
     (form.displayType === DisplayType.Number ||
-      form.displayType === DisplayType.Pie) &&
+      form.displayType === DisplayType.Pie ||
+      form.displayType === DisplayType.Heatmap) &&
     form.series.length > 1
   ) {
     errors.push({
       path: `series`,
       message: `Only one series is allowed for ${form.displayType} charts`,
+    });
+  }
+
+  // Validate heatmap requires a value expression
+  if (
+    !isRawSqlChart &&
+    form.displayType === DisplayType.Heatmap &&
+    Array.isArray(form.series) &&
+    form.series.length > 0 &&
+    !form.series[0]?.valueExpression
+  ) {
+    errors.push({
+      path: `series.0.valueExpression`,
+      message: 'Value expression is required for heatmap charts',
     });
   }
 

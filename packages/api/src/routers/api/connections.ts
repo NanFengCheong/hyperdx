@@ -6,7 +6,7 @@ import {
   createConnection,
   deleteConnection,
   getConnectionById,
-  getConnections,
+  getConnectionsByTeam,
   updateConnection,
 } from '@/controllers/connection';
 import { getNonNullUserWithTeam, requirePermission } from '@/middleware/auth';

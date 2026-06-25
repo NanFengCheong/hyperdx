@@ -8,8 +8,10 @@ import {
 } from '@hyperdx/common-utils/dist/core/utils';
 import {
   AlertChannelType,
+  AlertThresholdType,
   ChartConfigWithOptDateRange,
   DisplayType,
+  isRangeThresholdType,
   pickSampleWeightExpressionProps,
   SourceKind,
   WebhookService,
@@ -25,7 +27,7 @@ import { z } from 'zod';
 
 import * as config from '@/config';
 import { AlertInput } from '@/controllers/alerts';
-import { AlertSource, AlertState, AlertThresholdType } from '@/models/alert';
+import { AlertSource, AlertState } from '@/models/alert';
 import { IDashboard } from '@/models/dashboard';
 import { ISavedSearch } from '@/models/savedSearch';
 import { ISource } from '@/models/source';
@@ -53,6 +55,58 @@ import {
   markNotificationSuccess,
 } from '@/utils/notificationLogger';
 import * as slack from '@/utils/slack';
+
+const describeThresholdViolation = (
+  thresholdType: AlertThresholdType,
+): string => {
+  switch (thresholdType) {
+    case AlertThresholdType.ABOVE:
+      return 'meets or exceeds';
+    case AlertThresholdType.ABOVE_EXCLUSIVE:
+      return 'exceeds';
+    case AlertThresholdType.BELOW:
+      return 'falls below';
+    case AlertThresholdType.BELOW_OR_EQUAL:
+      return 'falls to or below';
+    case AlertThresholdType.EQUAL:
+      return 'equals';
+    case AlertThresholdType.NOT_EQUAL:
+      return 'does not equal';
+    case AlertThresholdType.BETWEEN:
+      return 'falls between';
+    case AlertThresholdType.NOT_BETWEEN:
+      return 'falls outside';
+  }
+};
+
+const describeThresholdResolution = (
+  thresholdType: AlertThresholdType,
+): string => {
+  switch (thresholdType) {
+    case AlertThresholdType.ABOVE:
+      return 'falls below';
+    case AlertThresholdType.ABOVE_EXCLUSIVE:
+      return 'falls to or below';
+    case AlertThresholdType.BELOW:
+      return 'meets or exceeds';
+    case AlertThresholdType.BELOW_OR_EQUAL:
+      return 'exceeds';
+    case AlertThresholdType.EQUAL:
+      return 'does not equal';
+    case AlertThresholdType.NOT_EQUAL:
+      return 'equals';
+    case AlertThresholdType.BETWEEN:
+      return 'falls outside';
+    case AlertThresholdType.NOT_BETWEEN:
+      return 'falls between';
+  }
+};
+
+const describeThreshold = (alert: AlertInput): string => {
+  return isRangeThresholdType(alert.thresholdType)
+    ? `${alert.threshold} and ${alert.thresholdMax ?? '?'}`
+    : `${alert.threshold}`;
+};
 
 const MAX_MESSAGE_LENGTH = 500;
 const NOTIFY_FN_NAME = '__hdx_notify_channel__';
@@ -308,7 +362,7 @@ export const handleSendGenericWebhook = async (
       },
       'Failed to compile generic webhook body',
     );
-    return;
+    throw new Error('Failed to build webhook request body', { cause: e });
   }
 
   // Create notification log entry before sending
@@ -369,6 +423,8 @@ export const handleSendGenericWebhook = async (
       },
       'Failed to send generic webhook message',
     );
+    // rethrow so that it can be recorded in alert errors
+    throw e;
   }
 };
 
@@ -447,6 +503,7 @@ export const buildAlertMessageTemplateHdxLink = (
       endTime,
       granularity,
       startTime,
+      tileId: alert.tileId,
     });
   }
 
@@ -562,7 +619,9 @@ const getPopulatedChannel = (
           },
           'webhook not found',
         );
-        return undefined;
+        throw new Error(
+          `Webhook not found. The webhook may have been deleted — update the alert's notification channel.`,
+        );
       }
       return { type: 'webhook', channel: webhook };
     }
@@ -607,7 +666,7 @@ const getPopulatedChannel = (
     }
     default: {
       logger.error({ channelType }, 'Unsupported alert channel type');
-      return undefined;
+      throw new Error('Unsupported alert destination');
     }
   }
 };
@@ -621,7 +680,7 @@ export const renderAlertTemplate = async ({
   teamId,
   template,
   title,
-  view,
+  view: inputView,
   teamWebhooksById,
   teamUsersById,
   notificationContext,
@@ -638,6 +697,16 @@ export const renderAlertTemplate = async ({
   teamUsersById: Map<string, IUser>;
   notificationContext?: NotificationContext;
 }) => {
+  // Internal mutable view with __hdx_query_results__ populated on the
+  // saved-search path. Untrusted values must flow through the view so
+  // Handlebars treats them as literal data, never as template syntax.
+  const view: AlertMessageTemplateDefaultView & {
+    __hdx_query_results__: string;
+  } = {
+    ...inputView,
+    __hdx_query_results__: '',
+  };
+
   const {
     alert,
     dashboard,
@@ -750,7 +819,7 @@ export const renderAlertTemplate = async ({
 
   // For resolved alerts, use a simple message instead of fetching data
   if (isAlertResolved(state)) {
-    rawTemplateBody = `${group ? `Group: "${group}" - ` : ''}The alert has been resolved.\n${timeRangeMessage}
+    rawTemplateBody = `{{#if group}}Group: "{{{group}}}" - {{/if}}The alert has been resolved.\n${timeRangeMessage}
 ${targetTemplate}`;
   }
   // TODO: support advanced routing with template engine
@@ -780,6 +849,7 @@ ${targetTemplate}`;
       where: savedSearch.where,
       whereLanguage: savedSearch.whereLanguage,
       implicitColumnExpression: source.implicitColumnExpression,
+      useTextIndexForImplicitColumn: source.useTextIndexForImplicitColumn,
       ...pickSampleWeightExpressionProps(source),
       timestampValueExpression: source.timestampValueExpression,
       orderBy: savedSearch.orderBy,
@@ -829,31 +899,27 @@ ${targetTemplate}`;
       );
     }
 
-    rawTemplateBody = `${group ? `Group: "${group}"` : ''}
-${value} lines found, expected ${
-      alert.thresholdType === AlertThresholdType.ABOVE
-        ? 'less than'
-        : 'greater than'
-    } ${alert.threshold} lines\n${timeRangeMessage}
+    // Pass query results through the view so Handlebars syntax in log lines
+    // is treated as literal text rather than parsed as template source.
+    view.__hdx_query_results__ = truncatedResults;
+
+    rawTemplateBody = `{{#if group}}Group: "{{{group}}}"{{/if}}
+${value} lines found, which ${describeThresholdViolation(alert.thresholdType)} the threshold of ${describeThreshold(alert)} lines\n${timeRangeMessage}
 ${targetTemplate}
 \`\`\`
-${truncatedResults}
+{{{__hdx_query_results__}}}
 \`\`\``;
   } else if (alert.source === AlertSource.TILE) {
     if (dashboard == null) {
       throw new Error(`Source is ${alert.source} but dashboard is null`);
     }
     const formattedValue = formatValueToMatchThreshold(value, alert.threshold);
-    rawTemplateBody = `${group ? `Group: "${group}"` : ''}
+    rawTemplateBody = `{{#if group}}Group: "{{{group}}}"{{/if}}
 ${formattedValue} ${
-      doesExceedThreshold(alert.thresholdType, alert.threshold, value)
-        ? alert.thresholdType === AlertThresholdType.ABOVE
-          ? 'exceeds'
-          : 'falls below'
-        : alert.thresholdType === AlertThresholdType.ABOVE
-          ? 'falls below'
-          : 'exceeds'
-    } ${alert.threshold}\n${timeRangeMessage}
+      doesExceedThreshold(alert, value)
+        ? describeThresholdViolation(alert.thresholdType)
+        : describeThresholdResolution(alert.thresholdType)
+    } ${describeThreshold(alert)}\n${timeRangeMessage}
 ${targetTemplate}`;
   }
 
