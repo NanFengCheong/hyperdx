@@ -357,6 +357,11 @@ const proxyMiddleware: RequestHandler =
             Buffer.byteLength(body, 'utf-8'),
           );
           proxyReq.write(body);
+        } catch (e) {
+          console.error(
+            `clickhouseProxy error writing body, body is type ${typeof body}`,
+          );
+          throw e;
         }
       },
       proxyRes: (proxyRes, _req, res) => {

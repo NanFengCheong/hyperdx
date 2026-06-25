@@ -6,6 +6,7 @@ import cx from 'classnames';
 import type { Duration } from 'date-fns';
 import { add, formatRelative } from 'date-fns';
 import {
+  AlertHistory,
   AlertSource,
   AlertState,
   isRangeThresholdType,
@@ -14,6 +15,7 @@ import {
   Alert,
   Anchor,
   Badge,
+  Button,
   Collapse,
   Container,
   Flex,
@@ -21,9 +23,13 @@ import {
   Select,
   Stack,
   TextInput,
+  Tooltip,
   UnstyledButton,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
+import { notifications } from '@mantine/notifications';
+import { useQueryClient } from '@tanstack/react-query';
+import { useQueryState } from 'nuqs';
 import {
   IconAlertTriangle,
   IconBell,
@@ -33,9 +39,11 @@ import {
   IconChevronRight,
   IconHelpCircle,
   IconInfoCircleFilled,
+  IconNote,
   IconSearch,
   IconTableRow,
 } from '@tabler/icons-react';
+import ReactMarkdown from 'react-markdown';
 
 import { AckAlert } from '@/components/alerts/AckAlert';
 import { AlertHistoryCardList } from '@/components/alerts/AlertHistoryCards';
@@ -43,7 +51,10 @@ import EmptyState from '@/components/EmptyState';
 import { PageHeader } from '@/components/PageHeader';
 
 import { useBrandDisplayName } from './theme/ThemeProvider';
-import { isAlertSilenceExpired } from './utils/alerts';
+import {
+  isAlertSilenceExpired,
+  TILE_ALERT_THRESHOLD_TYPE_OPTIONS,
+} from './utils/alerts';
 import { getAlertChannelIcon } from './utils/webhookIcons';
 import api from './api';
 import { withAppNav } from './layout';
@@ -170,6 +181,17 @@ function AlertHistoryCard({
 
 function getAlertTags(alert: AlertsPageItem): string[] {
   return alert.dashboard?.tags ?? alert.savedSearch?.tags ?? [];
+}
+
+function getAlertDisplayName(alert: AlertsPageItem): string {
+  if (alert.source === AlertSource.TILE && alert.dashboard) {
+    const tile = alert.dashboard.tiles.find(tile => tile.id === alert.tileId);
+    return [alert.dashboard.name, tile?.config.name].filter(Boolean).join(' / ');
+  }
+  if (alert.source === AlertSource.SAVED_SEARCH && alert.savedSearch) {
+    return alert.savedSearch.name;
+  }
+  return '';
 }
 
 function getAlertCreatorLabel(alert: AlertsPageItem): string | undefined {
@@ -375,7 +397,7 @@ function AlertDetails({ alert }: { alert: AlertsPageItem }) {
       </Group>
 
       <Group>
-        <AlertHistoryCardList history={alert.history} alertUrl={alertUrl} />
+        <AlertHistoryCardList alert={alert} alertUrl={alertUrl} />
         {alert.state === ('DRAFT' as any) && <PromoteAlert alert={alert} />}
         <InvestigateAlert alert={alert} />
         <AckAlert alert={alert} />

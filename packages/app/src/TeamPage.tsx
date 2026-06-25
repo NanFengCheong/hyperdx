@@ -21,6 +21,7 @@ import ApiKeysSection from './components/TeamSettings/ApiKeysSection';
 import AuditLogSection from './components/TeamSettings/AuditLogSection';
 import ConnectionsSection from './components/TeamSettings/ConnectionsSection';
 import IntegrationsSection from './components/TeamSettings/IntegrationsSection';
+import McpServerSection from './components/TeamSettings/McpServerSection';
 import NotificationLogSection from './components/TeamSettings/NotificationLogSection';
 import SourcesSection from './components/TeamSettings/SourcesSection';
 import TeamMembersSection from './components/TeamSettings/TeamMembersSection';

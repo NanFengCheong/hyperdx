@@ -12,14 +12,16 @@ import {
   ActionIcon,
   Box,
   Button,
+  Center,
   Divider,
   Flex,
   Group,
+  Paper,
   Stack,
   Text,
   Tooltip,
 } from '@mantine/core';
-import { IconPencil, IconSparkles } from '@tabler/icons-react';
+import { IconPencil, IconSparkles, IconX } from '@tabler/icons-react';
 
 import { DBTraceWaterfallChartContainer } from '@/components/DBTraceWaterfallChart';
 import { InvestigationSidePanel } from '@/components/Investigation';
@@ -432,19 +434,7 @@ export default function DBTracePanel({
               />
             </div>
           )}
-          {displayedTab === Tab.Parsed && (
-            <RowDataPanel
-              source={
-                eventRowWhere?.type === SourceKind.Log && logSourceData
-                  ? logSourceData
-                  : traceSourceData
-              }
-              rowId={eventRowWhere?.id}
-              aliasWith={eventRowWhere?.aliasWith}
-            />
-          )}
-        </>
-      )}
+      </div>
       {traceSourceData != null && !eventRowWhere && traceId && (
         <Paper shadow="xs" p="xl" mt="md">
           <Center mih={100}>

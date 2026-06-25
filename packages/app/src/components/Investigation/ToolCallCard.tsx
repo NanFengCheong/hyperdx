@@ -60,7 +60,7 @@ export function ToolCallCard({ entry }: { entry: ToolCallEntry }) {
         )}
       </Group>
 
-      <Collapse in={expanded}>
+      {expanded && (
         <Stack gap={4} mt={4}>
           {Object.entries(entry.args).map(([k, v]) => (
             <Text key={k} size="xs" c="dimmed">
@@ -84,7 +84,7 @@ export function ToolCallCard({ entry }: { entry: ToolCallEntry }) {
             </Text>
           )}
         </Stack>
-      </Collapse>
+      )}
     </Box>
   );
 }

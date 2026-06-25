@@ -12,6 +12,7 @@ import type {
 } from '@hyperdx/common-utils/dist/types';
 import {
   TeamClickHouseSettingsSchema,
+  TeamClickHouseSettingsUpdateSchema,
   TelegramConfigSchema,
 } from '@hyperdx/common-utils/dist/types';
 import crypto from 'crypto';
@@ -21,9 +22,11 @@ import mongoose from 'mongoose';
 import { z } from 'zod';
 import { processRequest, validateRequest } from 'zod-express-middleware';
 
+import * as config from '@/config';
 import {
   getTags,
   getTeam,
+  getTeamInviteUrl,
   getTeamTelegramConfig,
   rotateTeamApiKey,
   setTeamName,

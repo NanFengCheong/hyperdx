@@ -558,8 +558,13 @@ router.post(
     }),
   }),
   async (req, res) => {
-    const span = opentelemetry.trace.getActiveSpan();
-    try {
+    const requestStartedAt = Date.now();
+    // The span status/exception is managed inside the handler (errors are mapped
+    // to HTTP responses rather than thrown), so disable the default OK status.
+    await withSpan(
+      'external_api.charts.series',
+      async span => {
+        try {
       const teamId = req.user?.team;
       if (!teamId) {
         return res.status(403).send({ error: 'Team context missing' });
@@ -651,88 +656,8 @@ router.post(
             console.error(`Error processing series ${index}:`, err);
             throw err;
           }
-
-          const {
-            endTime,
-            granularity,
-            startTime,
-            seriesReturnType,
-            series: externalSeries,
-          } = req.body;
-
-          const allResults = await Promise.all(
-            externalSeries.map(async (series, index) => {
-              try {
-                const source = await getSource(
-                  teamId.toString(),
-                  series.sourceId,
-                );
-                if (!source || !source.connection) {
-                  // Return a structured error object instead of throwing
-                  return {
-                    error: {
-                      status: 404,
-                      message: `Source not found for series ${index}`,
-                      code: 'SOURCE_NOT_FOUND',
-                    },
-                  } as SeriesResult;
-                }
-
-                const connection = await getConnectionById(
-                  teamId.toString(),
-                  source.connection.toString(),
-                  true, // Decrypt password
-                );
-
-                if (!connection) {
-                  return {
-                    error: {
-                      status: 404,
-                      message: `Connection not found for series ${index}`,
-                      code: 'CONNECTION_NOT_FOUND',
-                    },
-                  } as SeriesResult;
-                }
-
-                const { chartConfig, groupByFields } =
-                  await buildChartConfigFromRequest(
-                    {
-                      externalSeries: series,
-                      sourceId: series.sourceId,
-                      seriesIndex: index,
-                      startTime,
-                      endTime,
-                      granularity,
-                      seriesReturnType,
-                      teamId: teamId.toString(),
-                    },
-                    source,
-                    connection,
-                  );
-
-                const clickhouseClient = new ClickhouseClient({
-                  host: connection.host,
-                  username: connection.username,
-                  password: connection.password,
-                });
-
-                const metadata = getMetadata(clickhouseClient);
-                const result = await clickhouseClient.queryChartConfig({
-                  config: chartConfig,
-                  metadata,
-                  querySettings: source.querySettings,
-                });
-
-                return {
-                  data: result.data || [],
-                  groupByFields,
-                } as SeriesResult;
-              } catch (err) {
-                console.error(`Error processing series ${index}:`, err);
-                throw err;
-              }
-            }),
-          );
+        }),
+      );
 
           // Check if any results contain errors
           const errorResult = allResults.find(

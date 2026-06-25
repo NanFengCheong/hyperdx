@@ -981,6 +981,7 @@ describe('Single Invocation Alert Test', () => {
       connection.id,
       alertProvider,
       new Map([[webhook.id.toString(), webhook]]),
+      new Map(),
     );
 
     // Verify alert state changed to ALERT

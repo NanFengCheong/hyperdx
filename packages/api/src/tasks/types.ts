@@ -3,6 +3,7 @@ import { z } from 'zod';
 export enum TaskName {
   PING_PONG = 'ping-pong',
   CHECK_ALERTS = 'check-alerts',
+  PROVISION_DASHBOARDS = 'provision-dashboards',
   CHECK_INACTIVE_USERS = 'check-inactive-users',
   DATA_RETENTION = 'data-retention',
   PROACTIVE_INVESTIGATION = 'proactive-investigation',
@@ -33,6 +34,10 @@ const checkAlertsTaskArgsSchema = z.object({
     .optional(),
 });
 
+const provisionDashboardsTaskArgsSchema = z.object({
+  taskName: z.literal(TaskName.PROVISION_DASHBOARDS),
+});
+
 const checkInactiveUsersTaskArgsSchema = z.object({
   taskName: z.literal(TaskName.CHECK_INACTIVE_USERS),
 });
@@ -49,14 +54,15 @@ const proactiveInvestigationTaskArgsSchema = z.object({
 
 const clickhouseRetentionTaskArgsSchema = z.object({
   taskName: z.literal(TaskName.CLICKHOUSE_RETENTION),
-  dryRun: z.boolean().optional().default(false),
-  nuke: z.boolean().optional().default(false),
-  force: z.boolean().optional().default(false),
+  dryRun: z.boolean().optional(),
+  nuke: z.boolean().optional(),
+  force: z.boolean().optional(),
 });
 
 const taskArgsSchema = z.discriminatedUnion('taskName', [
   pingTaskArgsSchema,
   checkAlertsTaskArgsSchema,
+  provisionDashboardsTaskArgsSchema,
   checkInactiveUsersTaskArgsSchema,
   dataRetentionTaskArgsSchema,
   proactiveInvestigationTaskArgsSchema,
@@ -65,6 +71,9 @@ const taskArgsSchema = z.discriminatedUnion('taskName', [
 
 export type PingTaskArgs = z.infer<typeof pingTaskArgsSchema>;
 export type CheckAlertsTaskArgs = z.infer<typeof checkAlertsTaskArgsSchema>;
+export type ProvisionDashboardsTaskArgs = z.infer<
+  typeof provisionDashboardsTaskArgsSchema
+>;
 export type CheckInactiveUsersTaskArgs = z.infer<
   typeof checkInactiveUsersTaskArgsSchema
 >;

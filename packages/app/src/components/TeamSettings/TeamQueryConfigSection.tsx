@@ -250,7 +250,7 @@ function ClickhouseSettingForm({
               Change
             </Button>
           )}
-          {hasAdminAccess && isCustomValue && defaultValue != null && (
+          {canEditQuerySettings && isCustomValue && defaultValue != null && (
             <Button
               size="xs"
               variant="subtle"

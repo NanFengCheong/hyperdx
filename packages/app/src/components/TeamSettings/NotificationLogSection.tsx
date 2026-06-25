@@ -155,9 +155,9 @@ export default function NotificationLogSection() {
         <DatePickerInput
           size="xs"
           placeholder="From date"
-          value={fromDate}
+          value={fromDate ? fromDate.toISOString().slice(0, 10) : null}
           onChange={v => {
-            setFromDate(v);
+            setFromDate(v ? new Date(v) : null);
             setPage(0);
           }}
           clearable
@@ -166,9 +166,9 @@ export default function NotificationLogSection() {
         <DatePickerInput
           size="xs"
           placeholder="To date"
-          value={toDate}
+          value={toDate ? toDate.toISOString().slice(0, 10) : null}
           onChange={v => {
-            setToDate(v);
+            setToDate(v ? new Date(v) : null);
             setPage(0);
           }}
           clearable
@@ -263,8 +263,7 @@ export default function NotificationLogSection() {
                     {expandedId === entry._id && (
                       <Table.Tr key={`${entry._id}-detail`}>
                         <Table.Td colSpan={8}>
-                          <Collapse in={expandedId === entry._id}>
-                            <Box p="sm">
+                          <Box p="sm">
                               {entry.error && (
                                 <Box mb="xs">
                                   <Text size="xs" fw={600} c="red">
@@ -321,8 +320,7 @@ export default function NotificationLogSection() {
                                   Retry of: {entry.retryOf}
                                 </Text>
                               )}
-                            </Box>
-                          </Collapse>
+                          </Box>
                         </Table.Td>
                       </Table.Tr>
                     )}

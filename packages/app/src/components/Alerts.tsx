@@ -1,10 +1,17 @@
 import React from 'react';
 import { useMemo } from 'react';
-import { Control, useController } from 'react-hook-form';
+import {
+  Control,
+  Controller,
+  FieldValues,
+  Path,
+  useController,
+} from 'react-hook-form';
 import { MultiSelect, Select, SelectProps } from 'react-hook-form-mantine';
 import { Label, ReferenceArea, ReferenceLine } from 'recharts';
 import {
   type AlertChannelType,
+  AlertThresholdType,
   type TeamMember,
   WebhookService,
 } from '@hyperdx/common-utils/dist/types';
@@ -268,7 +275,7 @@ const TelegramChannelForm = ({
   );
 };
 
-export const AlertChannelForm = ({
+export const AlertChannelForm = <T extends FieldValues>({
   control,
   type,
   namePrefix = '',

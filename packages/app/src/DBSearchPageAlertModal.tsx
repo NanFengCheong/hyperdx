@@ -156,8 +156,8 @@ const AlertForm = ({
   );
   const intervalLabel = ALERT_INTERVAL_OPTIONS[interval ?? '5m'];
 
-  const { data: alertData } = api.useAlert(defaultValues?.id);
-  const alert = alertData?.data;
+  const { data: alertsData } = api.useAlerts();
+  const alert = alertsData?.data.find(item => item._id === defaultValues?.id);
 
   return (
     <form

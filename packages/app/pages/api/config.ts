@@ -5,6 +5,7 @@ import {
   HDX_COLLECTOR_URL,
   HDX_EXPORTER_ENABLED,
   HDX_INTERNAL_COLLECTOR_URL,
+  HDX_LOGS_COLLECTOR_URL,
   HDX_SERVICE_NAME,
   HDX_TRACES_COLLECTOR_URL,
 } from '@/config';
@@ -17,6 +18,8 @@ export default function handler(
   res.status(200).json({
     apiKey: HDX_EXPORTER_ENABLED ? HDX_API_KEY : undefined,
     collectorUrl: HDX_COLLECTOR_URL,
+    collectorLogsUrl: HDX_LOGS_COLLECTOR_URL,
+    collectorTracesUrl: HDX_TRACES_COLLECTOR_URL,
     internalCollectorUrl: HDX_INTERNAL_COLLECTOR_URL,
     serviceName: HDX_SERVICE_NAME,
     appVersion: process.env.NEXT_PUBLIC_APP_VERSION,

@@ -6,6 +6,7 @@ import {
   createConnection,
   deleteConnection,
   getConnectionById,
+  getConnections,
   getConnectionsByTeam,
   updateConnection,
 } from '@/controllers/connection';

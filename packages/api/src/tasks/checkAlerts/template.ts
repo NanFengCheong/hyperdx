@@ -545,9 +545,9 @@ export const buildAlertMessageTemplateTitle = ({
     }
     const formattedValue = formatValueToMatchThreshold(value, alert.threshold);
     const baseTitle = template
-      ? handlebars.compile(template)(view)
-      : `Alert for "${tile.config.name}" in "${dashboard.name}" - ${formattedValue} ${
-          doesExceedThreshold(alert.thresholdType, alert.threshold, value)
+        ? handlebars.compile(template)(view)
+        : `Alert for "${tile.config.name}" in "${dashboard.name}" - ${formattedValue} ${
+          doesExceedThreshold(alert, value)
             ? alert.thresholdType === AlertThresholdType.ABOVE
               ? 'exceeds'
               : 'falls below'

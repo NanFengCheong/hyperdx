@@ -7,7 +7,6 @@ import {
   Button,
   Center,
   Code,
-  Collapse,
   Container,
   Group,
   Loader,
@@ -268,9 +267,9 @@ function TeamsPanel() {
                     </Table.Tr>
                     <Table.Tr>
                       <Table.Td colSpan={3} p={0}>
-                        <Collapse in={isExpanded}>
+                        <Box>
                           {isExpanded && <TeamMembersTable teamId={team._id} />}
-                        </Collapse>
+                        </Box>
                       </Table.Td>
                     </Table.Tr>
                   </Table.Tbody>
@@ -396,16 +395,16 @@ function AuditLogPanel() {
         <DatePickerInput
           label="From Date"
           placeholder="Select start date"
-          value={fromDate}
-          onChange={setFromDate}
+          value={fromDate ? fromDate.toISOString().slice(0, 10) : null}
+          onChange={value => setFromDate(value ? new Date(value) : null)}
           clearable
           size="sm"
         />
         <DatePickerInput
           label="To Date"
           placeholder="Select end date"
-          value={toDate}
-          onChange={setToDate}
+          value={toDate ? toDate.toISOString().slice(0, 10) : null}
+          onChange={value => setToDate(value ? new Date(value) : null)}
           clearable
           size="sm"
         />
@@ -625,9 +624,9 @@ function NotificationLogPanel() {
         <DatePickerInput
           label="From Date"
           placeholder="Select start date"
-          value={fromDate}
+          value={fromDate ? fromDate.toISOString().slice(0, 10) : null}
           onChange={v => {
-            setFromDate(v);
+            setFromDate(v ? new Date(v) : null);
             setPage(0);
           }}
           clearable
@@ -636,9 +635,9 @@ function NotificationLogPanel() {
         <DatePickerInput
           label="To Date"
           placeholder="Select end date"
-          value={toDate}
+          value={toDate ? toDate.toISOString().slice(0, 10) : null}
           onChange={v => {
-            setToDate(v);
+            setToDate(v ? new Date(v) : null);
             setPage(0);
           }}
           clearable
@@ -744,40 +743,38 @@ function NotificationLogPanel() {
                   {expandedId === entry._id && (
                     <Table.Tr key={`${entry._id}-detail`}>
                       <Table.Td colSpan={8}>
-                        <Collapse in={expandedId === entry._id}>
-                          <Box p="sm">
-                            {entry.error && (
-                              <Box mb="xs">
-                                <Text size="sm" fw={600} c="red">
-                                  Error:
+                        <Box p="sm">
+                          {entry.error && (
+                            <Box mb="xs">
+                              <Text size="sm" fw={600} c="red">
+                                Error:
+                              </Text>
+                              <Code block>{entry.error}</Code>
+                            </Box>
+                          )}
+                          <Text size="sm" fw={600} mb={4}>
+                            Payload:
+                          </Text>
+                          <Code block>
+                            {JSON.stringify(entry.payload, null, 2)}
+                          </Code>
+                          {entry.response &&
+                            Object.keys(entry.response).length > 0 && (
+                              <Box mt="xs">
+                                <Text size="sm" fw={600} mb={4}>
+                                  Response:
                                 </Text>
-                                <Code block>{entry.error}</Code>
+                                <Code block>
+                                  {JSON.stringify(entry.response, null, 2)}
+                                </Code>
                               </Box>
                             )}
-                            <Text size="sm" fw={600} mb={4}>
-                              Payload:
+                          {entry.retryOf && (
+                            <Text size="sm" c="dimmed" mt="xs">
+                              Retry of: {entry.retryOf}
                             </Text>
-                            <Code block>
-                              {JSON.stringify(entry.payload, null, 2)}
-                            </Code>
-                            {entry.response &&
-                              Object.keys(entry.response).length > 0 && (
-                                <Box mt="xs">
-                                  <Text size="sm" fw={600} mb={4}>
-                                    Response:
-                                  </Text>
-                                  <Code block>
-                                    {JSON.stringify(entry.response, null, 2)}
-                                  </Code>
-                                </Box>
-                              )}
-                            {entry.retryOf && (
-                              <Text size="sm" c="dimmed" mt="xs">
-                                Retry of: {entry.retryOf}
-                              </Text>
-                            )}
-                          </Box>
-                        </Collapse>
+                          )}
+                        </Box>
                       </Table.Td>
                     </Table.Tr>
                   )}

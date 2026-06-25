@@ -1,6 +1,5 @@
 import { createNativeClient } from '@hyperdx/common-utils/dist/clickhouse/node';
 import {
-  AlertThresholdType,
   BuilderSavedChartConfig,
   DisplayType,
   RawSqlSavedChartConfig,

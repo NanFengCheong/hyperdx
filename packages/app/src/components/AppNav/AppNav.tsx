@@ -413,8 +413,7 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
               />
             )}
 
-            {!isCollapsed && can('explorer:view') && (
-              <Collapse in={isSavedSearchExpanded}>
+            {!isCollapsed && can('explorer:view') && isSavedSearchExpanded && (
                 <div className={styles.subMenu}>
                   {favoritedSavedSearches.length > 0 ? (
                     favoritedSavedSearches.map(renderSavedSearchLink)
@@ -428,7 +427,6 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
                     </Text>
                   ) : null}
                 </div>
-              </Collapse>
             )}
             {/* Simple nav links from config */}
             {NAV_LINKS.filter(
@@ -457,8 +455,7 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
               />
             )}
 
-            {!isCollapsed && can('dashboards:view') && (
-              <Collapse in={isDashboardsExpanded}>
+            {!isCollapsed && can('dashboards:view') && isDashboardsExpanded && (
                 <div className={styles.subMenu}>
                   {favoritedDashboards.length > 0 ? (
                     favoritedDashboards.map(renderDashboardLink)
@@ -476,7 +473,6 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
                     </Text>
                   ) : null}
                 </div>
-              </Collapse>
             )}
 
             {/* Integration Guide */}

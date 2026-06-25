@@ -159,9 +159,9 @@ export default function AuditLogSection() {
         <DatePickerInput
           size="xs"
           placeholder="From date"
-          value={fromDate}
+          value={fromDate ? fromDate.toISOString().slice(0, 10) : null}
           onChange={v => {
-            setFromDate(v);
+            setFromDate(v ? new Date(v) : null);
             setPage(0);
           }}
           clearable
@@ -170,9 +170,9 @@ export default function AuditLogSection() {
         <DatePickerInput
           size="xs"
           placeholder="To date"
-          value={toDate}
+          value={toDate ? toDate.toISOString().slice(0, 10) : null}
           onChange={v => {
-            setToDate(v);
+            setToDate(v ? new Date(v) : null);
             setPage(0);
           }}
           clearable
@@ -239,8 +239,7 @@ export default function AuditLogSection() {
                     {expandedId === entry._id && (
                       <Table.Tr key={`${entry._id}-detail`}>
                         <Table.Td colSpan={6}>
-                          <Collapse in={expandedId === entry._id}>
-                            <Box p="sm">
+                          <Box p="sm">
                               <Text size="xs" fw={600} mb={4}>
                                 Details:
                               </Text>
@@ -255,8 +254,7 @@ export default function AuditLogSection() {
                                   Actor ID: {entry.actorId}
                                 </Text>
                               )}
-                            </Box>
-                          </Collapse>
+                          </Box>
                         </Table.Td>
                       </Table.Tr>
                     )}

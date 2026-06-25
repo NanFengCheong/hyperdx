@@ -79,8 +79,8 @@ export function TileAlertEditor({
     ? TILE_ALERT_INTERVAL_OPTIONS[alert.interval]
     : undefined;
 
-  const { data: alertData } = api.useAlert(alert.id);
-  const alertItem = alertData?.data;
+  const { data: alertsData } = api.useAlerts();
+  const alertItem = alertsData?.data.find(item => item._id === alert.id);
 
   return (
     <Paper data-testid="alert-details">

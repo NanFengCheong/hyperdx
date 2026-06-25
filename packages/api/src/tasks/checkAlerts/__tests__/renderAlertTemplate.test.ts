@@ -153,10 +153,12 @@ const render = (view: AlertMessageTemplateDefaultView, state: AlertState) =>
     clickhouseClient: mockClickhouseClient,
     metadata: mockMetadata,
     state,
+    teamId: 'team-123',
     template: null,
     title: 'Test Alert Title',
     view,
     teamWebhooksById: new Map(),
+    teamUsersById: new Map(),
   });
 
 interface AlertCase {
@@ -272,6 +274,8 @@ describe('renderAlertTemplate', () => {
             title: 'Test Alert Title',
             view: makeSearchView(),
             teamWebhooksById: new Map(),
+            teamId: 'team-123',
+            teamUsersById: new Map(),
           });
 
           // Handlebars syntax appears verbatim — it was NOT executed.

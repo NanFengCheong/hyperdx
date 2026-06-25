@@ -22,7 +22,8 @@ export default (req: NextApiRequest, res: NextApiResponse) => {
     // externals hook in next.config.mjs marks @hyperdx/api as external —
     // never attempt to resolve a module that isn't bundled.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const inlineApi = require('@hyperdx/api/build/serverless');
+    const nodeRequire = eval('require') as NodeRequire;
+    const inlineApi = nodeRequire('@hyperdx/api/build/src/serverless');
     const handler = inlineApi.default ?? inlineApi;
     return handler(req, res);
   }

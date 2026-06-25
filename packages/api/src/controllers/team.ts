@@ -1,5 +1,6 @@
 import {
   TeamClickHouseSettings,
+  TeamClickHouseSettingsUpdate,
   TelegramConfigSchema,
 } from '@hyperdx/common-utils/dist/types';
 import mongoose from 'mongoose';

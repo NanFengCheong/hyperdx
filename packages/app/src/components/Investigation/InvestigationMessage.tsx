@@ -28,7 +28,7 @@ function ToolCallDisplay({ toolCall }: { toolCall: ToolCall }) {
           {toolCall.name}
         </Text>
       </Group>
-      <Collapse in={opened}>
+      {opened && (
         <Box mt="xs">
           <Text size="xs" c="dimmed">
             Args: {JSON.stringify(toolCall.args, null, 2)}
@@ -38,7 +38,7 @@ function ToolCallDisplay({ toolCall }: { toolCall: ToolCall }) {
             {String(toolCall.result).length > 500 ? '...' : ''}
           </Text>
         </Box>
-      </Collapse>
+      )}
     </Paper>
   );
 }

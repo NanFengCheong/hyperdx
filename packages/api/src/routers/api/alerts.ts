@@ -24,7 +24,8 @@ import {
 } from '@/controllers/alerts';
 import { requirePermission } from '@/middleware/auth';
 import Alert from '@/models/alert';
-import { sendJson } from '@/utils/serialization';
+import { IAlertHistory } from '@/models/alertHistory';
+import { PreSerialized, sendJson } from '@/utils/serialization';
 import { alertSchema, objectIdSchema } from '@/utils/zod';
 
 const router = express.Router();

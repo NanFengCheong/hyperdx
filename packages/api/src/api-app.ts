@@ -8,6 +8,7 @@ import * as config from './config';
 import { isUserAuthenticated, requireWriteAccess } from './middleware/auth';
 import defaultCors from './middleware/cors';
 import { appErrorHandler } from './middleware/error';
+import mcpRouter from './mcp/app';
 import Team from './models/team';
 import routers from './routers/api';
 import clickhouseProxyRouter from './routers/api/clickhouseProxy';

@@ -3,6 +3,7 @@ import {
   resolvePermissions,
 } from '@hyperdx/common-utils/dist/permissions';
 import { Connection } from '@hyperdx/common-utils/dist/types';
+import { setTraceAttributes } from '@hyperdx/node-opentelemetry';
 import type { NextFunction, Request, Response } from 'express';
 import { serializeError } from 'serialize-error';
 
@@ -10,6 +11,10 @@ import * as config from '@/config';
 import { findUserByAccessKey } from '@/controllers/user';
 import type { UserDocument } from '@/models/user';
 import User from '@/models/user';
+import {
+  getStaticFeatureFlags,
+  setBusinessContext,
+} from '@/utils/instrumentation';
 import logger from '@/utils/logger';
 
 declare global {
