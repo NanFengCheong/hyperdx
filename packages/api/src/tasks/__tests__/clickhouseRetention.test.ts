@@ -15,7 +15,9 @@ jest.mock('@/models/auditLog', () => ({
 
 import AuditLog from '@/models/auditLog';
 import PlatformSetting from '@/models/platformSetting';
-import ClickhouseRetentionTask from '@/tasks/clickhouseRetention';
+import ClickhouseRetentionTask, {
+  getClickHouseRetentionStatus,
+} from '@/tasks/clickhouseRetention';
 import { TaskName } from '@/tasks/types';
 
 const mockPlatformSettingFindOne = jest.mocked(PlatformSetting.findOne);
@@ -37,6 +39,10 @@ function makeSystemDisksResponse(usedBytes: number, freeBytes: number) {
       free: String(freeBytes),
     },
   ]);
+}
+
+function formatGB(bytes: number) {
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2);
 }
 
 function getFetchQueries() {
@@ -67,7 +73,7 @@ describe('ClickhouseRetentionTask', () => {
       value: { enabled: true },
     } as any);
 
-    // 50GB total - under 90GB threshold for a 100GB disk
+    // Used space is under the detected filesystem threshold.
     mockFetch.mockResolvedValueOnce(
       makeSystemDisksResponse(50 * 1024 * 1024 * 1024, 50 * 1024 * 1024 * 1024),
     );
@@ -635,7 +641,7 @@ describe('ClickhouseRetentionTask', () => {
   it('should use default settings when no PlatformSetting exists', async () => {
     mockPlatformSettingFindOne.mockResolvedValue(null);
 
-    // Under default 100GB
+    // Used space is under the detected filesystem threshold.
     mockFetch.mockResolvedValueOnce(
       makeSystemDisksResponse(50 * 1024 * 1024 * 1024, 50 * 1024 * 1024 * 1024),
     );
@@ -683,6 +689,52 @@ describe('ClickhouseRetentionTask', () => {
       expect.objectContaining({
         method: 'POST',
         body: "ALTER TABLE `default`.`otel_logs` DROP PARTITION ID '20260401'",
+      }),
+    );
+  });
+
+  it('should report detected filesystem size instead of a hardcoded disk cap', async () => {
+    mockFetch.mockReset();
+    const GB = 1024 * 1024 * 1024;
+    const usedBytes = 19.52 * GB;
+    const freeBytes = 0.48 * GB;
+    const detectedBytes = usedBytes + freeBytes;
+    const targetUsagePercent = 80;
+
+    mockFetch
+      .mockResolvedValueOnce(
+        makeSystemPartsResponse([
+          {
+            database: 'default',
+            table: 'otel_metrics_gauge',
+            bytes: String(18.73 * GB),
+            oldest_partition: '2026-06-17',
+            newest_partition: '2026-06-26',
+            partition_count: '4',
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(makeSystemDisksResponse(usedBytes, freeBytes))
+      .mockResolvedValueOnce(
+        makeSystemPartsResponse([
+          { active: '1', bytes: String(19.33 * GB) },
+          { active: '0', bytes: String(0.01 * GB) },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        makeSystemPartsResponse([{ bytes: String(0.0 * GB) }]),
+      );
+
+    const status = await getClickHouseRetentionStatus(true, targetUsagePercent);
+
+    expect(status).toEqual(
+      expect.objectContaining({
+        diskSizeGB: formatGB(detectedBytes),
+        totalSizeGB: formatGB(usedBytes),
+        freeDiskGB: formatGB(freeBytes),
+        usagePercent: '97.6',
+        thresholdGB: formatGB(detectedBytes * (targetUsagePercent / 100)),
+        isOverThreshold: true,
       }),
     );
   });

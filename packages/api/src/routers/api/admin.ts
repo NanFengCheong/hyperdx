@@ -475,7 +475,7 @@ router.get('/clickhouse-retention/settings', async (req, res, next) => {
 // PUT /admin/clickhouse-retention/settings — update config
 const clickhouseRetentionSettingsSchema = z.object({
   enabled: z.boolean(),
-  targetUsagePercent: z.number().min(10).max(95),
+  targetUsagePercent: z.number().min(1).max(95),
 });
 
 router.put('/clickhouse-retention/settings', async (req, res, next) => {

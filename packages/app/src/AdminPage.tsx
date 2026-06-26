@@ -914,13 +914,13 @@ function DataRetentionPanel() {
     const thresholdPercentNum = Number(clickhouseThresholdPercent);
     if (
       !thresholdPercentNum ||
-      thresholdPercentNum < 10 ||
+      thresholdPercentNum < 1 ||
       thresholdPercentNum > 95
     ) {
       notifications.show({
         color: 'red',
         title: 'Invalid Settings',
-        message: 'Cleanup threshold must be between 10% and 95%.',
+        message: 'Cleanup threshold must be between 1% and 95%.',
       });
       return;
     }
@@ -1101,7 +1101,7 @@ function DataRetentionPanel() {
                 label="Cleanup Threshold (%)"
                 value={clickhouseThresholdPercent}
                 onChange={setClickhouseThresholdPercent}
-                min={10}
+                min={1}
                 max={95}
                 size="sm"
               />
