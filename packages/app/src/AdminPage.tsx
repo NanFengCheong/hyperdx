@@ -34,18 +34,22 @@ import {
   IconSearch,
   IconShieldLock,
   IconTrash,
+  IconUserPlus,
 } from '@tabler/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
 
+import PlatformAdminPermissionMatrix from './components/PlatformAdminPermissionMatrix';
 import RolesSection from './components/TeamSettings/RolesSection';
 import { useIsSuperAdmin } from './hooks/usePermission';
 import { useBrandDisplayName } from './theme/ThemeProvider';
 import {
   useAdminAuditLog,
+  useAdminInviteUser,
   useAdminNotificationLog,
   useAdminNotificationLogRetention,
   useAdminRetryNotification,
   useAdminTeamMembers,
+  useAdminTeamRoles,
   useAdminTeams,
   useClickhouseRetentionSettings,
   useClickhouseRetentionStatus,
@@ -138,62 +142,149 @@ function TeamMembersTable({ teamId }: { teamId: string }) {
   }
 
   return (
-    <Table
-      highlightOnHover
-      withTableBorder={false}
-      withColumnBorders={false}
-      ml="xl"
-      mb="sm"
-    >
-      <Table.Thead>
-        <Table.Tr>
-          <Table.Th>Email</Table.Th>
-          <Table.Th>Name</Table.Th>
-          <Table.Th>Role</Table.Th>
-          <Table.Th>Super Admin</Table.Th>
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>
-        {members.map((m: any) => (
-          <Table.Tr key={m._id ?? m.email}>
-            <Table.Td>
-              <Text size="sm">{m.email}</Text>
-            </Table.Td>
-            <Table.Td>
-              <Text size="sm">{m.name || '—'}</Text>
-            </Table.Td>
-            <Table.Td>
-              {m.roleId?.name ? (
-                <Badge variant="light" size="sm">
-                  {m.roleId.name}
-                </Badge>
-              ) : (
-                <Text c="dimmed" size="sm">
-                  —
-                </Text>
-              )}
-            </Table.Td>
-            <Table.Td>
-              <Switch
-                size="sm"
-                checked={!!m.isSuperAdmin}
-                disabled={pendingUserId === (m._id ?? m.email)}
-                onChange={() =>
-                  handleToggle(m._id ?? m.email, !!m.isSuperAdmin)
-                }
-                label={
-                  m.isSuperAdmin ? (
-                    <Badge color="red" variant="filled" size="xs">
-                      Super Admin
-                    </Badge>
-                  ) : null
-                }
-              />
-            </Table.Td>
+    <>
+      <Table
+        highlightOnHover
+        withTableBorder={false}
+        withColumnBorders={false}
+        ml="xl"
+        mb="sm"
+      >
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>Email</Table.Th>
+            <Table.Th>Name</Table.Th>
+            <Table.Th>Role</Table.Th>
+            <Table.Th>Super Admin</Table.Th>
           </Table.Tr>
-        ))}
-      </Table.Tbody>
-    </Table>
+        </Table.Thead>
+        <Table.Tbody>
+          {members.map((m: any) => (
+            <Table.Tr key={m._id ?? m.email}>
+              <Table.Td>
+                <Text size="sm">{m.email}</Text>
+              </Table.Td>
+              <Table.Td>
+                <Text size="sm">{m.name || '—'}</Text>
+              </Table.Td>
+              <Table.Td>
+                {m.roleId?.name ? (
+                  <Badge variant="light" size="sm">
+                    {m.roleId.name}
+                  </Badge>
+                ) : (
+                  <Text c="dimmed" size="sm">
+                    —
+                  </Text>
+                )}
+              </Table.Td>
+              <Table.Td>
+                <Switch
+                  size="sm"
+                  checked={!!m.isSuperAdmin}
+                  disabled={pendingUserId === (m._id ?? m.email)}
+                  onChange={() =>
+                    handleToggle(m._id ?? m.email, !!m.isSuperAdmin)
+                  }
+                  label={
+                    m.isSuperAdmin ? (
+                      <Badge color="red" variant="filled" size="xs">
+                        Super Admin
+                      </Badge>
+                    ) : null
+                  }
+                />
+              </Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+      <PlatformAdminPermissionMatrix members={members} />
+    </>
+  );
+}
+
+function InviteUserModal({
+  onClose,
+  team,
+}: {
+  onClose: () => void;
+  team: { _id: string; name: string };
+}) {
+  const [email, setEmail] = useState('');
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [roleId, setRoleId] = useState<string | null>(null);
+  const { data: roles, isLoading: rolesLoading } = useAdminTeamRoles(team._id);
+  const inviteUser = useAdminInviteUser();
+
+  const submit = () => {
+    inviteUser.mutate(
+      {
+        email,
+        isSuperAdmin,
+        roleId: roleId || undefined,
+        teamId: team._id,
+      },
+      {
+        onSuccess: () => {
+          notifications.show({
+            color: 'green',
+            message: `Invitation sent to ${email}`,
+          });
+          onClose();
+        },
+        onError: error => {
+          notifications.show({
+            color: 'red',
+            message: error.message,
+          });
+        },
+      },
+    );
+  };
+
+  return (
+    <Modal opened onClose={onClose} title={`Invite user to ${team.name}`}>
+      <Stack>
+        <TextInput
+          required
+          type="email"
+          label="Email"
+          value={email}
+          onChange={event => setEmail(event.currentTarget.value)}
+        />
+        <Select
+          clearable
+          searchable
+          disabled={rolesLoading}
+          label="Team role"
+          placeholder="Viewer (default)"
+          value={roleId}
+          onChange={setRoleId}
+          data={(roles?.data ?? []).map((role: any) => ({
+            label: role.name,
+            value: role._id,
+          }))}
+        />
+        <Switch
+          checked={isSuperAdmin}
+          label="Grant global Super Admin access"
+          onChange={event => setIsSuperAdmin(event.currentTarget.checked)}
+        />
+        <Group justify="flex-end">
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!email}
+            loading={inviteUser.isPending}
+            onClick={submit}
+          >
+            Send invitation
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
   );
 }
 
@@ -203,6 +294,10 @@ function TeamMembersTable({ teamId }: { teamId: string }) {
 function TeamsPanel() {
   const { data, isLoading } = useAdminTeams();
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
+  const [inviteTeam, setInviteTeam] = useState<{
+    _id: string;
+    name: string;
+  } | null>(null);
 
   if (isLoading) {
     return (
@@ -223,62 +318,87 @@ function TeamsPanel() {
   }
 
   return (
-    <Table highlightOnHover withTableBorder withColumnBorders={false}>
-      <Table.Thead>
-        <Table.Tr>
-          <Table.Th w={40} />
-          <Table.Th>Team Name</Table.Th>
-          <Table.Th>Created</Table.Th>
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>
-        {teams.map((team: any) => {
-          const isExpanded = expandedTeamId === team._id;
-          return (
-            <Table.Tr key={team._id} style={{ cursor: 'pointer' }}>
-              <Table.Td colSpan={3} p={0}>
-                <Table withTableBorder={false} withColumnBorders={false}>
-                  <Table.Tbody>
-                    <Table.Tr
-                      onClick={() =>
-                        setExpandedTeamId(isExpanded ? null : team._id)
-                      }
-                    >
-                      <Table.Td w={40}>
-                        <ActionIcon variant="subtle" size="sm">
-                          {isExpanded ? (
-                            <IconChevronDown size={16} />
-                          ) : (
-                            <IconChevronRight size={16} />
-                          )}
-                        </ActionIcon>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm" fw={500}>
-                          {team.name}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm" c="dimmed">
-                          {team.createdAt ? formatDate(team.createdAt) : '—'}
-                        </Text>
-                      </Table.Td>
-                    </Table.Tr>
-                    <Table.Tr>
-                      <Table.Td colSpan={3} p={0}>
-                        <Box>
-                          {isExpanded && <TeamMembersTable teamId={team._id} />}
-                        </Box>
-                      </Table.Td>
-                    </Table.Tr>
-                  </Table.Tbody>
-                </Table>
-              </Table.Td>
-            </Table.Tr>
-          );
-        })}
-      </Table.Tbody>
-    </Table>
+    <>
+      <Table highlightOnHover withTableBorder withColumnBorders={false}>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th w={40} />
+            <Table.Th>Team Name</Table.Th>
+            <Table.Th>Created</Table.Th>
+            <Table.Th>Actions</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {teams.map((team: any) => {
+            const isExpanded = expandedTeamId === team._id;
+            return (
+              <Table.Tr key={team._id} style={{ cursor: 'pointer' }}>
+                <Table.Td colSpan={4} p={0}>
+                  <Table withTableBorder={false} withColumnBorders={false}>
+                    <Table.Tbody>
+                      <Table.Tr
+                        onClick={() =>
+                          setExpandedTeamId(isExpanded ? null : team._id)
+                        }
+                      >
+                        <Table.Td w={40}>
+                          <ActionIcon variant="subtle" size="sm">
+                            {isExpanded ? (
+                              <IconChevronDown size={16} />
+                            ) : (
+                              <IconChevronRight size={16} />
+                            )}
+                          </ActionIcon>
+                        </Table.Td>
+                        <Table.Td>
+                          <Text size="sm" fw={500}>
+                            {team.name}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Text size="sm" c="dimmed">
+                            {team.createdAt ? formatDate(team.createdAt) : '—'}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Button
+                            leftSection={<IconUserPlus size={14} />}
+                            size="xs"
+                            variant="secondary"
+                            onClick={event => {
+                              event.stopPropagation();
+                              setInviteTeam(team);
+                            }}
+                          >
+                            Invite
+                          </Button>
+                        </Table.Td>
+                      </Table.Tr>
+                      <Table.Tr>
+                        <Table.Td colSpan={4} p={0}>
+                          <Box>
+                            {isExpanded && (
+                              <TeamMembersTable teamId={team._id} />
+                            )}
+                          </Box>
+                        </Table.Td>
+                      </Table.Tr>
+                    </Table.Tbody>
+                  </Table>
+                </Table.Td>
+              </Table.Tr>
+            );
+          })}
+        </Table.Tbody>
+      </Table>
+      {inviteTeam && (
+        <InviteUserModal
+          key={inviteTeam._id}
+          team={inviteTeam}
+          onClose={() => setInviteTeam(null)}
+        />
+      )}
+    </>
   );
 }
 

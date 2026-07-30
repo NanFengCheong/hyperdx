@@ -1,11 +1,13 @@
 import mongoose, { Schema } from 'mongoose';
 import ms from 'ms';
 
-interface ITeamInvite {
+export interface ITeamInvite {
   createdAt: Date;
   email: string;
+  isSuperAdmin?: boolean;
   name?: string;
-  teamId: string;
+  roleId?: mongoose.Types.ObjectId;
+  teamId: mongoose.Types.ObjectId;
   token: string;
   updatedAt: Date;
 }
@@ -18,6 +20,14 @@ const TeamInviteSchema = new Schema(
       required: true,
     },
     name: String,
+    isSuperAdmin: {
+      type: Boolean,
+      default: false,
+    },
+    roleId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Role',
+    },
     email: {
       type: String,
       required: true,

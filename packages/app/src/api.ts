@@ -281,14 +281,23 @@ const api = {
     return useMutation<
       { url: string },
       Error | HTTPError,
-      { name?: string; email: string }
+      { name?: string; email: string; roleId?: string }
     >({
-      mutationFn: async ({ name, email }: { name?: string; email: string }) =>
+      mutationFn: async ({
+        name,
+        email,
+        roleId,
+      }: {
+        name?: string;
+        email: string;
+        roleId?: string;
+      }) =>
         hdxServer(`team/invitation`, {
           method: 'POST',
           json: {
             name,
             email,
+            roleId,
           },
         }).json<{ url: string }>(),
     });
@@ -975,6 +984,32 @@ export const useAdminTeamMembers = (teamId: string | null) =>
     queryFn: () =>
       hdxServer(`admin/team/${encodeURIComponent(teamId!)}/members`).json(),
     enabled: !!teamId,
+  });
+
+export const useAdminTeamRoles = (teamId: string | null) =>
+  useQuery<{ data: any[] }>({
+    queryKey: ['admin', 'team-roles', teamId],
+    queryFn: () =>
+      hdxServer(`admin/team/${encodeURIComponent(teamId!)}/roles`).json(),
+    enabled: !!teamId,
+  });
+
+export const useAdminInviteUser = () =>
+  useMutation<
+    { url: string },
+    Error,
+    {
+      email: string;
+      isSuperAdmin: boolean;
+      roleId?: string;
+      teamId: string;
+    }
+  >({
+    mutationFn: invitation =>
+      hdxServer('team/invitation', {
+        method: 'POST',
+        json: invitation,
+      }).json(),
   });
 
 export const useToggleSuperAdmin = () =>

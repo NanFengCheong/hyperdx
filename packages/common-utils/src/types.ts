@@ -2351,6 +2351,9 @@ export const TeamInvitationSchema = z.object({
   createdAt: z.string(),
   email: z.string(),
   name: z.string().optional(),
+  isSuperAdmin: z.boolean().optional(),
+  roleId: z.string().optional(),
+  roleName: z.string().optional(),
   url: z.string(),
 });
 

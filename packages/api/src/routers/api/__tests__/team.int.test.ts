@@ -6,6 +6,8 @@ import { getLoggedInAgent, getServer } from '@/fixtures';
 import Alert, { AlertSource, AlertThresholdType } from '@/models/alert';
 import AuditLog from '@/models/auditLog';
 import { TEAM_SETTINGS_ACTION_REGEX } from '@/models/auditLogWhitelist';
+import Role from '@/models/role';
+import Team from '@/models/team';
 import TeamInvite from '@/models/teamInvite';
 import User from '@/models/user';
 
@@ -147,7 +149,171 @@ describe('team router', () => {
     if (teamInvite == null) {
       throw new Error('TeamInvite not found');
     }
+    const viewerRole = await Role.findOne({ name: 'Viewer', isSystem: true });
+    expect(teamInvite.roleId?.toString()).toBe(viewerRole?._id.toString());
     expect(resp.body.url).toContain(`/join-team?token=${teamInvite.token}`);
+  });
+
+  it('POST /team/invitation stores and returns the assigned role', async () => {
+    const { agent, team } = await getLoggedInAgent(server);
+    const role = await Role.create({
+      name: 'Incident Responder',
+      teamId: team._id,
+      permissions: ['alerts:view', 'alerts:silence'],
+      dataScopes: [],
+    });
+
+    await agent
+      .post('/team/invitation')
+      .send({
+        email: 'responder@example.com',
+        roleId: role._id.toString(),
+      })
+      .expect(200);
+
+    const invite = await TeamInvite.findOne({ email: 'responder@example.com' });
+    expect(invite?.roleId?.toString()).toBe(role._id.toString());
+
+    const invitations = await agent.get('/team/invitations').expect(200);
+    expect(invitations.body.data).toContainEqual(
+      expect.objectContaining({
+        email: 'responder@example.com',
+        roleId: role._id.toString(),
+        roleName: 'Incident Responder',
+      }),
+    );
+  });
+
+  it('POST /team/invitation rejects a role from another team', async () => {
+    const { agent } = await getLoggedInAgent(server);
+    const role = await Role.create({
+      name: 'Other Team Role',
+      teamId: new ObjectId(),
+      permissions: ['alerts:view'],
+      dataScopes: [],
+    });
+
+    await agent
+      .post('/team/invitation')
+      .send({
+        email: 'cross-team@example.com',
+        roleId: role._id.toString(),
+      })
+      .expect(400);
+
+    expect(
+      await TeamInvite.findOne({ email: 'cross-team@example.com' }),
+    ).toBeNull();
+  });
+
+  it('POST /team/invitation rejects the Super Admin role', async () => {
+    const { agent } = await getLoggedInAgent(server);
+    const role = await Role.findOne({ name: 'Super Admin', isSystem: true });
+    if (!role) throw new Error('Super Admin role not found');
+
+    await agent
+      .post('/team/invitation')
+      .send({
+        email: 'platform-admin@example.com',
+        roleId: role._id.toString(),
+      })
+      .expect(400);
+  });
+
+  it('lets a Platform Super Admin invite into another team and grant Super Admin', async () => {
+    const { agent } = await getLoggedInAgent(server);
+    const targetTeam = await Team.create({ name: 'Target Team' });
+    const targetRole = await Role.create({
+      name: 'Target Operator',
+      teamId: targetTeam._id,
+      permissions: ['alerts:view'],
+      dataScopes: [],
+    });
+
+    await agent
+      .post('/team/invitation')
+      .send({
+        email: 'cross-team-admin@example.com',
+        isSuperAdmin: true,
+        roleId: targetRole._id.toString(),
+        teamId: targetTeam._id.toString(),
+      })
+      .expect(200);
+
+    const invite = await TeamInvite.findOne({
+      email: 'cross-team-admin@example.com',
+    });
+    expect(invite).toMatchObject({ isSuperAdmin: true });
+    expect(invite?.teamId.toString()).toBe(targetTeam._id.toString());
+    expect(invite?.roleId?.toString()).toBe(targetRole._id.toString());
+
+    await agent
+      .post(`/team/setup/${invite?.token}`)
+      .send({ password: 'ValidPassword123!' })
+      .expect(302);
+
+    const invitedUser = await User.findOne({
+      email: 'cross-team-admin@example.com',
+    });
+    expect(invitedUser?.team.toString()).toBe(targetTeam._id.toString());
+    expect(invitedUser?.roleId?.toString()).toBe(targetRole._id.toString());
+    expect(invitedUser?.isSuperAdmin).toBe(true);
+  });
+
+  it('prevents non-Super Admins from cross-team invitations and Super Admin grants', async () => {
+    const { agent, user } = await getLoggedInAgent(server);
+    const targetTeam = await Team.create({ name: 'Target Team' });
+    await User.findByIdAndUpdate(user._id, { isSuperAdmin: false });
+
+    await agent
+      .post('/team/invitation')
+      .send({
+        email: 'cross-team-denied@example.com',
+        teamId: targetTeam._id.toString(),
+      })
+      .expect(403);
+    await agent
+      .post('/team/invitation')
+      .send({
+        email: 'super-admin-denied@example.com',
+        isSuperAdmin: true,
+      })
+      .expect(403);
+
+    expect(
+      await TeamInvite.find({
+        email: {
+          $in: [
+            'cross-team-denied@example.com',
+            'super-admin-denied@example.com',
+          ],
+        },
+      }),
+    ).toHaveLength(0);
+  });
+
+  it('POST /team/setup/:token applies the invited role', async () => {
+    const { agent, team } = await getLoggedInAgent(server);
+    const role = await Role.create({
+      name: 'Read Only Operator',
+      teamId: team._id,
+      permissions: ['alerts:view'],
+      dataScopes: [],
+    });
+    const invite = await TeamInvite.create({
+      email: 'new-operator@example.com',
+      teamId: team._id,
+      token: 'role-aware-invite-token',
+      roleId: role._id,
+    });
+
+    await agent
+      .post(`/team/setup/${invite.token}`)
+      .send({ password: 'ValidPassword123!' })
+      .expect(302);
+
+    const user = await User.findOne({ email: invite.email });
+    expect(user?.roleId?.toString()).toBe(role._id.toString());
   });
 
   it('POST /team/invitation with different case reuses existing invitation', async () => {

@@ -42,11 +42,12 @@ export default function JoinTeam() {
                   You&apos;re all set!
                 </Title>
                 <Text c="dimmed" className="text-center">
-                  Your account has been created with viewer access. You can log
-                  in immediately — no approval is needed.
+                  Your account has been created with the role assigned in your
+                  invitation. You can log in immediately — no approval is
+                  needed.
                 </Text>
                 <Text c="dimmed" size="sm" className="text-center">
-                  If you need greater permissions, please contact a platform
+                  If your access looks incorrect, please contact a platform
                   administrator.
                 </Text>
                 <Button
@@ -134,7 +135,7 @@ export default function JoinTeam() {
                     </Text>
                   )}
                   <Button
-                    variant={showOidc ? 'outline' : 'primary'}
+                    variant={showOidc ? 'secondary' : 'primary'}
                     type="submit"
                     size="md"
                     fullWidth

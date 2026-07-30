@@ -63,9 +63,15 @@ export default function TeamMembersSection() {
     refetch: refetchInvitations,
   } = api.useTeamInvitations();
 
-  const onSubmitTeamInviteForm = ({ emails }: { emails: string[] }) => {
+  const onSubmitTeamInviteForm = ({
+    emails,
+    roleId,
+  }: {
+    emails: string[];
+    roleId?: string;
+  }) => {
     for (const email of emails) {
-      sendTeamInviteAction(email);
+      sendTeamInviteAction(email, roleId);
     }
     setTeamInviteModalShow(false);
   };
@@ -94,16 +100,17 @@ export default function TeamMembersSection() {
       label: r.name,
     })),
   ];
+  const inviteRoleOptions = roleOptions.slice(1);
 
   const saveTeamInvitation = api.useSaveTeamInvitation();
   const deleteTeamMember = api.useDeleteTeamMember();
   const deleteTeamInvitation = api.useDeleteTeamInvitation();
   const reactivateTeamMember = api.useReactivateTeamMember();
 
-  const sendTeamInviteAction = (email: string) => {
+  const sendTeamInviteAction = (email: string, roleId?: string) => {
     if (email) {
       saveTeamInvitation.mutate(
-        { email },
+        { email, roleId },
         {
           onSuccess: () => {
             notifications.show({
@@ -462,6 +469,18 @@ export default function TeamMembersSection() {
                         </Button>
                       </CopyToClipboard>
                     </Table.Td>
+                    <Table.Td>
+                      <Group gap="xs">
+                        <Badge variant="light" size="sm">
+                          {invitation.roleName ?? 'Viewer'}
+                        </Badge>
+                        {invitation.isSuperAdmin && (
+                          <Badge color="red" variant="filled" size="sm">
+                            Super Admin
+                          </Badge>
+                        )}
+                      </Group>
+                    </Table.Td>
                     <Table.Td style={{ textAlign: 'right' }}>
                       {canInvite && (
                         <Group justify="flex-end" gap="8">
@@ -497,6 +516,8 @@ export default function TeamMembersSection() {
         <InviteTeamMemberForm
           onSubmit={onSubmitTeamInviteForm}
           isSubmitting={saveTeamInvitation.isPending}
+          canAssignRole={canAssignGroup}
+          roleOptions={inviteRoleOptions}
         />
       </Modal>
 
@@ -583,24 +604,34 @@ function parseEmails(input: string): string[] {
 }
 
 function InviteTeamMemberForm({
+  canAssignRole,
   isSubmitting,
   onSubmit,
+  roleOptions,
 }: {
+  canAssignRole: boolean;
   isSubmitting?: boolean;
-  onSubmit: (arg0: { emails: string[] }) => void;
+  onSubmit: (arg0: { emails: string[]; roleId?: string }) => void;
+  roleOptions: { label: string; value: string }[];
 }) {
   const [rawInput, setRawInput] = useState<string>('');
+  const [roleId, setRoleId] = useState<string | null>(null);
 
   const parsedEmails = useMemo(() => parseEmails(rawInput), [rawInput]);
   const validEmails = parsedEmails.filter(e => EMAIL_REGEX.test(e));
   const invalidEmails = parsedEmails.filter(e => !EMAIL_REGEX.test(e));
+  const selectedRoleId =
+    roleId ?? roleOptions.find(role => role.label === 'Viewer')?.value ?? null;
 
   return (
     <form
       onSubmit={e => {
         e.preventDefault();
         if (validEmails.length > 0) {
-          onSubmit({ emails: validEmails });
+          onSubmit({
+            emails: validEmails,
+            roleId: canAssignRole ? (selectedRoleId ?? undefined) : undefined,
+          });
         }
       }}
     >
@@ -620,6 +651,18 @@ function InviteTeamMemberForm({
           autosize
           maxRows={8}
         />
+        {canAssignRole && (
+          <Select
+            data-testid="invite-role-select"
+            data={roleOptions}
+            label="Role"
+            value={selectedRoleId}
+            onChange={setRoleId}
+            placeholder="Select a role"
+            required
+            withAsterisk={false}
+          />
+        )}
         {parsedEmails.length > 0 && (
           <div>
             <Text size="xs" c="dimmed" mb={4}>
@@ -654,7 +697,11 @@ function InviteTeamMemberForm({
           data-testid="send-invite-button"
           variant="primary"
           type="submit"
-          disabled={validEmails.length === 0 || isSubmitting}
+          disabled={
+            validEmails.length === 0 ||
+            isSubmitting ||
+            (canAssignRole && !selectedRoleId)
+          }
         >
           {validEmails.length > 1
             ? `Send ${validEmails.length} Invites`

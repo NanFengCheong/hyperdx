@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import { z } from 'zod';
 import { validateRequest } from 'zod-express-middleware';
 
+import Role from '@/models/role';
+
 import {
   RETENTION_DAYS_ALERTHISTORY,
   RETENTION_DAYS_AUDITLOG,
@@ -49,6 +51,24 @@ router.get('/team/:id/members', async (req, res, next) => {
       .select('email name roleId isSuperAdmin permissionOverrides')
       .populate('roleId');
     res.json({ data: members });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/team/:id/roles', async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid team ID' });
+    }
+    if (!(await Team.exists({ _id: req.params.id }))) {
+      return res.status(404).json({ message: 'Team not found' });
+    }
+    const roles = await Role.find({
+      name: { $ne: 'Super Admin' },
+      $or: [{ teamId: req.params.id }, { teamId: null, isSystem: true }],
+    }).sort({ isSystem: -1, name: 1 });
+    res.json({ data: roles });
   } catch (e) {
     next(e);
   }

@@ -15,10 +15,10 @@ import OtpVerification, {
   generateOtpPair,
   hashOtp,
 } from '@/models/otpVerification';
-import Role from '@/models/role';
 import TeamInvite from '@/models/teamInvite';
 import User from '@/models/user'; // TODO -> do not import model directly
 import { promoteIfDefaultSuperAdmin } from '@/scripts/migrateGroupsToRoles';
+import { applyInviteToUser, resolveInviteRole } from '@/services/teamInvite';
 import { setupTeamDefaults } from '@/setupDefaults';
 import {
   sendLoginVerificationEmail,
@@ -101,7 +101,7 @@ router.get('/auth/oidc', (req, res, next) => {
 
 router.get('/auth/oidc/callback', (req, res, next) => {
   const inviteToken = (req.session as any)?.inviteToken;
-  passport.authenticate('oidc', (err: Error, user: any) => {
+  passport.authenticate('oidc', async (err: Error, user: any) => {
     if (err) {
       logger.error({ err }, 'OIDC callback error');
       const redirectPath = inviteToken
@@ -119,6 +119,28 @@ router.get('/auth/oidc/callback', (req, res, next) => {
     if (user.disabledAt != null) {
       return res.redirect(`${config.FRONTEND_URL}/login?err=authFail`);
     }
+
+    let invite;
+    try {
+      invite = inviteToken
+        ? await TeamInvite.findOne({
+            token: inviteToken,
+            email: user.email.toLowerCase(),
+          })
+        : null;
+      if (inviteToken && !invite) {
+        throw new Error('Invitation not found for authenticated user');
+      }
+      if (invite) {
+        await applyInviteToUser(user, invite);
+      }
+    } catch (e) {
+      logger.error({ err: e, inviteToken }, 'Failed to apply OIDC invitation');
+      return res.redirect(
+        `${config.FRONTEND_URL}/join-team?token=${inviteToken}&err=authFail`,
+      );
+    }
+
     req.logIn(user, async loginErr => {
       if (loginErr) {
         logger.error({ err: loginErr }, 'OIDC session login error');
@@ -127,24 +149,17 @@ router.get('/auth/oidc/callback', (req, res, next) => {
       // Update lastLoginAt on successful OIDC login
       await User.findByIdAndUpdate(user._id, { lastLoginAt: new Date() });
       // Consume invite token if present
-      if (inviteToken) {
-        try {
-          await TeamInvite.findOneAndRemove({ token: inviteToken });
-          delete (req.session as any).inviteToken;
-          logger.info(
-            { userId: user._id, inviteToken },
-            'Consumed invite token after OIDC login',
-          );
-          // New invite users go to pending page instead of dashboard
-          return res.redirect(
-            `${config.FRONTEND_URL}/join-team?success=pending&token=${inviteToken}`,
-          );
-        } catch (e) {
-          logger.error(
-            { err: e, inviteToken },
-            'Failed to consume invite token',
-          );
-        }
+      if (inviteToken && invite) {
+        await invite.deleteOne();
+        delete (req.session as any).inviteToken;
+        logger.info(
+          { userId: user._id, inviteToken },
+          'Consumed invite token after OIDC login',
+        );
+        // New invite users go to pending page instead of dashboard
+        return res.redirect(
+          `${config.FRONTEND_URL}/join-team?success=pending&token=${inviteToken}`,
+        );
       }
       return res.redirect(`${config.FRONTEND_URL}/search`);
     });
@@ -573,15 +588,18 @@ router.post('/team/setup/:token', async (req, res, next) => {
       return res.status(401).send('Invalid token');
     }
 
-    // Assign default Viewer role to new invite users
-    const viewerRole = await Role.findOne({ name: 'Viewer', isSystem: true });
+    const invitedRole = await resolveInviteRole(teamInvite);
+    if (!invitedRole) {
+      return res.status(500).send('Default invitation role is not configured');
+    }
 
     (User as any).register(
       new User({
         email: teamInvite.email,
         name: teamInvite.email,
         team: teamInvite.teamId,
-        roleId: viewerRole?._id,
+        roleId: invitedRole._id,
+        isSuperAdmin: teamInvite.isSuperAdmin ?? false,
       }),
       password,
       async (err: Error, user: any) => {
@@ -598,8 +616,7 @@ router.post('/team/setup/:token', async (req, res, next) => {
           if (err) {
             return next(err);
           }
-          // Redirect to join-team with success state instead of dashboard
-          // so user sees "Registration successful — pending admin access grant"
+          // Redirect to join-team so the user sees the assigned-role success state.
           res.redirect(
             `${config.FRONTEND_URL}/join-team?success=pending&token=${token}`,
           );

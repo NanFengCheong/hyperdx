@@ -1,5 +1,6 @@
 import {
   ALL_PERMISSIONS,
+  hasPermission,
   resolvePermissions,
 } from '@hyperdx/common-utils/dist/permissions';
 import type {
@@ -39,7 +40,7 @@ import {
   findUsersByTeam,
   reactivateTeamMember,
 } from '@/controllers/user';
-import { requirePermission } from '@/middleware/auth';
+import { getResolvedPermissions, requirePermission } from '@/middleware/auth';
 import AuditLog from '@/models/auditLog';
 import {
   TEAM_SETTINGS_ACTION_REGEX,
@@ -50,6 +51,10 @@ import NotificationLog from '@/models/notificationLog';
 import Role from '@/models/role';
 import TeamInvite from '@/models/teamInvite';
 import User from '@/models/user';
+import {
+  findAssignableRole,
+  findDefaultInviteRole,
+} from '@/services/teamInvite';
 import { registerWebhook, validateBotToken } from '@/services/telegram';
 import { getTransporter, sendTeamInviteEmail } from '@/utils/emailService';
 import {
@@ -264,17 +269,41 @@ router.post(
   validateRequest({
     body: z.object({
       email: z.string().email(),
+      isSuperAdmin: z.boolean().optional(),
       name: z.string().optional(),
+      roleId: objectIdSchema.optional(),
+      teamId: objectIdSchema.optional(),
     }),
   }),
   async (req, res, next) => {
     try {
-      const { email: toEmail, name } = req.body;
-      const teamId = req.user?.team;
+      const {
+        email: toEmail,
+        isSuperAdmin = false,
+        name,
+        roleId,
+        teamId: requestedTeamId,
+      } = req.body;
+      const actorTeamId = req.user?.team;
       const fromEmail = req.user?.email;
 
-      if (teamId == null) {
+      if (actorTeamId == null) {
         throw new Error(`User ${req.user?._id} not associated with a team`);
+      }
+      const targetsAnotherTeam =
+        requestedTeamId != null &&
+        requestedTeamId.toString() !== actorTeamId.toString();
+      if ((targetsAnotherTeam || isSuperAdmin) && !req.user?.isSuperAdmin) {
+        return res.status(403).json({
+          message:
+            'Only Platform Super Admins can invite across teams or grant Super Admin',
+        });
+      }
+      const teamId = new mongoose.Types.ObjectId(
+        (requestedTeamId ?? actorTeamId).toString(),
+      );
+      if (!(await getTeam(teamId))) {
+        return res.status(404).json({ message: 'Team not found' });
       }
 
       if (fromEmail == null) {
@@ -291,6 +320,25 @@ router.post(
 
       // Normalize email to lowercase for consistency
       const normalizedEmail = toEmail.toLowerCase();
+      const defaultRole = await findDefaultInviteRole();
+      if (!defaultRole) {
+        throw new Error('Default invitation role is not configured');
+      }
+
+      const invitedRole = roleId
+        ? await findAssignableRole(teamId, roleId)
+        : defaultRole;
+      if (!invitedRole) {
+        return res.status(400).json({ message: 'Role not found' });
+      }
+      if (
+        !invitedRole._id.equals(defaultRole._id) &&
+        !hasPermission(getResolvedPermissions(req), 'members:assign-group')
+      ) {
+        return res.status(403).json({
+          message: "Forbidden: missing permission 'members:assign-group'",
+        });
+      }
 
       // Check for existing invitation with normalized email
       let teamInvite = await TeamInvite.findOne({
@@ -303,8 +351,15 @@ router.post(
           teamId,
           name,
           email: normalizedEmail,
+          isSuperAdmin,
+          roleId: invitedRole._id,
           token: crypto.randomBytes(32).toString('hex'),
         }).save();
+      } else {
+        teamInvite.name = name ?? teamInvite.name;
+        teamInvite.isSuperAdmin = isSuperAdmin;
+        teamInvite.roleId = invitedRole._id;
+        await teamInvite.save();
       }
 
       const joinUrl = `${config.FRONTEND_URL}/join-team?token=${teamInvite.token}`;
@@ -319,6 +374,22 @@ router.post(
         },
         actorId: req.user?._id,
       });
+
+      if (targetsAnotherTeam || isSuperAdmin) {
+        await AuditLog.create({
+          teamId,
+          actorId: req.user?._id,
+          actorEmail: fromEmail,
+          action: 'superadmin:invitation_created',
+          targetType: 'user',
+          targetId: teamInvite._id,
+          details: {
+            email: normalizedEmail,
+            roleId: invitedRole._id.toString(),
+            isSuperAdmin,
+          },
+        });
+      }
 
       res.json({
         url: joinUrl,
@@ -342,8 +413,16 @@ router.get('/invitations', async (req, res: TeamInviteExpressRes, next) => {
         createdAt: 1,
         email: 1,
         name: 1,
+        isSuperAdmin: 1,
+        roleId: 1,
         token: 1,
       },
+    );
+    const roles = await Role.find({
+      _id: { $in: teamInvites.flatMap(invite => invite.roleId ?? []) },
+    }).select('name');
+    const roleNames = new Map(
+      roles.map(role => [role._id.toString(), role.name]),
     );
     res.json({
       data: teamInvites.map(ti => ({
@@ -351,6 +430,9 @@ router.get('/invitations', async (req, res: TeamInviteExpressRes, next) => {
         createdAt: ti.createdAt.toISOString(),
         email: ti.email,
         name: ti.name,
+        isSuperAdmin: ti.isSuperAdmin,
+        roleId: ti.roleId?.toString(),
+        roleName: ti.roleId ? roleNames.get(ti.roleId.toString()) : undefined,
         url: getTeamInviteUrl(ti.token),
       })),
     });
@@ -369,9 +451,13 @@ router.delete(
   }),
   async (req, res, next) => {
     try {
+      const teamId = req.user?.team;
       const id = req.params.id;
 
-      await TeamInvite.findByIdAndDelete(id);
+      const invite = await TeamInvite.findOneAndDelete({ _id: id, teamId });
+      if (!invite) {
+        return res.status(404).json({ message: 'TeamInvite not found' });
+      }
 
       return res.json({ message: 'TeamInvite deleted' });
     } catch (e) {
