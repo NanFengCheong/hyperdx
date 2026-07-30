@@ -42,8 +42,8 @@ export default function JoinTeam() {
                   You&apos;re all set!
                 </Title>
                 <Text c="dimmed" className="text-center">
-                  Your account has been created with viewer access. You
-                  can log in immediately — no approval is needed.
+                  Your account has been created with viewer access. You can log
+                  in immediately — no approval is needed.
                 </Text>
                 <Text c="dimmed" size="sm" className="text-center">
                   If you need greater permissions, please contact a platform

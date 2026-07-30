@@ -264,62 +264,63 @@ export default function NotificationLogSection() {
                       <Table.Tr key={`${entry._id}-detail`}>
                         <Table.Td colSpan={8}>
                           <Box p="sm">
-                              {entry.error && (
-                                <Box mb="xs">
-                                  <Text size="xs" fw={600} c="red">
-                                    Error:
-                                  </Text>
-                                  <Code block>{entry.error}</Code>
-                                </Box>
-                              )}
-                              <Text size="xs" fw={600} mb={4}>
-                                Payload:
-                              </Text>
-                              {typeof entry.payload?.html === 'string' && (
-                                <Box mb="xs">
-                                  <Text size="xs" c="dimmed" mb={4}>
-                                    HTML Preview:
-                                  </Text>
-                                  <Box
-                                    style={{
-                                      border: '1px solid var(--mantine-color-dark-4)',
-                                      borderRadius: 4,
-                                      background: '#fff',
-                                    }}
-                                  >
-                                    <iframe
-                                      srcDoc={entry.payload.html}
-                                      sandbox=""
-                                      title="Notification HTML preview"
-                                      style={{
-                                        width: '100%',
-                                        height: 400,
-                                        border: 0,
-                                        display: 'block',
-                                      }}
-                                    />
-                                  </Box>
-                                </Box>
-                              )}
-                              <Code block>
-                                {JSON.stringify(entry.payload, null, 2)}
-                              </Code>
-                              {entry.response &&
-                                Object.keys(entry.response).length > 0 && (
-                                  <Box mt="xs">
-                                    <Text size="xs" fw={600} mb={4}>
-                                      Response:
-                                    </Text>
-                                    <Code block>
-                                      {JSON.stringify(entry.response, null, 2)}
-                                    </Code>
-                                  </Box>
-                                )}
-                              {entry.retryOf && (
-                                <Text size="xs" c="dimmed" mt="xs">
-                                  Retry of: {entry.retryOf}
+                            {entry.error && (
+                              <Box mb="xs">
+                                <Text size="xs" fw={600} c="red">
+                                  Error:
                                 </Text>
+                                <Code block>{entry.error}</Code>
+                              </Box>
+                            )}
+                            <Text size="xs" fw={600} mb={4}>
+                              Payload:
+                            </Text>
+                            {typeof entry.payload?.html === 'string' && (
+                              <Box mb="xs">
+                                <Text size="xs" c="dimmed" mb={4}>
+                                  HTML Preview:
+                                </Text>
+                                <Box
+                                  style={{
+                                    border:
+                                      '1px solid var(--mantine-color-dark-4)',
+                                    borderRadius: 4,
+                                    background: '#fff',
+                                  }}
+                                >
+                                  <iframe
+                                    srcDoc={entry.payload.html}
+                                    sandbox=""
+                                    title="Notification HTML preview"
+                                    style={{
+                                      width: '100%',
+                                      height: 400,
+                                      border: 0,
+                                      display: 'block',
+                                    }}
+                                  />
+                                </Box>
+                              </Box>
+                            )}
+                            <Code block>
+                              {JSON.stringify(entry.payload, null, 2)}
+                            </Code>
+                            {entry.response &&
+                              Object.keys(entry.response).length > 0 && (
+                                <Box mt="xs">
+                                  <Text size="xs" fw={600} mb={4}>
+                                    Response:
+                                  </Text>
+                                  <Code block>
+                                    {JSON.stringify(entry.response, null, 2)}
+                                  </Code>
+                                </Box>
                               )}
+                            {entry.retryOf && (
+                              <Text size="xs" c="dimmed" mt="xs">
+                                Retry of: {entry.retryOf}
+                              </Text>
+                            )}
                           </Box>
                         </Table.Td>
                       </Table.Tr>

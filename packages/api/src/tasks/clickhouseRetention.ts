@@ -482,7 +482,9 @@ async function truncateSystemLogTable(table: string): Promise<void> {
   );
 }
 
-export default class ClickhouseRetentionTask implements HdxTask<ClickhouseRetentionTaskArgs> {
+export default class ClickhouseRetentionTask
+  implements HdxTask<ClickhouseRetentionTaskArgs>
+{
   constructor(private args: ClickhouseRetentionTaskArgs) {}
 
   async execute(): Promise<void> {

@@ -72,7 +72,6 @@ router.put(
         return;
       }
 
-      // Build the base connection update
       const shouldUnsetPrefix =
         req.body.hyperdxSettingPrefix === null ||
         req.body.hyperdxSettingPrefix === '';
@@ -87,7 +86,6 @@ router.put(
           : {
               password: connection.password,
             }),
-        // Only include hyperdxSettingPrefix if it's a valid string
         ...(!shouldUnsetPrefix && hyperdxSettingPrefix
           ? { hyperdxSettingPrefix }
           : {}),

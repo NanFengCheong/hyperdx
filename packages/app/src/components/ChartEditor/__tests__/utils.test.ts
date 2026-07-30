@@ -105,6 +105,32 @@ describe('convertFormStateToSavedChartConfig', () => {
     });
   });
 
+  it('persists alternateRowBackground for a sql+table config', () => {
+    const form: ChartEditorFormState = {
+      configType: 'sql',
+      displayType: DisplayType.Table,
+      sqlTemplate: 'SELECT 1',
+      connection: 'conn-1',
+      alternateRowBackground: true,
+      series: [],
+    };
+    const result = convertFormStateToSavedChartConfig(form, undefined);
+    expect(result).toMatchObject({ alternateRowBackground: true });
+  });
+
+  it('persists alternateRowBackground for a promql+table config', () => {
+    const form: ChartEditorFormState = {
+      configType: 'promql',
+      displayType: DisplayType.Table,
+      promqlExpression: 'up',
+      connection: 'conn-1',
+      alternateRowBackground: true,
+      series: [],
+    };
+    const result = convertFormStateToSavedChartConfig(form, undefined);
+    expect(result).toMatchObject({ alternateRowBackground: true });
+  });
+
   it('returns a raw SQL config for Line displayType', () => {
     const form: ChartEditorFormState = {
       configType: 'sql',
@@ -131,14 +157,12 @@ describe('convertFormStateToSavedChartConfig', () => {
       connection: 'conn-1',
       series: [],
     };
-    const result = convertFormStateToSavedChartConfig(
-      form,
-      undefined,
-    ) as BuilderSavedChartConfig;
-    expect(result).toBeDefined();
-    expect(result.displayType).toBe(DisplayType.Markdown);
-    expect(result.markdown).toBe('## Note');
-    expect(result.select).toEqual([]);
+    const result = convertFormStateToSavedChartConfig(form, undefined);
+    expect(result).toMatchObject({
+      displayType: DisplayType.Markdown,
+      markdown: '## Note',
+      select: [],
+    });
   });
 
   it('uses sqlTemplate empty string as default when undefined', () => {
@@ -147,12 +171,8 @@ describe('convertFormStateToSavedChartConfig', () => {
       displayType: DisplayType.Table,
       series: [],
     };
-    const result = convertFormStateToSavedChartConfig(
-      form,
-      undefined,
-    ) as RawSqlSavedChartConfig;
-    expect(result.sqlTemplate).toBe('');
-    expect(result.connection).toBe('');
+    const result = convertFormStateToSavedChartConfig(form, undefined);
+    expect(result).toMatchObject({ sqlTemplate: '', connection: '' });
   });
 
   it('maps series to select for builder config', () => {
@@ -353,6 +373,32 @@ describe('convertFormStateToChartConfig', () => {
       displayType: DisplayType.Table,
       dateRange,
     });
+  });
+
+  it('threads alternateRowBackground into the rendered sql+table config', () => {
+    const form: ChartEditorFormState = {
+      configType: 'sql',
+      displayType: DisplayType.Table,
+      sqlTemplate: 'SELECT now()',
+      connection: 'conn-1',
+      alternateRowBackground: true,
+      series: [],
+    };
+    const result = convertFormStateToChartConfig(form, dateRange, undefined);
+    expect(result).toMatchObject({ alternateRowBackground: true });
+  });
+
+  it('threads alternateRowBackground into the rendered promql+table config', () => {
+    const form: ChartEditorFormState = {
+      configType: 'promql',
+      displayType: DisplayType.Table,
+      promqlExpression: 'up',
+      connection: 'conn-1',
+      alternateRowBackground: true,
+      series: [],
+    };
+    const result = convertFormStateToChartConfig(form, dateRange, undefined);
+    expect(result).toMatchObject({ alternateRowBackground: true });
   });
 
   it('returns builder config with source fields merged', () => {
@@ -563,6 +609,21 @@ describe('validateChartForm', () => {
     const errors = validateChartForm(
       makeForm({
         displayType: DisplayType.Pie,
+        source: 'source-log',
+        series: [seriesItem],
+      }),
+      logSource,
+      setError,
+    );
+    expect(errors).toHaveLength(0);
+    expect(setError).not.toHaveBeenCalled();
+  });
+
+  it('returns no errors for a Bar chart with exactly one series', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        displayType: DisplayType.Bar,
         source: 'source-log',
         series: [seriesItem],
       }),
@@ -1036,7 +1097,45 @@ describe('validateChartForm', () => {
 
   // ── Number / Pie single-series validation ────────────────────────────
 
-  it('errors when Number chart has more than one series', () => {
+  it('allows a Number chart with two series in ratio mode', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        displayType: DisplayType.Number,
+        source: 'source-log',
+        seriesReturnType: 'ratio',
+        series: [seriesItem, seriesItem],
+      }),
+      logSource,
+      setError,
+    );
+    expect(errors).not.toContainEqual(
+      expect.objectContaining({ path: 'series' }),
+    );
+  });
+
+  it('errors when Number chart has two series without ratio mode', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        displayType: DisplayType.Number,
+        source: 'source-log',
+        seriesReturnType: 'column',
+        series: [seriesItem, seriesItem],
+      }),
+      logSource,
+      setError,
+    );
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        path: 'series',
+        message:
+          'Number charts support a single series unless ratio mode (As Ratio) is enabled',
+      }),
+    );
+  });
+
+  it('errors when Number chart has two series and seriesReturnType is unset', () => {
     const setError = jest.fn();
     const errors = validateChartForm(
       makeForm({
@@ -1050,7 +1149,28 @@ describe('validateChartForm', () => {
     expect(errors).toContainEqual(
       expect.objectContaining({
         path: 'series',
-        message: `Only one series is allowed for ${DisplayType.Number} charts`,
+        message:
+          'Number charts support a single series unless ratio mode (As Ratio) is enabled',
+      }),
+    );
+  });
+
+  it('errors when Number chart has more than two series in ratio mode', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        displayType: DisplayType.Number,
+        source: 'source-log',
+        seriesReturnType: 'ratio',
+        series: [seriesItem, seriesItem, seriesItem],
+      }),
+      logSource,
+      setError,
+    );
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        path: 'series',
+        message: 'Number charts support at most two series (ratio mode)',
       }),
     );
   });
@@ -1070,6 +1190,25 @@ describe('validateChartForm', () => {
       expect.objectContaining({
         path: 'series',
         message: `Only one series is allowed for ${DisplayType.Pie} charts`,
+      }),
+    );
+  });
+
+  it('errors when Bar chart has more than one series', () => {
+    const setError = jest.fn();
+    const errors = validateChartForm(
+      makeForm({
+        displayType: DisplayType.Bar,
+        source: 'source-log',
+        series: [seriesItem, seriesItem],
+      }),
+      logSource,
+      setError,
+    );
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        path: 'series',
+        message: `Only one series is allowed for ${DisplayType.Bar} charts`,
       }),
     );
   });
@@ -1271,12 +1410,14 @@ describe('validateChartForm', () => {
         series: [
           { ...seriesItem, aggFn: 'sum', valueExpression: '' },
           { ...seriesItem, aggFn: 'avg', valueExpression: '' },
+          { ...seriesItem, aggFn: 'avg', valueExpression: '' },
         ],
       }),
       logSource,
       setError,
     );
-    // Should have: source error + 2 valueExpression errors + series count error
+    // Should have: source error + 3 valueExpression errors + series count error
+    // (Number charts allow up to two series, so three trips the count rule)
     expect(errors).toContainEqual(expect.objectContaining({ path: 'source' }));
     expect(errors).toContainEqual(
       expect.objectContaining({ path: 'series.0.valueExpression' }),
@@ -1284,8 +1425,11 @@ describe('validateChartForm', () => {
     expect(errors).toContainEqual(
       expect.objectContaining({ path: 'series.1.valueExpression' }),
     );
+    expect(errors).toContainEqual(
+      expect.objectContaining({ path: 'series.2.valueExpression' }),
+    );
     expect(errors).toContainEqual(expect.objectContaining({ path: 'series' }));
-    expect(errors).toHaveLength(4);
+    expect(errors).toHaveLength(5);
   });
 
   it('calls setError for every accumulated error', () => {

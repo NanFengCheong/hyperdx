@@ -565,99 +565,102 @@ router.post(
       'external_api.charts.series',
       async span => {
         try {
-      const teamId = req.user?.team;
-      if (!teamId) {
-        return res.status(403).send({ error: 'Team context missing' });
-      }
-      const team = await getTeam(teamId);
-      if (!team) {
-        return res.status(403).send({ error: 'Team not found' });
-      }
-
-      const {
-        endTime,
-        granularity,
-        startTime,
-        seriesReturnType,
-        series: externalSeries,
-      } = req.body;
-
-      const allResults = await Promise.all(
-        externalSeries.map(async (series, index) => {
-          try {
-            const source = await getSource(teamId.toString(), series.sourceId);
-            if (!source || !source.connection) {
-              // Return a structured error object instead of throwing
-              return {
-                error: {
-                  status: 404,
-                  message: `Source not found for series ${index}`,
-                },
-              } as SeriesResult;
-            }
-
-            const connection = await getConnectionById(
-              teamId.toString(),
-              source.connection.toString(),
-              true, // Decrypt password
-            );
-
-            if (!connection) {
-              return {
-                error: {
-                  status: 404,
-                  message: `Connection not found for series ${index}`,
-                },
-              } as SeriesResult;
-            }
-
-            const { chartConfig, groupByFields } =
-              await buildChartConfigFromRequest(
-                {
-                  externalSeries: series,
-                  sourceId: series.sourceId,
-                  seriesIndex: index,
-                  startTime,
-                  endTime,
-                  granularity,
-                  seriesReturnType,
-                  teamId: teamId.toString(),
-                },
-                source,
-                connection,
-              );
-
-            // Inject RBAC data scope filter if the user's group has one
-            const dataScope = getUserDataScope(req);
-            if (dataScope && 'where' in chartConfig) {
-              (chartConfig as any).where = (chartConfig as any).where
-                ? `(${(chartConfig as any).where}) (${dataScope})`
-                : dataScope;
-            }
-
-            const clickhouseClient = new ClickhouseClient({
-              host: connection.host,
-              username: connection.username,
-              password: connection.password,
-            });
-
-            const metadata = getMetadata(clickhouseClient);
-            const result = await clickhouseClient.queryChartConfig({
-              config: chartConfig,
-              metadata,
-              querySettings: source.querySettings,
-            });
-
-            return {
-              data: result.data || [],
-              groupByFields,
-            } as SeriesResult;
-          } catch (err) {
-            console.error(`Error processing series ${index}:`, err);
-            throw err;
+          const teamId = req.user?.team;
+          if (!teamId) {
+            return res.status(403).send({ error: 'Team context missing' });
           }
-        }),
-      );
+          const team = await getTeam(teamId);
+          if (!team) {
+            return res.status(403).send({ error: 'Team not found' });
+          }
+
+          const {
+            endTime,
+            granularity,
+            startTime,
+            seriesReturnType,
+            series: externalSeries,
+          } = req.body;
+
+          const allResults = await Promise.all(
+            externalSeries.map(async (series, index) => {
+              try {
+                const source = await getSource(
+                  teamId.toString(),
+                  series.sourceId,
+                );
+                if (!source || !source.connection) {
+                  // Return a structured error object instead of throwing
+                  return {
+                    error: {
+                      status: 404,
+                      message: `Source not found for series ${index}`,
+                    },
+                  } as SeriesResult;
+                }
+
+                const connection = await getConnectionById(
+                  teamId.toString(),
+                  source.connection.toString(),
+                  true, // Decrypt password
+                );
+
+                if (!connection) {
+                  return {
+                    error: {
+                      status: 404,
+                      message: `Connection not found for series ${index}`,
+                    },
+                  } as SeriesResult;
+                }
+
+                const { chartConfig, groupByFields } =
+                  await buildChartConfigFromRequest(
+                    {
+                      externalSeries: series,
+                      sourceId: series.sourceId,
+                      seriesIndex: index,
+                      startTime,
+                      endTime,
+                      granularity,
+                      seriesReturnType,
+                      teamId: teamId.toString(),
+                    },
+                    source,
+                    connection,
+                  );
+
+                // Inject RBAC data scope filter if the user's group has one
+                const dataScope = getUserDataScope(req);
+                if (dataScope && 'where' in chartConfig) {
+                  (chartConfig as any).where = (chartConfig as any).where
+                    ? `(${(chartConfig as any).where}) (${dataScope})`
+                    : dataScope;
+                }
+
+                const clickhouseClient = new ClickhouseClient({
+                  host: connection.host,
+                  username: connection.username,
+                  password: connection.password,
+                });
+
+                const metadata = getMetadata(clickhouseClient);
+                const result = await clickhouseClient.queryChartConfig({
+                  config: chartConfig,
+                  metadata,
+                  querySettings: source.querySettings,
+                });
+
+                return {
+                  data: result.data || [],
+                  groupByFields,
+                } as SeriesResult;
+              } catch (err) {
+                console.error(`Error processing series ${index}:`, err);
+                throw err;
+              }
+            }),
+          );
 
           // Check if any results contain errors
           const errorResult = allResults.find(

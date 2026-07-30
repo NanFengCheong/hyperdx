@@ -8,39 +8,42 @@ import { sendJson } from '@/utils/serialization';
 
 const router = express.Router();
 
-router.get('/', async (req, res: express.Response<MeApiResponse | null>, next) => {
-  try {
-    if (req.user == null) {
-      return res.json(null);
+router.get(
+  '/',
+  async (req, res: express.Response<MeApiResponse | null>, next) => {
+    try {
+      if (req.user == null) {
+        return res.json(null);
+      }
+
+      const {
+        _id: id,
+        accessKey,
+        createdAt,
+        email,
+        name,
+        team: teamId,
+      } = req.user;
+
+      const team = await getTeam(teamId);
+      if (team == null) {
+        throw new Api404Error(`Team not found for user ${id}`);
+      }
+
+      return sendJson(res, {
+        accessKey,
+        createdAt,
+        email,
+        id,
+        name,
+        team,
+        usageStatsEnabled: USAGE_STATS_ENABLED,
+        aiAssistantEnabled: !!(AI_API_KEY || ANTHROPIC_API_KEY),
+      });
+    } catch (e) {
+      next(e);
     }
-
-    const {
-      _id: id,
-      accessKey,
-      createdAt,
-      email,
-      name,
-      team: teamId,
-    } = req.user;
-
-    const team = await getTeam(teamId);
-    if (team == null) {
-      throw new Api404Error(`Team not found for user ${id}`);
-    }
-
-    return sendJson(res, {
-      accessKey,
-      createdAt,
-      email,
-      id,
-      name,
-      team,
-      usageStatsEnabled: USAGE_STATS_ENABLED,
-      aiAssistantEnabled: !!(AI_API_KEY || ANTHROPIC_API_KEY),
-    });
-  } catch (e) {
-    next(e);
-  }
-});
+  },
+);
 
 export default router;

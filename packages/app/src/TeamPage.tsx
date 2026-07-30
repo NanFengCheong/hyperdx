@@ -180,6 +180,10 @@ export default function TeamPage() {
       return;
     }
 
+    // Preserve any hash (e.g. `#source-<id>` deep links consumed by
+    // SourcesList) — this replace only normalizes the `tab` param and
+    // must not strip other parts of the URL.
+    const hash = window.location.hash.slice(1);
     void router.replace(
       {
         pathname: router.pathname,
@@ -187,6 +191,7 @@ export default function TeamPage() {
           ...router.query,
           tab: activeTab,
         },
+        hash: hash || undefined,
       },
       undefined,
       {

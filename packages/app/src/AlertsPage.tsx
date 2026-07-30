@@ -5,6 +5,8 @@ import { useRouter } from 'next/router';
 import cx from 'classnames';
 import type { Duration } from 'date-fns';
 import { add, formatRelative } from 'date-fns';
+import { useQueryState } from 'nuqs';
+import ReactMarkdown from 'react-markdown';
 import {
   AlertHistory,
   AlertSource,
@@ -28,8 +30,6 @@ import {
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
-import { useQueryClient } from '@tanstack/react-query';
-import { useQueryState } from 'nuqs';
 import {
   IconAlertTriangle,
   IconBell,
@@ -38,12 +38,13 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconHelpCircle,
+  IconHourglass,
   IconInfoCircleFilled,
   IconNote,
   IconSearch,
   IconTableRow,
 } from '@tabler/icons-react';
-import ReactMarkdown from 'react-markdown';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { AckAlert } from '@/components/alerts/AckAlert';
 import { AlertHistoryCardList } from '@/components/alerts/AlertHistoryCards';
@@ -186,7 +187,9 @@ function getAlertTags(alert: AlertsPageItem): string[] {
 function getAlertDisplayName(alert: AlertsPageItem): string {
   if (alert.source === AlertSource.TILE && alert.dashboard) {
     const tile = alert.dashboard.tiles.find(tile => tile.id === alert.tileId);
-    return [alert.dashboard.name, tile?.config.name].filter(Boolean).join(' / ');
+    return [alert.dashboard.name, tile?.config.name]
+      .filter(Boolean)
+      .join(' / ');
   }
   if (alert.source === AlertSource.SAVED_SEARCH && alert.savedSearch) {
     return alert.savedSearch.name;
@@ -345,6 +348,11 @@ function AlertDetails({ alert }: { alert: AlertsPageItem }) {
             Alert
           </Badge>
         )}
+        {alert.state === AlertState.PENDING && (
+          <Badge variant="light" color="orange">
+            Pending
+          </Badge>
+        )}
         {alert.state === AlertState.OK && <Badge variant="light">Ok</Badge>}
         {alert.state === AlertState.DISABLED && (
           <Badge variant="light" color="gray">
@@ -408,6 +416,9 @@ function AlertDetails({ alert }: { alert: AlertsPageItem }) {
 
 function AlertCardList({ alerts }: { alerts: AlertsPageItem[] }) {
   const alarmAlerts = alerts.filter(alert => alert.state === AlertState.ALERT);
+  const pendingAlerts = alerts.filter(
+    alert => alert.state === AlertState.PENDING,
+  );
   const okData = alerts.filter(alert => alert.state === AlertState.OK);
   const draftAlerts = alerts.filter(alert => alert.state === ('DRAFT' as any));
 
@@ -419,6 +430,16 @@ function AlertCardList({ alerts }: { alerts: AlertsPageItem[] }) {
             <IconAlertTriangle size={14} /> Triggered
           </Group>
           {alarmAlerts.map(alert => (
+            <AlertDetails key={alert._id} alert={alert} />
+          ))}
+        </div>
+      )}
+      {pendingAlerts.length > 0 && (
+        <div>
+          <Group className={styles.sectionHeader}>
+            <IconHourglass size={14} /> Pending
+          </Group>
+          {pendingAlerts.map(alert => (
             <AlertDetails key={alert._id} alert={alert} />
           ))}
         </div>

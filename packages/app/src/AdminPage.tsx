@@ -13,6 +13,7 @@ import {
   Modal,
   NumberInput,
   Pagination,
+  Paper,
   Progress,
   Select,
   Stack,
@@ -27,10 +28,8 @@ import { DatePickerInput } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
 import {
   IconChevronDown,
-  IconChevronLeft,
   IconChevronRight,
   IconChevronUp,
-  IconPlayerPlay,
   IconRefresh,
   IconSearch,
   IconShieldLock,
@@ -797,13 +796,17 @@ function NotificationLogPanel() {
 
 // ---------------------------------------------------------------------------
 // Data Retention Tab
-// ---------------------------------------------------------------------------
 function DataRetentionPanel() {
   const [modalOpen, setModalOpen] = useState(false);
   const [dryRun, setDryRun] = useState(false);
   const [clickhouseModalOpen, setClickhouseModalOpen] = useState(false);
   const [clickhouseDryRun, setClickhouseDryRun] = useState(false);
   const [clickhouseNuke, setClickhouseNuke] = useState(false);
+  const [clickhouseDeleteConfirmation, setClickhouseDeleteConfirmation] =
+    useState('');
+  const [lastCompletedAction, setLastCompletedAction] = useState<string | null>(
+    null,
+  );
   const queryClient = useQueryClient();
 
   const { data: settingsData, isLoading: settingsLoading } =
@@ -827,7 +830,6 @@ function DataRetentionPanel() {
   const [clickhouseSettingsInitialized, setClickhouseSettingsInitialized] =
     useState(false);
 
-  // Sync form state when settings load
   if (settingsData?.data && !settingsInitialized) {
     setAuditLog(settingsData.data.auditLog);
     setAlertHistory(settingsData.data.alertHistory);
@@ -842,6 +844,20 @@ function DataRetentionPanel() {
     setClickhouseSettingsInitialized(true);
   }
 
+  const auditLogNum = Number(auditLog);
+  const alertHistoryNum = Number(alertHistory);
+  const thresholdPercentNum = Number(clickhouseThresholdPercent);
+  const auditLogInvalid =
+    !Number.isInteger(auditLogNum) || auditLogNum < 1 || auditLogNum > 3650;
+  const alertHistoryInvalid =
+    !Number.isInteger(alertHistoryNum) ||
+    alertHistoryNum < 1 ||
+    alertHistoryNum > 3650;
+  const clickhouseThresholdInvalid =
+    !Number.isInteger(thresholdPercentNum) ||
+    thresholdPercentNum < 1 ||
+    thresholdPercentNum > 95;
+
   const clickhouseStatus = clickhouseStatusData?.data;
   const clickhouseUsagePercent = Number(clickhouseStatus?.usagePercent ?? 0);
   const clickhouseTargetUsagePercent =
@@ -853,15 +869,14 @@ function DataRetentionPanel() {
       (sum, table) => sum + Number(table.sizeGB),
       0,
     ) ?? 0;
-  const clickhouseActivePartsGB = Number(
-    clickhouseStatus?.storageBreakdown?.activePartsGB ?? clickhouseTableUsageGB,
-  );
   const clickhouseInactivePartsGB = Number(
     clickhouseStatus?.storageBreakdown?.inactivePartsGB ?? 0,
   );
   const clickhouseDetachedPartsGB = Number(
     clickhouseStatus?.storageBreakdown?.detachedPartsGB ?? 0,
   );
+  const clickhouseReclaimableGB =
+    clickhouseInactivePartsGB + clickhouseDetachedPartsGB;
   const clickhouseUntrackedUsageGB = Math.max(
     0,
     Number(
@@ -871,29 +886,23 @@ function DataRetentionPanel() {
   );
 
   const handleSaveSettings = useCallback(() => {
-    const auditLogNum = Number(auditLog);
-    const alertHistoryNum = Number(alertHistory);
-    if (
-      !auditLogNum ||
-      auditLogNum < 1 ||
-      !alertHistoryNum ||
-      alertHistoryNum < 1
-    ) {
+    if (auditLogInvalid || alertHistoryInvalid) {
       notifications.show({
         color: 'red',
-        title: 'Invalid Settings',
-        message: 'Retention days must be at least 1.',
+        title: 'Invalid MongoDB settings',
+        message: 'Retention must be a whole number between 1 and 3650 days.',
       });
       return;
     }
+
     updateSettings.mutate(
       { auditLog: auditLogNum, alertHistory: alertHistoryNum },
       {
         onSuccess: () => {
           notifications.show({
             color: 'green',
-            title: 'Settings Saved',
-            message: 'Data retention settings updated successfully.',
+            title: 'MongoDB settings saved',
+            message: 'Document retention settings updated successfully.',
           });
           queryClient.invalidateQueries({
             queryKey: ['admin', 'data-retention-settings'],
@@ -902,25 +911,27 @@ function DataRetentionPanel() {
         onError: e => {
           notifications.show({
             color: 'red',
-            title: 'Save Failed',
+            title: 'Save failed',
             message: e.message ?? 'Failed to update retention settings.',
           });
         },
       },
     );
-  }, [auditLog, alertHistory, updateSettings, queryClient]);
+  }, [
+    auditLogInvalid,
+    alertHistoryInvalid,
+    auditLogNum,
+    alertHistoryNum,
+    updateSettings,
+    queryClient,
+  ]);
 
   const handleSaveClickhouseSettings = useCallback(() => {
-    const thresholdPercentNum = Number(clickhouseThresholdPercent);
-    if (
-      !thresholdPercentNum ||
-      thresholdPercentNum < 1 ||
-      thresholdPercentNum > 95
-    ) {
+    if (clickhouseThresholdInvalid) {
       notifications.show({
         color: 'red',
-        title: 'Invalid Settings',
-        message: 'Cleanup threshold must be between 1% and 95%.',
+        title: 'Invalid ClickHouse settings',
+        message: 'Disk threshold must be a whole number between 1% and 95%.',
       });
       return;
     }
@@ -934,8 +945,8 @@ function DataRetentionPanel() {
         onSuccess: () => {
           notifications.show({
             color: 'green',
-            title: 'Settings Saved',
-            message: 'ClickHouse retention settings updated successfully.',
+            title: 'ClickHouse settings saved',
+            message: 'Disk protection settings updated successfully.',
           });
           queryClient.invalidateQueries({
             queryKey: ['admin', 'clickhouse-retention-settings'],
@@ -947,7 +958,7 @@ function DataRetentionPanel() {
         onError: e => {
           notifications.show({
             color: 'red',
-            title: 'Save Failed',
+            title: 'Save failed',
             message:
               e.message ?? 'Failed to update ClickHouse retention settings.',
           });
@@ -955,19 +966,18 @@ function DataRetentionPanel() {
       },
     );
   }, [
-    clickhouseThresholdPercent,
+    clickhouseThresholdInvalid,
     clickhouseEnabled,
+    thresholdPercentNum,
     updateClickhouseSettings,
     queryClient,
   ]);
 
-  const handleRun = useCallback(() => {
-    setModalOpen(true);
-  }, []);
-
-  const handleRunClickhouse = useCallback(() => {
-    setClickhouseModalOpen(true);
-  }, []);
+  const handleRun = useCallback(() => setModalOpen(true), []);
+  const handleRunClickhouse = useCallback(
+    () => setClickhouseModalOpen(true),
+    [],
+  );
 
   const handleConfirm = useCallback(() => {
     setModalOpen(false);
@@ -975,19 +985,21 @@ function DataRetentionPanel() {
       { dryRun },
       {
         onSuccess: () => {
+          const action = dryRun
+            ? 'MongoDB cleanup preview completed; no data was deleted.'
+            : 'Expired MongoDB documents were deleted.';
+          setLastCompletedAction(action);
           notifications.show({
             color: 'green',
-            title: dryRun ? 'Dry Run Complete' : 'Cleanup Complete',
-            message: dryRun
-              ? 'Data retention dry run finished. No data was deleted.'
-              : 'Data retention cleanup completed successfully.',
+            title: dryRun ? 'Preview complete' : 'Cleanup complete',
+            message: action,
           });
           queryClient.invalidateQueries({ queryKey: ['admin', 'audit-log'] });
         },
         onError: e => {
           notifications.show({
             color: 'red',
-            title: 'Cleanup Failed',
+            title: 'Cleanup failed',
             message: e.message ?? 'An error occurred during data retention.',
           });
         },
@@ -997,6 +1009,7 @@ function DataRetentionPanel() {
 
   const handleConfirmClickhouse = useCallback(() => {
     setClickhouseModalOpen(false);
+    setClickhouseDeleteConfirmation('');
     runClickhouseRetention.mutate(
       {
         dryRun: clickhouseDryRun,
@@ -1005,20 +1018,22 @@ function DataRetentionPanel() {
       },
       {
         onSuccess: () => {
+          const action = clickhouseDryRun
+            ? clickhouseNuke
+              ? 'Full ClickHouse deletion preview completed; no data was deleted.'
+              : 'ClickHouse cleanup preview completed; no data was deleted.'
+            : clickhouseNuke
+              ? 'All cleanable ClickHouse telemetry was deleted.'
+              : 'Oldest ClickHouse partitions were deleted to reduce disk usage.';
+          setLastCompletedAction(action);
           notifications.show({
             color: 'green',
             title: clickhouseDryRun
-              ? 'Dry Run Complete'
+              ? 'Preview complete'
               : clickhouseNuke
-                ? 'Nuke Complete'
-                : 'Cleanup Complete',
-            message: clickhouseDryRun
-              ? clickhouseNuke
-                ? 'ClickHouse nuke dry run finished. No data was deleted.'
-                : 'ClickHouse retention dry run finished. No data was deleted.'
-              : clickhouseNuke
-                ? 'ClickHouse nuke completed successfully.'
-                : 'ClickHouse retention cleanup completed successfully.',
+                ? 'Telemetry deleted'
+                : 'Cleanup complete',
+            message: action,
           });
           queryClient.invalidateQueries({
             queryKey: ['admin', 'clickhouse-retention-status'],
@@ -1027,7 +1042,7 @@ function DataRetentionPanel() {
         onError: e => {
           notifications.show({
             color: 'red',
-            title: 'Cleanup Failed',
+            title: 'Cleanup failed',
             message:
               e.message ?? 'An error occurred during ClickHouse retention.',
           });
@@ -1036,362 +1051,406 @@ function DataRetentionPanel() {
     );
   }, [clickhouseDryRun, clickhouseNuke, runClickhouseRetention, queryClient]);
 
+  const closeClickhouseModal = useCallback(() => {
+    setClickhouseModalOpen(false);
+    setClickhouseDeleteConfirmation('');
+  }, []);
+
   return (
     <Stack gap="lg">
-      {/* Retention Settings */}
-      <Stack gap="sm">
-        <Title order={4}>Retention Settings</Title>
+      <Box>
+        <Title order={3}>Data retention</Title>
         <Text size="sm" c="dimmed">
-          Configure how many days data is retained before cleanup. Changes take
-          effect on the next retention run.
+          Configure automatic retention and run cleanup separately for MongoDB
+          documents and ClickHouse telemetry.
         </Text>
+      </Box>
 
-        {settingsLoading ? (
-          <Center py="md">
-            <Loader size="sm" />
-          </Center>
-        ) : (
-          <>
-            <Group grow>
-              <NumberInput
-                label="Audit Log (days)"
-                value={auditLog}
-                onChange={setAuditLog}
-                min={1}
-                max={3650}
-                size="sm"
-              />
-              <NumberInput
-                label="Alert History (days)"
-                value={alertHistory}
-                onChange={setAlertHistory}
-                min={1}
-                max={3650}
-                size="sm"
-              />
-            </Group>
-            <Group>
+      {lastCompletedAction ? (
+        <Paper withBorder p="sm" radius="md">
+          <Text size="xs" c="dimmed">
+            Last completed action
+          </Text>
+          <Text size="sm" fw={600}>
+            {lastCompletedAction}
+          </Text>
+        </Paper>
+      ) : null}
+
+      <Paper withBorder p="md" radius="md">
+        <Stack gap="md">
+          <Box>
+            <Title order={4}>MongoDB document retention</Title>
+            <Text size="sm" c="dimmed">
+              Scheduled cleanup deletes audit-log and alert-history documents
+              after the configured age.
+            </Text>
+          </Box>
+
+          {settingsLoading ? (
+            <Center py="md">
+              <Loader size="sm" />
+            </Center>
+          ) : (
+            <>
+              <Group grow align="flex-start">
+                <NumberInput
+                  label="Keep audit logs for"
+                  description="Days before an audit-log document becomes eligible for deletion."
+                  suffix=" days"
+                  value={auditLog}
+                  onChange={setAuditLog}
+                  min={1}
+                  max={3650}
+                  allowDecimal={false}
+                  error={
+                    auditLogInvalid ? 'Enter 1–3650 whole days.' : undefined
+                  }
+                  size="sm"
+                />
+                <NumberInput
+                  label="Keep alert history for"
+                  description="Days before an alert-history document becomes eligible for deletion."
+                  suffix=" days"
+                  value={alertHistory}
+                  onChange={setAlertHistory}
+                  min={1}
+                  max={3650}
+                  allowDecimal={false}
+                  error={
+                    alertHistoryInvalid ? 'Enter 1–3650 whole days.' : undefined
+                  }
+                  size="sm"
+                />
+              </Group>
               <Button
                 onClick={handleSaveSettings}
                 loading={updateSettings.isPending}
+                disabled={auditLogInvalid || alertHistoryInvalid}
                 size="sm"
               >
-                Save Settings
+                Save MongoDB retention
+              </Button>
+            </>
+          )}
+
+          <Box
+            pt="sm"
+            style={{
+              borderTop: '1px solid var(--mantine-color-default-border)',
+            }}
+          >
+            <Text size="sm" fw={600}>
+              Manual MongoDB cleanup
+            </Text>
+            <Text size="xs" c="dimmed" mb="sm">
+              Preview the expired-document scope before permanently deleting it.
+            </Text>
+            <Group>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setDryRun(true);
+                  handleRun();
+                }}
+                loading={runRetention.isPending && dryRun}
+                disabled={runRetention.isPending}
+              >
+                Preview MongoDB cleanup
+              </Button>
+              <Button
+                leftSection={<IconTrash size={16} />}
+                color="red"
+                onClick={() => {
+                  setDryRun(false);
+                  handleRun();
+                }}
+                loading={runRetention.isPending && !dryRun}
+                disabled={runRetention.isPending}
+              >
+                Delete expired MongoDB documents
               </Button>
             </Group>
-          </>
-        )}
-      </Stack>
+          </Box>
+        </Stack>
+      </Paper>
 
-      <Stack gap="sm">
-        <Title order={4}>ClickHouse Disk Retention</Title>
-        <Text size="sm" c="dimmed">
-          Old ClickHouse partitions are cleaned hourly when filesystem usage
-          exceeds the configured threshold.
-        </Text>
+      <Paper withBorder p="md" radius="md">
+        <Stack gap="md">
+          <Group justify="space-between" align="flex-start">
+            <Box>
+              <Title order={4}>ClickHouse disk protection</Title>
+              <Text size="sm" c="dimmed">
+                Hourly cleanup drops the oldest telemetry partitions when disk
+                usage reaches the configured threshold.
+              </Text>
+            </Box>
+            {clickhouseStatus ? (
+              <Badge
+                color={clickhouseStatus.isOverThreshold ? 'red' : 'blue'}
+                variant="light"
+              >
+                {clickhouseStatus.isOverThreshold
+                  ? 'Cleanup needed'
+                  : 'Disk usage stable'}
+              </Badge>
+            ) : (
+              <Badge color="gray" variant="light">
+                Status unavailable
+              </Badge>
+            )}
+          </Group>
 
-        {clickhouseSettingsLoading ? (
-          <Center py="md">
-            <Loader size="sm" />
-          </Center>
-        ) : (
-          <>
-            <Group grow align="flex-end">
-              <NumberInput
-                label="Cleanup Threshold (%)"
-                value={clickhouseThresholdPercent}
-                onChange={setClickhouseThresholdPercent}
-                min={1}
-                max={95}
-                size="sm"
-              />
-              <Switch
-                label="Hourly cleanup enabled"
-                checked={clickhouseEnabled}
-                onChange={event =>
-                  setClickhouseEnabled(event.currentTarget.checked)
-                }
-              />
-            </Group>
+          {clickhouseSettingsLoading ? (
+            <Center py="md">
+              <Loader size="sm" />
+            </Center>
+          ) : (
+            <>
+              <Group grow align="flex-end">
+                <NumberInput
+                  label="Start cleanup when disk usage reaches"
+                  description="Cleanup continues until usage is below this threshold."
+                  suffix="%"
+                  value={clickhouseThresholdPercent}
+                  onChange={setClickhouseThresholdPercent}
+                  min={1}
+                  max={95}
+                  allowDecimal={false}
+                  error={
+                    clickhouseThresholdInvalid
+                      ? 'Enter a whole percentage from 1–95.'
+                      : undefined
+                  }
+                  size="sm"
+                />
+                <Switch
+                  label="Run automatic cleanup hourly"
+                  description={
+                    clickhouseEnabled
+                      ? 'Automatic disk protection is enabled.'
+                      : 'Automatic cleanup is paused.'
+                  }
+                  checked={clickhouseEnabled}
+                  onChange={event =>
+                    setClickhouseEnabled(event.currentTarget.checked)
+                  }
+                />
+              </Group>
 
-            {clickhouseStatusLoading ? (
-              <Center py="md">
-                <Loader size="sm" />
-              </Center>
-            ) : clickhouseStatus ? (
-              <Stack gap="xs">
-                <Group grow>
-                  <Box>
-                    <Text size="xs" c="dimmed">
-                      Detected Disk Size
-                    </Text>
-                    <Text fw={600}>{clickhouseStatus.diskSizeGB} GB</Text>
-                  </Box>
-                  <Box>
-                    <Text size="xs" c="dimmed">
-                      Used Disk Space
-                    </Text>
-                    <Text fw={600}>{clickhouseStatus.totalSizeGB} GB</Text>
-                  </Box>
-                  <Box>
-                    <Text size="xs" c="dimmed">
-                      Free Disk Space
-                    </Text>
-                    <Text fw={600}>{clickhouseStatus.freeDiskGB} GB</Text>
-                  </Box>
-                  <Box>
-                    <Text size="xs" c="dimmed">
-                      Active Parts
-                    </Text>
-                    <Text fw={600}>
-                      {clickhouseActivePartsGB.toFixed(2)} GB
-                    </Text>
-                  </Box>
-                  <Box>
-                    <Text size="xs" c="dimmed">
-                      Inactive Parts
-                    </Text>
-                    <Text fw={600}>
-                      {clickhouseInactivePartsGB.toFixed(2)} GB
-                    </Text>
-                  </Box>
-                  <Box>
-                    <Text size="xs" c="dimmed">
-                      Detached Parts
-                    </Text>
-                    <Text fw={600}>
-                      {clickhouseDetachedPartsGB.toFixed(2)} GB
-                    </Text>
-                  </Box>
-                  <Box>
-                    <Text size="xs" c="dimmed">
-                      Other Filesystem Usage
-                    </Text>
-                    <Text fw={600}>
-                      {clickhouseUntrackedUsageGB.toFixed(2)} GB
-                    </Text>
-                  </Box>
-                </Group>
-
-                <Stack gap={4}>
+              {clickhouseStatusLoading ? (
+                <Center py="md">
+                  <Loader size="sm" />
+                </Center>
+              ) : clickhouseStatus ? (
+                <Stack gap="xs">
                   <Group justify="space-between">
-                    <Text size="sm">
-                      Usage {clickhouseStatus.usagePercent}% /{' '}
-                      {clickhouseTargetUsagePercent}%
+                    <Text size="sm" fw={600}>
+                      Current usage {clickhouseStatus.usagePercent}%
                     </Text>
-                    <Badge
-                      color={clickhouseStatus.isOverThreshold ? 'red' : 'green'}
-                      variant="light"
-                    >
-                      {clickhouseStatus.isOverThreshold
-                        ? 'Cleanup Needed'
-                        : 'Below Threshold'}
-                    </Badge>
+                    <Text size="xs" c="dimmed">
+                      Cleanup threshold {clickhouseTargetUsagePercent}%
+                    </Text>
                   </Group>
                   <Progress
                     value={Math.min(clickhouseUsagePercent, 100)}
                     color={
                       clickhouseUsagePercent >= clickhouseTargetUsagePercent
                         ? 'red'
-                        : 'green'
+                        : 'blue'
                     }
                   />
-                </Stack>
-
-                {clickhouseUntrackedUsageGB > 0.01 ? (
-                  <Text size="xs" c="dimmed">
-                    Other filesystem usage includes ClickHouse files not
-                    represented by parts, such as metadata, logs, caches, or
-                    merge/mutation leftovers.
-                  </Text>
-                ) : null}
-
-                <Stack gap={4}>
-                  <Group justify="space-between">
-                    <Text size="sm" fw={600}>
-                      Table Breakdown
-                    </Text>
-                    <Badge variant="light" color="gray">
-                      {clickhouseStatus.tables.length} tables
-                    </Badge>
+                  <Group grow>
+                    <Box>
+                      <Text size="xs" c="dimmed">
+                        Disk size
+                      </Text>
+                      <Text fw={600}>{clickhouseStatus.diskSizeGB} GB</Text>
+                    </Box>
+                    <Box>
+                      <Text size="xs" c="dimmed">
+                        Used
+                      </Text>
+                      <Text fw={600}>{clickhouseStatus.totalSizeGB} GB</Text>
+                    </Box>
+                    <Box>
+                      <Text size="xs" c="dimmed">
+                        Free
+                      </Text>
+                      <Text fw={600}>{clickhouseStatus.freeDiskGB} GB</Text>
+                    </Box>
+                    <Box>
+                      <Text size="xs" c="dimmed">
+                        Reclaimable inactive data
+                      </Text>
+                      <Text fw={600}>
+                        {clickhouseReclaimableGB.toFixed(2)} GB
+                      </Text>
+                    </Box>
                   </Group>
-                  <Box style={{ overflowX: 'auto' }}>
-                    <Table
-                      highlightOnHover
-                      withTableBorder
-                      withColumnBorders={false}
-                    >
-                      <Table.Thead>
-                        <Table.Tr>
-                          <Table.Th>Database</Table.Th>
-                          <Table.Th>Table</Table.Th>
-                          <Table.Th>Size</Table.Th>
-                          <Table.Th>Oldest</Table.Th>
-                          <Table.Th>Newest</Table.Th>
-                          <Table.Th>Partitions</Table.Th>
-                        </Table.Tr>
-                      </Table.Thead>
-                      <Table.Tbody>
-                        {clickhouseStatus.tables.length > 0 ? (
-                          clickhouseStatus.tables.map(table => (
-                            <Table.Tr key={`${table.database}.${table.table}`}>
-                              <Table.Td>
-                                <Code>{table.database}</Code>
-                              </Table.Td>
-                              <Table.Td>
-                                <Code>{table.table}</Code>
-                              </Table.Td>
-                              <Table.Td>{table.sizeGB} GB</Table.Td>
-                              <Table.Td>
-                                {table.oldestPartition ?? '-'}
-                              </Table.Td>
-                              <Table.Td>
-                                {table.newestPartition ?? '-'}
-                              </Table.Td>
-                              <Table.Td>{table.partitionCount}</Table.Td>
-                            </Table.Tr>
-                          ))
-                        ) : (
-                          <Table.Tr>
-                            <Table.Td colSpan={6}>
-                              <Text size="sm" c="dimmed">
-                                No active ClickHouse table parts found.
-                              </Text>
-                            </Table.Td>
-                          </Table.Tr>
-                        )}
-                      </Table.Tbody>
-                    </Table>
-                  </Box>
+                  {clickhouseUntrackedUsageGB > 0.01 ? (
+                    <Text size="xs" c="dimmed">
+                      {clickhouseUntrackedUsageGB.toFixed(2)} GB is other
+                      ClickHouse filesystem usage such as metadata, logs,
+                      caches, or merge leftovers.
+                    </Text>
+                  ) : null}
                 </Stack>
-              </Stack>
-            ) : (
-              <Text size="sm" c="dimmed">
-                Disk usage unavailable.
-              </Text>
-            )}
+              ) : (
+                <Text size="sm" c="dimmed">
+                  Disk usage is unavailable. Status refreshes every minute.
+                </Text>
+              )}
 
+              <Group>
+                <Button
+                  onClick={handleSaveClickhouseSettings}
+                  loading={updateClickhouseSettings.isPending}
+                  disabled={clickhouseThresholdInvalid}
+                  size="sm"
+                >
+                  Save ClickHouse protection
+                </Button>
+                <Button
+                  leftSection={<IconRefresh size={16} />}
+                  variant="secondary"
+                  onClick={() => {
+                    queryClient.invalidateQueries({
+                      queryKey: ['admin', 'clickhouse-retention-status'],
+                    });
+                  }}
+                  size="sm"
+                >
+                  Refresh disk status
+                </Button>
+              </Group>
+            </>
+          )}
+
+          <Box
+            pt="sm"
+            style={{
+              borderTop: '1px solid var(--mantine-color-default-border)',
+            }}
+          >
+            <Text size="sm" fw={600}>
+              Threshold cleanup
+            </Text>
+            <Text size="xs" c="dimmed" mb="sm">
+              Preview or drop only the oldest partitions needed to return below
+              the configured disk threshold.
+            </Text>
             <Group>
               <Button
-                onClick={handleSaveClickhouseSettings}
-                loading={updateClickhouseSettings.isPending}
-                size="sm"
-              >
-                Save Disk Settings
-              </Button>
-              <Button
-                leftSection={<IconRefresh size={16} />}
                 variant="secondary"
                 onClick={() => {
-                  queryClient.invalidateQueries({
-                    queryKey: ['admin', 'clickhouse-retention-status'],
-                  });
+                  setClickhouseDryRun(true);
+                  setClickhouseNuke(false);
+                  handleRunClickhouse();
                 }}
-                size="sm"
+                loading={
+                  runClickhouseRetention.isPending &&
+                  clickhouseDryRun &&
+                  !clickhouseNuke
+                }
+                disabled={runClickhouseRetention.isPending}
               >
-                Refresh
+                Preview threshold cleanup
+              </Button>
+              <Button
+                color="red"
+                leftSection={<IconTrash size={16} />}
+                onClick={() => {
+                  setClickhouseDryRun(false);
+                  setClickhouseNuke(false);
+                  handleRunClickhouse();
+                }}
+                loading={
+                  runClickhouseRetention.isPending &&
+                  !clickhouseDryRun &&
+                  !clickhouseNuke
+                }
+                disabled={runClickhouseRetention.isPending}
+              >
+                Drop oldest ClickHouse partitions
               </Button>
             </Group>
-          </>
-        )}
-      </Stack>
+          </Box>
+        </Stack>
+      </Paper>
 
-      {/* Manual Cleanup */}
-      <Stack gap="sm">
-        <Title order={4}>Manual Cleanup</Title>
-        <Text size="sm" c="dimmed">
-          Manually trigger retention jobs. MongoDB cleanup removes expired
-          documents; ClickHouse cleanup drops oldest telemetry partitions until
-          usage is below the disk threshold. ClickHouse nuke removes all
-          cleanable telemetry partitions, detached parts, and system logs.
-        </Text>
-
-        <Group>
-          <Button
-            leftSection={<IconTrash size={16} />}
-            variant="secondary"
-            onClick={() => {
-              setDryRun(true);
-              handleRun();
-            }}
-            loading={runRetention.isPending && dryRun}
-          >
-            Dry Run
-          </Button>
-          <Button
-            leftSection={<IconPlayerPlay size={16} />}
-            color="red"
-            onClick={() => {
-              setDryRun(false);
-              handleRun();
-            }}
-            loading={runRetention.isPending && !dryRun}
-          >
-            Run Cleanup
-          </Button>
-          <Button
-            leftSection={<IconTrash size={16} />}
-            variant="secondary"
-            onClick={() => {
-              setClickhouseDryRun(true);
-              setClickhouseNuke(false);
-              handleRunClickhouse();
-            }}
-            loading={
-              runClickhouseRetention.isPending &&
-              clickhouseDryRun &&
-              !clickhouseNuke
-            }
-          >
-            Dry Run ClickHouse
-          </Button>
-          <Button
-            leftSection={<IconPlayerPlay size={16} />}
-            color="red"
-            onClick={() => {
-              setClickhouseDryRun(false);
-              setClickhouseNuke(false);
-              handleRunClickhouse();
-            }}
-            loading={
-              runClickhouseRetention.isPending &&
-              !clickhouseDryRun &&
-              !clickhouseNuke
-            }
-          >
-            Run ClickHouse Cleanup
-          </Button>
-          <Button
-            leftSection={<IconTrash size={16} />}
-            color="red"
-            variant="filled"
-            onClick={() => {
-              setClickhouseDryRun(false);
-              setClickhouseNuke(true);
-              handleRunClickhouse();
-            }}
-            loading={
-              runClickhouseRetention.isPending &&
-              !clickhouseDryRun &&
-              clickhouseNuke
-            }
-          >
-            Nuke ClickHouse
-          </Button>
-        </Group>
-      </Stack>
+      <Paper
+        withBorder
+        p="md"
+        radius="md"
+        style={{ borderColor: 'var(--mantine-color-red-7)' }}
+      >
+        <Stack gap="sm">
+          <Box>
+            <Title order={4} c="red">
+              Delete all ClickHouse telemetry
+            </Title>
+            <Text size="sm" c="dimmed">
+              Permanently removes every cleanable telemetry partition, detached
+              part, and ClickHouse system log. This is broader than threshold
+              cleanup and cannot be undone.
+            </Text>
+          </Box>
+          <Group>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setClickhouseDeleteConfirmation('');
+                setClickhouseDryRun(true);
+                setClickhouseNuke(true);
+                handleRunClickhouse();
+              }}
+              loading={
+                runClickhouseRetention.isPending &&
+                clickhouseDryRun &&
+                clickhouseNuke
+              }
+              disabled={runClickhouseRetention.isPending}
+            >
+              Preview full deletion
+            </Button>
+            <Button
+              color="red"
+              leftSection={<IconTrash size={16} />}
+              onClick={() => {
+                setClickhouseDeleteConfirmation('');
+                setClickhouseDryRun(false);
+                setClickhouseNuke(true);
+                handleRunClickhouse();
+              }}
+              loading={
+                runClickhouseRetention.isPending &&
+                !clickhouseDryRun &&
+                clickhouseNuke
+              }
+              disabled={runClickhouseRetention.isPending}
+            >
+              Delete all ClickHouse telemetry
+            </Button>
+          </Group>
+        </Stack>
+      </Paper>
 
       <Modal
         opened={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={dryRun ? 'Confirm Dry Run' : 'Confirm Data Cleanup'}
+        title={
+          dryRun
+            ? 'Preview MongoDB cleanup'
+            : 'Delete expired MongoDB documents'
+        }
         centered
       >
         <Stack gap="md">
           <Text size="sm">
             {dryRun
-              ? 'This will scan and report how many expired documents would be deleted. No data will be modified.'
-              : 'This will permanently delete expired documents from all configured collections. This action cannot be undone.'}
+              ? 'This scans configured MongoDB collections and reports the expired-document scope. No data will be modified.'
+              : 'This permanently deletes expired documents from all configured MongoDB collections. This action cannot be undone.'}
           </Text>
           <Group justify="flex-end">
             <Button variant="secondary" onClick={() => setModalOpen(false)}>
@@ -1402,22 +1461,23 @@ function DataRetentionPanel() {
               onClick={handleConfirm}
               loading={runRetention.isPending}
             >
-              {dryRun ? 'Run Dry Run' : 'Confirm Cleanup'}
+              {dryRun ? 'Run preview' : 'Delete expired documents'}
             </Button>
           </Group>
         </Stack>
       </Modal>
+
       <Modal
         opened={clickhouseModalOpen}
-        onClose={() => setClickhouseModalOpen(false)}
+        onClose={closeClickhouseModal}
         title={
           clickhouseDryRun
             ? clickhouseNuke
-              ? 'Confirm ClickHouse Nuke Dry Run'
-              : 'Confirm ClickHouse Dry Run'
+              ? 'Preview full ClickHouse deletion'
+              : 'Preview ClickHouse threshold cleanup'
             : clickhouseNuke
-              ? 'Confirm ClickHouse Nuke'
-              : 'Confirm ClickHouse Cleanup'
+              ? 'Delete all ClickHouse telemetry'
+              : 'Drop oldest ClickHouse partitions'
         }
         centered
       >
@@ -1425,29 +1485,47 @@ function DataRetentionPanel() {
           <Text size="sm">
             {clickhouseDryRun
               ? clickhouseNuke
-                ? 'This will scan all cleanable ClickHouse telemetry partitions, detached parts, and system logs and report what would be removed. No data will be modified.'
-                : 'This will scan ClickHouse partitions and report how much data would be removed. No data will be modified.'
+                ? 'This scans all cleanable telemetry partitions, detached parts, and system logs. No data will be modified.'
+                : 'This scans the oldest partitions needed to return below the disk threshold. No data will be modified.'
               : clickhouseNuke
-                ? 'This will permanently remove all cleanable ClickHouse telemetry partitions, detached parts, and system logs. This action cannot be undone.'
-                : 'This will permanently drop the oldest ClickHouse telemetry partitions until disk usage is below the configured threshold. This action cannot be undone.'}
+                ? 'This permanently removes all cleanable telemetry partitions, detached parts, and system logs. This action cannot be undone.'
+                : 'This permanently drops the oldest telemetry partitions until disk usage is below the configured threshold. This action cannot be undone.'}
           </Text>
+          {clickhouseNuke && !clickhouseDryRun ? (
+            <TextInput
+              label="Type DELETE CLICKHOUSE DATA to continue"
+              value={clickhouseDeleteConfirmation}
+              onChange={event =>
+                setClickhouseDeleteConfirmation(event.currentTarget.value)
+              }
+              error={
+                clickhouseDeleteConfirmation &&
+                clickhouseDeleteConfirmation !== 'DELETE CLICKHOUSE DATA'
+                  ? 'Confirmation does not match.'
+                  : undefined
+              }
+              autoFocus
+            />
+          ) : null}
           <Group justify="flex-end">
-            <Button
-              variant="secondary"
-              onClick={() => setClickhouseModalOpen(false)}
-            >
+            <Button variant="secondary" onClick={closeClickhouseModal}>
               Cancel
             </Button>
             <Button
               color={clickhouseDryRun ? 'blue' : 'red'}
               onClick={handleConfirmClickhouse}
               loading={runClickhouseRetention.isPending}
+              disabled={
+                clickhouseNuke &&
+                !clickhouseDryRun &&
+                clickhouseDeleteConfirmation !== 'DELETE CLICKHOUSE DATA'
+              }
             >
               {clickhouseDryRun
-                ? 'Run Dry Run'
+                ? 'Run preview'
                 : clickhouseNuke
-                  ? 'Confirm Nuke'
-                  : 'Confirm Cleanup'}
+                  ? 'Delete all telemetry'
+                  : 'Drop oldest partitions'}
             </Button>
           </Group>
         </Stack>

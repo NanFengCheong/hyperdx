@@ -15,6 +15,7 @@ import {
 import { getSource } from '@/controllers/sources';
 import { getNonNullUserWithTeam } from '@/middleware/auth';
 import { Api404Error, Api500Error } from '@/utils/errors';
+import { withOperationMetrics } from '@/utils/instrumentation';
 import logger from '@/utils/logger';
 import { objectIdSchema } from '@/utils/zod';
 
@@ -244,63 +245,65 @@ Example — count of error logs in the past 2 hours:
 
       logger.info(prompt);
 
-      try {
-        const result = await generateText({
-          model,
-          output: Output.object({
-            schema: AssistantLineTableConfigSchema,
-          }),
-          experimental_telemetry: { isEnabled: true },
-          prompt,
-        });
+      // The AI generation call is the externally-dependent, latency-defining
+      // part of the assistant, so it carries the SLO signal. Source lookup /
+      // validation above are client-side concerns and intentionally excluded.
+      const chartConfig = await withOperationMetrics(
+        'ai.assistant',
+        async () => {
+          try {
+            const result = await generateText({
+              model,
+              output: Output.object({
+                schema: AssistantLineTableConfigSchema,
+              }),
+              experimental_telemetry: { isEnabled: true },
+              prompt,
+            });
 
-        const chartConfig = getChartConfigFromResolvedConfig(
-          result.output,
-          source,
-        );
-
-        return res.json(chartConfig);
-      } catch (err) {
-        if (err instanceof APICallError) {
-          throw new Api500Error(
-            `AI Provider Error. Status: ${err.statusCode}. Message: ${err.message}`,
-          );
-        }
-
-        // Catch AI SDK's parsing error and attempt a more robust extraction/normalization.
-        // We check for NoObjectGeneratedError and its string name for compatibility across versions.
-        if (
-          NoObjectGeneratedError.isInstance(err) ||
-          (err as any).name === 'AI_NoObjectGeneratedError'
-        ) {
-          const rawText = (err as any).text;
-          if (rawText) {
-            const parsed = tryParseAIResponse(rawText);
-            if (parsed) {
-              const chartConfig = getChartConfigFromResolvedConfig(
-                parsed,
-                source,
+            return getChartConfigFromResolvedConfig(result.output, source);
+          } catch (err) {
+            if (err instanceof APICallError) {
+              throw new Api500Error(
+                `AI Provider Error. Status: ${err.statusCode}. Message: ${err.message}`,
               );
-              return res.json(chartConfig);
             }
-            logger.warn({
-              message:
-                'AI response could not be parsed or normalized into a valid chart config',
-              rawText: rawText.slice(0, 500),
-              finishReason: (err as any).finishReason,
-            });
-          } else {
-            logger.warn({
-              message: 'No text output from AI model',
-              finishReason: (err as any).finishReason,
-            });
+
+            // Catch AI SDK's parsing error and attempt a more robust extraction/normalization.
+            // We check for NoObjectGeneratedError and its string name for compatibility across versions.
+            if (
+              NoObjectGeneratedError.isInstance(err) ||
+              (err as any).name === 'AI_NoObjectGeneratedError'
+            ) {
+              const rawText = (err as any).text;
+              if (rawText) {
+                const parsed = tryParseAIResponse(rawText);
+                if (parsed) {
+                  return getChartConfigFromResolvedConfig(parsed, source);
+                }
+                logger.warn({
+                  message:
+                    'AI response could not be parsed or normalized into a valid chart config',
+                  rawText: rawText.slice(0, 500),
+                  finishReason: (err as any).finishReason,
+                });
+              } else {
+                logger.warn({
+                  message: 'No text output from AI model',
+                  finishReason: (err as any).finishReason,
+                });
+              }
+              throw new Api500Error(
+                'The AI was unable to generate a valid chart configuration. Please try rephrasing your request.',
+              );
+            }
+            throw err;
           }
-          throw new Api500Error(
-            'The AI was unable to generate a valid chart configuration. Please try rephrasing your request.',
-          );
-        }
-        throw err;
-      }
+        },
+        { source_kind: source.kind },
+      );
+
+      return res.json(chartConfig);
     } catch (e) {
       next(e);
     }

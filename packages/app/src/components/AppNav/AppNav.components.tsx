@@ -23,12 +23,14 @@ import {
   IconKeyboard,
   IconLogout,
   IconSettings,
+  IconSparkles,
   IconUser,
   IconUserCog,
 } from '@tabler/icons-react';
 
 import { IS_LOCAL_MODE } from '@/config';
 
+import { ChangelogModal } from './ChangelogModal';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
 
 import styles from './AppNav.module.scss';
@@ -174,6 +176,10 @@ export const AppNavHelpMenu = ({ version }: { version?: string }) => {
     shortcutsOpened,
     { open: openShortcutsModal, close: closeShortcutsModal },
   ] = useDisclosure(false);
+  const [
+    changelogOpened,
+    { open: openChangelogModal, close: closeChangelogModal },
+  ] = useDisclosure(false);
 
   return (
     <>
@@ -225,6 +231,13 @@ export const AppNavHelpMenu = ({ version }: { version?: string }) => {
             Setup Instructions
           </Menu.Item>
           <Menu.Item
+            data-testid="changelog-menu-item"
+            leftSection={<IconSparkles size={16} />}
+            onClick={openChangelogModal}
+          >
+            What&apos;s new
+          </Menu.Item>
+          <Menu.Item
             data-testid="keyboard-shortcuts-menu-item"
             leftSection={<IconKeyboard size={16} />}
             onClick={openShortcutsModal}
@@ -247,6 +260,7 @@ export const AppNavHelpMenu = ({ version }: { version?: string }) => {
         opened={shortcutsOpened}
         onClose={closeShortcutsModal}
       />
+      <ChangelogModal opened={changelogOpened} onClose={closeChangelogModal} />
     </>
   );
 };

@@ -117,6 +117,7 @@ export class ClickhouseClient extends BaseClickhouseClient {
       clickhouse_settings: clickhouseSettings,
       username: this.username ?? '',
       password: this.password ?? '',
+      use_multipart_params_auto: true,
       // Disable keep-alive to prevent multiple concurrent dashboard requests from exceeding the 64KB payload size limit.
       keep_alive: {
         enabled: false,
@@ -149,12 +150,16 @@ export class ClickhouseClient extends BaseClickhouseClient {
     let clickhouseSettings: ClickHouseSettings | undefined;
     // If this is the settings query, we must not process the clickhouse settings, or else we will infinitely recurse
     if (!shouldSkipApplySettings) {
-      // The shared base class produces a platform-neutral settings object; the
-      // web client expects its own (now self-bundled) ClickHouseSettings type.
-      clickhouseSettings = (await this.processClickhouseSettings({
+      const neutralSettings = await this.processClickhouseSettings({
         connectionId,
         externalClickhouseSettings,
-      })) as ClickHouseSettings;
+      });
+      // processClickhouseSettings produces @clickhouse/client-common's
+      // ClickHouseSettings. It is structurally identical to the web client's
+      // own (self-bundled, since 1.23) ClickHouseSettings, but the two packages'
+      // copies are distinct nominal types, so bridge explicitly.
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- client library type mismatch
+      clickhouseSettings = neutralSettings as ClickHouseSettings;
     }
 
     const httpHeaders: { [header: string]: string } = {

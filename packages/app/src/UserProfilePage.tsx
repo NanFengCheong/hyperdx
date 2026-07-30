@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import Head from 'next/head';
+import { PERMISSION_CATEGORIES } from '@hyperdx/common-utils/dist/permissions';
 import {
   Avatar,
   Badge,
@@ -13,11 +14,10 @@ import {
   Text,
   Title,
 } from '@mantine/core';
-import { PERMISSION_CATEGORIES } from '@hyperdx/common-utils/dist/permissions';
 
-import api from './api';
 import { PageHeader } from './components/PageHeader';
 import { usePermissions } from './contexts/PermissionContext';
+import api from './api';
 import { withAppNav } from './layout';
 
 function UserProfilePage() {
@@ -107,9 +107,7 @@ function UserProfilePage() {
                   <Table.Tr>
                     <Table.Th>Category</Table.Th>
                     <Table.Th>Permission</Table.Th>
-                    <Table.Th style={{ textAlign: 'center' }}>
-                      Granted
-                    </Table.Th>
+                    <Table.Th style={{ textAlign: 'center' }}>Granted</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>

@@ -5,10 +5,10 @@ import session from 'express-session';
 import onHeaders from 'on-headers';
 
 import * as config from './config';
+import mcpRouter from './mcp/app';
 import { isUserAuthenticated, requireWriteAccess } from './middleware/auth';
 import defaultCors from './middleware/cors';
 import { appErrorHandler } from './middleware/error';
-import mcpRouter from './mcp/app';
 import Team from './models/team';
 import routers from './routers/api';
 import clickhouseProxyRouter from './routers/api/clickhouseProxy';

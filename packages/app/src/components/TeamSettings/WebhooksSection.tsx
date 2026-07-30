@@ -9,15 +9,16 @@ import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { IconPencil, IconX } from '@tabler/icons-react';
 
-import api from '../../api';
-import { usePermissions } from '../../contexts/PermissionContext';
-import { useBrandDisplayName } from '../../theme/ThemeProvider';
-import { useConfirm } from '../../useConfirm';
 import {
   getWebhookServiceConfig,
   getWebhookServiceName,
   groupWebhooksByService,
 } from '@/utils/webhookIcons';
+
+import api from '../../api';
+import { usePermissions } from '../../contexts/PermissionContext';
+import { useBrandDisplayName } from '../../theme/ThemeProvider';
+import { useConfirm } from '../../useConfirm';
 
 import { WebhookForm } from './WebhookForm';
 

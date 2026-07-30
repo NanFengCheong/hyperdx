@@ -240,20 +240,20 @@ export default function AuditLogSection() {
                       <Table.Tr key={`${entry._id}-detail`}>
                         <Table.Td colSpan={6}>
                           <Box p="sm">
-                              <Text size="xs" fw={600} mb={4}>
-                                Details:
+                            <Text size="xs" fw={600} mb={4}>
+                              Details:
+                            </Text>
+                            <Code block>
+                              {JSON.stringify(entry.details ?? {}, null, 2)}
+                            </Code>
+                            <Text size="xs" c="dimmed" mt="xs">
+                              Entry ID: {entry._id}
+                            </Text>
+                            {entry.actorId && (
+                              <Text size="xs" c="dimmed">
+                                Actor ID: {entry.actorId}
                               </Text>
-                              <Code block>
-                                {JSON.stringify(entry.details ?? {}, null, 2)}
-                              </Code>
-                              <Text size="xs" c="dimmed" mt="xs">
-                                Entry ID: {entry._id}
-                              </Text>
-                              {entry.actorId && (
-                                <Text size="xs" c="dimmed">
-                                  Actor ID: {entry.actorId}
-                                </Text>
-                              )}
+                            )}
                           </Box>
                         </Table.Td>
                       </Table.Tr>

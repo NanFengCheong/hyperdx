@@ -1,5 +1,5 @@
 import { configureRuntimeEnv } from 'next-runtime-env/build/configure.js';
-import { readFileSync } from 'fs';
+import { copyFileSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -11,6 +11,32 @@ const packageJson = JSON.parse(
   readFileSync(join(__dirname, 'package.json'), 'utf-8'),
 );
 const { version } = packageJson;
+
+// Copy CHANGELOG.md into public/ so the in-app "What's new" viewer can fetch it
+// as a static asset. Done here (rather than a package.json pre-script) because
+// Yarn 4 does not run arbitrary pre/post lifecycle scripts; next.config is
+// evaluated by both `next dev` (Turbopack) and `next build` (Webpack), so this
+// runs in every build mode. The ClickStack static export additionally needs
+// `.md` allow-listed in scripts/prepare-clickhouse-build-export.js, and the
+// Docker builder stages must COPY the file in (see the Dockerfiles).
+try {
+  copyFileSync(
+    join(__dirname, 'CHANGELOG.md'),
+    join(__dirname, 'public', 'CHANGELOG.md'),
+  );
+} catch (err) {
+  // Fail loudly during a production build: a missing CHANGELOG.md there means
+  // the shipped image would silently render "Unable to load" for every user.
+  // Stay non-fatal otherwise — `next start` re-evaluates this config at runtime
+  // where the source file is absent but public/CHANGELOG.md already exists from
+  // the build stage, and dev tolerates its absence.
+  if (process.env.NEXT_PHASE === 'phase-production-build') {
+    throw new Error(
+      `Failed to copy CHANGELOG.md into public/ during build: ${err.message}`,
+    );
+  }
+  console.warn('Could not copy CHANGELOG.md into public/:', err.message);
+}
 
 // Support legacy consumers of next-runtime-env that expect this value under window.__ENV
 process.env.NEXT_PUBLIC_APP_VERSION = version;
@@ -46,6 +72,13 @@ const nextConfig = {
     '@opentelemetry/auto-instrumentations-node',
     '@hyperdx/node-opentelemetry',
     '@hyperdx/instrumentation-sentry-node',
+    // Outside of Vercel preview deployments, the `/api/[...all]` catch-all
+    // proxies to a separately-deployed API service and never imports the
+    // `@hyperdx/api` package at runtime. Mark it (and its subpaths) as a
+    // CommonJS external so production app builds (Docker fullstack image,
+    // standalone Next output) stay byte-for-byte equivalent to today and
+    // do not pull in passport-saml, mongoose, AWS SDK, etc.
+    ...(process.env.HDX_PREVIEW_INLINE_API !== 'true' ? ['@hyperdx/api'] : []),
   ],
   typescript: {
     tsconfigPath: 'tsconfig.build.json',
@@ -62,12 +95,6 @@ const nextConfig = {
     if (isServer) {
       config.ignoreWarnings = [{ module: /opentelemetry/ }];
 
-      // Outside of Vercel preview deployments, the `/api/[...all]` catch-all
-      // proxies to a separately-deployed API service and never imports the
-      // `@hyperdx/api` package at runtime. Mark it (and its subpaths) as a
-      // CommonJS external so production app builds (Docker fullstack image,
-      // standalone Next output) stay byte-for-byte equivalent to today and
-      // do not pull in passport-saml, mongoose, AWS SDK, etc.
       if (process.env.HDX_PREVIEW_INLINE_API !== 'true') {
         config.externals = [
           ...(config.externals ?? []),
@@ -102,6 +129,9 @@ const nextConfig = {
             key: 'X-Frame-Options',
             value: 'DENY',
           },
+          ...(process.env.NEXT_PUBLIC_NOINDEX === 'true'
+            ? [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }]
+            : []),
         ],
       },
     ];

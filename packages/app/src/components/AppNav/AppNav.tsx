@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import Router, { useRouter } from 'next/router';
+import Script from 'next/script';
 import cx from 'classnames';
 import HyperDX from '@hyperdx/browser';
 import { isBuilderSavedChartConfig } from '@hyperdx/common-utils/dist/guards';
@@ -60,6 +61,15 @@ import styles from './AppNav.module.scss';
 // Expose the same value Next injected at build time; fall back to package.json for dev tooling
 const APP_VERSION =
   process.env.NEXT_PUBLIC_APP_VERSION ?? packageJson.version ?? 'dev';
+
+// Reo.dev client ID for our usage tracking. USAGE_STATS_ENABLED is the opt-out.
+const REO_CLIENT_ID = '38b2e79cdb32fa7';
+
+declare global {
+  interface Window {
+    Reo?: { init: (options: { clientID: string; source?: string }) => void };
+  }
+}
 
 // Navigation link configuration
 type NavLinkConfig = {
@@ -414,19 +424,19 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
             )}
 
             {!isCollapsed && can('explorer:view') && isSavedSearchExpanded && (
-                <div className={styles.subMenu}>
-                  {favoritedSavedSearches.length > 0 ? (
-                    favoritedSavedSearches.map(renderSavedSearchLink)
-                  ) : favorites != null && savedSearches != null ? (
-                    <Text size="xs" c="dimmed" pl="lg" pr="xs" py={4} lh={1.4}>
-                      No favorites. Star on{' '}
-                      <Anchor component={Link} href="/search/list" size="xs">
-                        Saved Searches
-                      </Anchor>
-                      .
-                    </Text>
-                  ) : null}
-                </div>
+              <div className={styles.subMenu}>
+                {favoritedSavedSearches.length > 0 ? (
+                  favoritedSavedSearches.map(renderSavedSearchLink)
+                ) : favorites != null && savedSearches != null ? (
+                  <Text size="xs" c="dimmed" pl="lg" pr="xs" py={4} lh={1.4}>
+                    No favorites. Star on{' '}
+                    <Anchor component={Link} href="/search/list" size="xs">
+                      Saved Searches
+                    </Anchor>
+                    .
+                  </Text>
+                ) : null}
+              </div>
             )}
             {/* Simple nav links from config */}
             {NAV_LINKS.filter(
@@ -456,23 +466,19 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
             )}
 
             {!isCollapsed && can('dashboards:view') && isDashboardsExpanded && (
-                <div className={styles.subMenu}>
-                  {favoritedDashboards.length > 0 ? (
-                    favoritedDashboards.map(renderDashboardLink)
-                  ) : favorites != null && dashboards != null ? (
-                    <Text size="xs" c="dimmed" pl="lg" pr="xs" py={4} lh={1.4}>
-                      No favorites. Star on{' '}
-                      <Anchor
-                        component={Link}
-                        href="/dashboards/list"
-                        size="xs"
-                      >
-                        Dashboards
-                      </Anchor>
-                      .
-                    </Text>
-                  ) : null}
-                </div>
+              <div className={styles.subMenu}>
+                {favoritedDashboards.length > 0 ? (
+                  favoritedDashboards.map(renderDashboardLink)
+                ) : favorites != null && dashboards != null ? (
+                  <Text size="xs" c="dimmed" pl="lg" pr="xs" py={4} lh={1.4}>
+                    No favorites. Star on{' '}
+                    <Anchor component={Link} href="/dashboards/list" size="xs">
+                      Dashboards
+                    </Anchor>
+                    .
+                  </Text>
+                ) : null}
+              </div>
             )}
 
             {/* Integration Guide */}
@@ -537,10 +543,17 @@ export default function AppNav({ fixed = false }: { fixed?: boolean }) {
             onClickUserPreferences={openUserPreferences}
             logoutUrl={IS_LOCAL_MODE ? null : `/api/logout`}
           />
-          {meData && meData.usageStatsEnabled && (
-            <img
-              referrerPolicy="no-referrer-when-downgrade"
-              src="https://static.scarf.sh/a.png?x-pxid=bbc99c42-7a75-4eee-9fb9-2b161fc4acd6"
+          {meData?.usageStatsEnabled && (
+            <Script
+              id="reo-beacon"
+              strategy="afterInteractive"
+              src={`https://static.reo.dev/${REO_CLIENT_ID}/reo.js`}
+              onLoad={() => {
+                window.Reo?.init({
+                  clientID: REO_CLIENT_ID,
+                  source: 'internal',
+                });
+              }}
             />
           )}
         </div>
