@@ -6,12 +6,16 @@ import {
 import {
   Badge,
   Box,
+  Button,
   Group,
   ScrollArea,
   Table,
   Text,
   Tooltip,
 } from '@mantine/core';
+import { IconDownload } from '@tabler/icons-react';
+
+import { CsvExportButton } from './CsvExportButton';
 
 interface PlatformAdminMember {
   _id?: string;
@@ -62,11 +66,44 @@ export default function PlatformAdminPermissionMatrix({
 }: {
   members: PlatformAdminMember[];
 }) {
+  const csvData = members.map(member => {
+    const effectivePermissions = getEffectivePermissions(member);
+    return {
+      Member: member.email,
+      Role: member.isSuperAdmin
+        ? 'Super Admin'
+        : (member.roleId?.name ?? 'No role'),
+      'Super Admin': member.isSuperAdmin ? 'Yes' : 'No',
+      ...Object.fromEntries(
+        PERMISSION_CATEGORIES.map(category => {
+          const enabled = category.permissions.filter(permission =>
+            hasPermission(effectivePermissions, permission),
+          ).length;
+          return [category.label, `${enabled}/${category.permissions.length}`];
+        }),
+      ),
+    };
+  });
+
   return (
     <Box ml="xl" mb="md">
-      <Text size="sm" fw={500} mb="xs">
-        Effective Permission Matrix
-      </Text>
+      <Group justify="space-between" mb="xs">
+        <Text size="sm" fw={500}>
+          Effective Permission Matrix
+        </Text>
+        <CsvExportButton
+          data={csvData}
+          filename="platform-admin-permission-matrix"
+        >
+          <Button
+            variant="subtle"
+            size="compact-sm"
+            leftSection={<IconDownload size={14} />}
+          >
+            Download CSV
+          </Button>
+        </CsvExportButton>
+      </Group>
       <ScrollArea>
         <Table withTableBorder withColumnBorders highlightOnHover>
           <Table.Thead>
