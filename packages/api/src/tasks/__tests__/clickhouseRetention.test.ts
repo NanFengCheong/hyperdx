@@ -551,7 +551,7 @@ describe('ClickhouseRetentionTask', () => {
     );
   });
 
-  it('should truncate large system log tables when partition cleanup cannot reach threshold', async () => {
+  it('should truncate trace_log when cleanup starts above threshold', async () => {
     mockPlatformSettingFindOne.mockResolvedValue({
       value: { enabled: true, targetUsagePercent: 80 },
     } as any);
@@ -563,27 +563,25 @@ describe('ClickhouseRetentionTask', () => {
       .mockResolvedValueOnce(
         makeSystemPartsResponse([
           {
-            database: 'system',
-            table: 'trace_log',
+            database: 'default',
+            table: 'otel_logs',
             partition: '202604',
             partitionId: '202604',
             oldestDateTime: '2026-04-01 00:00:00',
-            sizeBytes: String(2 * GB),
+            sizeBytes: String(4 * GB),
           },
         ]),
       )
-      .mockResolvedValueOnce(new Response('drop failed', { status: 500 }))
       .mockResolvedValueOnce(makeSystemPartsResponse([]))
       .mockResolvedValueOnce(makeSystemPartsResponse([]))
       .mockResolvedValueOnce(
         makeSystemPartsResponse([
           {
             table: 'trace_log',
-            sizeBytes: String(13.5 * GB),
+            sizeBytes: String(3.5 * GB),
           },
         ]),
       )
-      .mockResolvedValueOnce(makeSystemPartsResponse([]))
       .mockResolvedValueOnce(makeSystemPartsResponse([]));
 
     const task = new ClickhouseRetentionTask({
@@ -595,7 +593,7 @@ describe('ClickhouseRetentionTask', () => {
     const queries = getFetchQueries();
 
     expect(queries).toContain(
-      "ALTER TABLE `system`.`trace_log` DROP PARTITION ID '202604'",
+      "ALTER TABLE `default`.`otel_logs` DROP PARTITION ID '202604'",
     );
     expect(queries).toContain('SYSTEM FLUSH LOGS');
     expect(queries).toContain('TRUNCATE TABLE `system`.`trace_log`');
@@ -603,7 +601,7 @@ describe('ClickhouseRetentionTask', () => {
       expect.objectContaining({
         action: 'clickhouse_retention.cleanup',
         details: expect.objectContaining({
-          partitionsFailed: 1,
+          partitionsFailed: 0,
           systemLogTablesTruncated: 1,
           systemLogTablesFailed: 0,
         }),

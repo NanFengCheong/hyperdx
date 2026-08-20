@@ -683,7 +683,7 @@ export default class ClickhouseRetentionTask
       }
     }
 
-    if (nuke || currentUsage > maxBytes) {
+    if (nuke || (!dryRun && totalBefore > maxBytes)) {
       // Flush once, then truncate trace_log last. Flushing before every table
       // repopulates trace_log after it has already been truncated.
       await queryClickhouse('SYSTEM FLUSH LOGS');
@@ -693,7 +693,13 @@ export default class ClickhouseRetentionTask
       );
 
       for (const tableInfo of systemLogTables) {
-        if (!nuke && currentUsage <= maxBytes) break;
+        if (
+          !nuke &&
+          currentUsage <= maxBytes &&
+          tableInfo.table !== 'trace_log'
+        ) {
+          continue;
+        }
 
         if (dryRun) {
           logger.info(
