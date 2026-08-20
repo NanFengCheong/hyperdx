@@ -918,9 +918,7 @@ function NotificationLogPanel() {
 // Data Retention Tab
 function DataRetentionPanel() {
   const [modalOpen, setModalOpen] = useState(false);
-  const [dryRun, setDryRun] = useState(false);
   const [clickhouseModalOpen, setClickhouseModalOpen] = useState(false);
-  const [clickhouseDryRun, setClickhouseDryRun] = useState(false);
   const [clickhouseNuke, setClickhouseNuke] = useState(false);
   const [clickhouseDeleteConfirmation, setClickhouseDeleteConfirmation] =
     useState('');
@@ -1102,16 +1100,14 @@ function DataRetentionPanel() {
   const handleConfirm = useCallback(() => {
     setModalOpen(false);
     runRetention.mutate(
-      { dryRun },
+      { dryRun: false },
       {
         onSuccess: () => {
-          const action = dryRun
-            ? 'MongoDB cleanup preview completed; no data was deleted.'
-            : 'Expired MongoDB documents were deleted.';
+          const action = 'Expired MongoDB documents were deleted.';
           setLastCompletedAction(action);
           notifications.show({
             color: 'green',
-            title: dryRun ? 'Preview complete' : 'Cleanup complete',
+            title: 'Cleanup complete',
             message: action,
           });
           queryClient.invalidateQueries({ queryKey: ['admin', 'audit-log'] });
@@ -1125,34 +1121,26 @@ function DataRetentionPanel() {
         },
       },
     );
-  }, [dryRun, runRetention, queryClient]);
+  }, [runRetention, queryClient]);
 
   const handleConfirmClickhouse = useCallback(() => {
     setClickhouseModalOpen(false);
     setClickhouseDeleteConfirmation('');
     runClickhouseRetention.mutate(
       {
-        dryRun: clickhouseDryRun,
+        dryRun: false,
         nuke: clickhouseNuke,
         force: clickhouseNuke,
       },
       {
         onSuccess: () => {
-          const action = clickhouseDryRun
-            ? clickhouseNuke
-              ? 'Full ClickHouse deletion preview completed; no data was deleted.'
-              : 'ClickHouse cleanup preview completed; no data was deleted.'
-            : clickhouseNuke
-              ? 'All cleanable ClickHouse telemetry was deleted.'
-              : 'Oldest ClickHouse partitions were deleted to reduce disk usage.';
+          const action = clickhouseNuke
+            ? 'All cleanable ClickHouse telemetry was deleted.'
+            : 'Oldest ClickHouse partitions were deleted to reduce disk usage.';
           setLastCompletedAction(action);
           notifications.show({
             color: 'green',
-            title: clickhouseDryRun
-              ? 'Preview complete'
-              : clickhouseNuke
-                ? 'Telemetry deleted'
-                : 'Cleanup complete',
+            title: clickhouseNuke ? 'Telemetry deleted' : 'Cleanup complete',
             message: action,
           });
           queryClient.invalidateQueries({
@@ -1169,7 +1157,7 @@ function DataRetentionPanel() {
         },
       },
     );
-  }, [clickhouseDryRun, clickhouseNuke, runClickhouseRetention, queryClient]);
+  }, [clickhouseNuke, runClickhouseRetention, queryClient]);
 
   const closeClickhouseModal = useCallback(() => {
     setClickhouseModalOpen(false);
@@ -1264,28 +1252,14 @@ function DataRetentionPanel() {
               Manual MongoDB cleanup
             </Text>
             <Text size="xs" c="dimmed" mb="sm">
-              Preview the expired-document scope before permanently deleting it.
+              Permanently delete expired documents from configured collections.
             </Text>
             <Group>
               <Button
-                variant="secondary"
-                onClick={() => {
-                  setDryRun(true);
-                  handleRun();
-                }}
-                loading={runRetention.isPending && dryRun}
-                disabled={runRetention.isPending}
-              >
-                Preview MongoDB cleanup
-              </Button>
-              <Button
                 leftSection={<IconTrash size={16} />}
                 color="red"
-                onClick={() => {
-                  setDryRun(false);
-                  handleRun();
-                }}
-                loading={runRetention.isPending && !dryRun}
+                onClick={handleRun}
+                loading={runRetention.isPending}
                 disabled={runRetention.isPending}
               >
                 Delete expired MongoDB documents
@@ -1457,39 +1431,18 @@ function DataRetentionPanel() {
               Threshold cleanup
             </Text>
             <Text size="xs" c="dimmed" mb="sm">
-              Preview or drop only the oldest partitions needed to return below
-              the configured disk threshold.
+              Drop only the oldest partitions needed to return below the
+              configured disk threshold.
             </Text>
             <Group>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setClickhouseDryRun(true);
-                  setClickhouseNuke(false);
-                  handleRunClickhouse();
-                }}
-                loading={
-                  runClickhouseRetention.isPending &&
-                  clickhouseDryRun &&
-                  !clickhouseNuke
-                }
-                disabled={runClickhouseRetention.isPending}
-              >
-                Preview threshold cleanup
-              </Button>
               <Button
                 color="red"
                 leftSection={<IconTrash size={16} />}
                 onClick={() => {
-                  setClickhouseDryRun(false);
                   setClickhouseNuke(false);
                   handleRunClickhouse();
                 }}
-                loading={
-                  runClickhouseRetention.isPending &&
-                  !clickhouseDryRun &&
-                  !clickhouseNuke
-                }
+                loading={runClickhouseRetention.isPending && !clickhouseNuke}
                 disabled={runClickhouseRetention.isPending}
               >
                 Drop oldest ClickHouse partitions
@@ -1518,36 +1471,14 @@ function DataRetentionPanel() {
           </Box>
           <Group>
             <Button
-              variant="secondary"
-              onClick={() => {
-                setClickhouseDeleteConfirmation('');
-                setClickhouseDryRun(true);
-                setClickhouseNuke(true);
-                handleRunClickhouse();
-              }}
-              loading={
-                runClickhouseRetention.isPending &&
-                clickhouseDryRun &&
-                clickhouseNuke
-              }
-              disabled={runClickhouseRetention.isPending}
-            >
-              Preview full deletion
-            </Button>
-            <Button
               color="red"
               leftSection={<IconTrash size={16} />}
               onClick={() => {
                 setClickhouseDeleteConfirmation('');
-                setClickhouseDryRun(false);
                 setClickhouseNuke(true);
                 handleRunClickhouse();
               }}
-              loading={
-                runClickhouseRetention.isPending &&
-                !clickhouseDryRun &&
-                clickhouseNuke
-              }
+              loading={runClickhouseRetention.isPending && clickhouseNuke}
               disabled={runClickhouseRetention.isPending}
             >
               Delete all ClickHouse telemetry
@@ -1559,29 +1490,24 @@ function DataRetentionPanel() {
       <Modal
         opened={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={
-          dryRun
-            ? 'Preview MongoDB cleanup'
-            : 'Delete expired MongoDB documents'
-        }
+        title="Delete expired MongoDB documents"
         centered
       >
         <Stack gap="md">
           <Text size="sm">
-            {dryRun
-              ? 'This scans configured MongoDB collections and reports the expired-document scope. No data will be modified.'
-              : 'This permanently deletes expired documents from all configured MongoDB collections. This action cannot be undone.'}
+            This permanently deletes expired documents from all configured
+            MongoDB collections. This action cannot be undone.
           </Text>
           <Group justify="flex-end">
             <Button variant="secondary" onClick={() => setModalOpen(false)}>
               Cancel
             </Button>
             <Button
-              color={dryRun ? 'blue' : 'red'}
+              color="red"
               onClick={handleConfirm}
               loading={runRetention.isPending}
             >
-              {dryRun ? 'Run preview' : 'Delete expired documents'}
+              Delete expired documents
             </Button>
           </Group>
         </Stack>
@@ -1591,27 +1517,19 @@ function DataRetentionPanel() {
         opened={clickhouseModalOpen}
         onClose={closeClickhouseModal}
         title={
-          clickhouseDryRun
-            ? clickhouseNuke
-              ? 'Preview full ClickHouse deletion'
-              : 'Preview ClickHouse threshold cleanup'
-            : clickhouseNuke
-              ? 'Delete all ClickHouse telemetry'
-              : 'Drop oldest ClickHouse partitions'
+          clickhouseNuke
+            ? 'Delete all ClickHouse telemetry'
+            : 'Drop oldest ClickHouse partitions'
         }
         centered
       >
         <Stack gap="md">
           <Text size="sm">
-            {clickhouseDryRun
-              ? clickhouseNuke
-                ? 'This scans all cleanable telemetry partitions, detached parts, and system logs. No data will be modified.'
-                : 'This scans the oldest partitions needed to return below the disk threshold. No data will be modified.'
-              : clickhouseNuke
-                ? 'This permanently removes all cleanable telemetry partitions, detached parts, and system logs. This action cannot be undone.'
-                : 'This permanently drops the oldest telemetry partitions until disk usage is below the configured threshold. This action cannot be undone.'}
+            {clickhouseNuke
+              ? 'This permanently removes all cleanable telemetry partitions, detached parts, and system logs. This action cannot be undone.'
+              : 'This permanently drops the oldest telemetry partitions until disk usage is below the configured threshold. This action cannot be undone.'}
           </Text>
-          {clickhouseNuke && !clickhouseDryRun ? (
+          {clickhouseNuke ? (
             <TextInput
               label="Type DELETE CLICKHOUSE DATA to continue"
               value={clickhouseDeleteConfirmation}
@@ -1632,20 +1550,17 @@ function DataRetentionPanel() {
               Cancel
             </Button>
             <Button
-              color={clickhouseDryRun ? 'blue' : 'red'}
+              color="red"
               onClick={handleConfirmClickhouse}
               loading={runClickhouseRetention.isPending}
               disabled={
                 clickhouseNuke &&
-                !clickhouseDryRun &&
                 clickhouseDeleteConfirmation !== 'DELETE CLICKHOUSE DATA'
               }
             >
-              {clickhouseDryRun
-                ? 'Run preview'
-                : clickhouseNuke
-                  ? 'Delete all telemetry'
-                  : 'Drop oldest partitions'}
+              {clickhouseNuke
+                ? 'Delete all telemetry'
+                : 'Drop oldest partitions'}
             </Button>
           </Group>
         </Stack>

@@ -476,7 +476,6 @@ async function getSystemLogTablesBySize(): Promise<SystemLogTableInfo[]> {
 }
 
 async function truncateSystemLogTable(table: string): Promise<void> {
-  await queryClickhouse('SYSTEM FLUSH LOGS');
   await queryClickhouse(
     `TRUNCATE TABLE ${quoteClickHouseIdentifier('system')}.${quoteClickHouseIdentifier(table)}`,
   );
@@ -488,10 +487,10 @@ export default class ClickhouseRetentionTask
   constructor(private args: ClickhouseRetentionTaskArgs) {}
 
   async execute(): Promise<void> {
-    const { dryRun, nuke, force } = this.args;
+    const { dryRun, nuke = false, force = false } = this.args;
     const settings = await getSettings();
 
-    if (!settings.enabled) {
+    if (!settings.enabled && !nuke) {
       logger.info('clickhouseRetention: Disabled via settings, skipping');
       return;
     }
@@ -508,7 +507,7 @@ export default class ClickhouseRetentionTask
       `clickhouseRetention: Current disk usage ${totalBeforeGB} GB, free ${freeBeforeGB} GB, cleanup threshold ${settings.targetUsagePercent}% of ${diskSizeGB} GB${nuke ? ' [NUKE]' : ''}${force ? ' [FORCE]' : ''}${dryRun ? ' [DRY RUN]' : ''}`,
     );
 
-    if (!force && totalBefore <= maxBytes) {
+    if (!nuke && !force && totalBefore <= maxBytes) {
       logger.info(
         `clickhouseRetention: Under ${settings.targetUsagePercent}% threshold, no cleanup needed`,
       );
@@ -685,7 +684,13 @@ export default class ClickhouseRetentionTask
     }
 
     if (nuke || currentUsage > maxBytes) {
-      const systemLogTables = await getSystemLogTablesBySize();
+      // Flush once, then truncate trace_log last. Flushing before every table
+      // repopulates trace_log after it has already been truncated.
+      await queryClickhouse('SYSTEM FLUSH LOGS');
+      const systemLogTables = (await getSystemLogTablesBySize()).sort(
+        (a, b) =>
+          Number(a.table === 'trace_log') - Number(b.table === 'trace_log'),
+      );
 
       for (const tableInfo of systemLogTables) {
         if (!nuke && currentUsage <= maxBytes) break;
@@ -774,6 +779,26 @@ export default class ClickhouseRetentionTask
         dryRun,
       },
     );
+
+    if (nuke && !dryRun) {
+      const truncatedSystemTables = new Set(
+        systemLogsTruncated.map(({ table }) => table),
+      );
+      const unrecoveredPartitionFailures = failed.filter(
+        ({ database, table }) =>
+          database !== 'system' || !truncatedSystemTables.has(table),
+      );
+      const failureCount =
+        unrecoveredPartitionFailures.length +
+        detachedFailed.length +
+        systemLogsFailed.length;
+
+      if (failureCount > 0) {
+        throw new Error(
+          `ClickHouse nuke incomplete: ${failureCount} cleanup operation(s) failed`,
+        );
+      }
+    }
   }
 
   name(): string {

@@ -93,9 +93,9 @@ describe('ClickhouseRetentionTask', () => {
     );
   });
 
-  it('should nuke ClickHouse cleanup candidates even when under threshold', async () => {
+  it('should nuke ClickHouse cleanup candidates even when disabled and under threshold', async () => {
     mockPlatformSettingFindOne.mockResolvedValue({
-      value: { enabled: true },
+      value: { enabled: false },
     } as any);
 
     const GB = 1024 * 1024 * 1024;
@@ -115,6 +115,8 @@ describe('ClickhouseRetentionTask', () => {
         ]),
       )
       .mockResolvedValueOnce(makeSystemPartsResponse([]))
+      .mockResolvedValueOnce(makeSystemPartsResponse([]))
+      .mockResolvedValueOnce(makeSystemPartsResponse([]))
       .mockResolvedValueOnce(
         makeSystemPartsResponse([
           {
@@ -123,14 +125,12 @@ describe('ClickhouseRetentionTask', () => {
           },
         ]),
       )
-      .mockResolvedValueOnce(makeSystemPartsResponse([]))
       .mockResolvedValueOnce(makeSystemPartsResponse([]));
 
     const task = new ClickhouseRetentionTask({
       taskName: TaskName.CLICKHOUSE_RETENTION,
       dryRun: false,
       nuke: true,
-      force: true,
     });
     await task.execute();
 
@@ -145,36 +145,9 @@ describe('ClickhouseRetentionTask', () => {
         action: 'clickhouse_retention.cleanup',
         details: expect.objectContaining({
           nuke: true,
-          force: true,
+          force: false,
           partitionsDropped: 1,
           systemLogTablesTruncated: 1,
-        }),
-      }),
-    );
-  });
-
-  it('should not nuke below threshold unless forced', async () => {
-    mockPlatformSettingFindOne.mockResolvedValue({
-      value: { enabled: true },
-    } as any);
-
-    const GB = 1024 * 1024 * 1024;
-    mockFetch.mockResolvedValueOnce(makeSystemDisksResponse(5 * GB, 5 * GB));
-
-    const task = new ClickhouseRetentionTask({
-      taskName: TaskName.CLICKHOUSE_RETENTION,
-      dryRun: false,
-      nuke: true,
-    });
-    await task.execute();
-
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-    expect(mockAuditLogCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: 'clickhouse_retention.check',
-        details: expect.objectContaining({
-          nuke: true,
-          force: false,
         }),
       }),
     );
@@ -503,7 +476,6 @@ describe('ClickhouseRetentionTask', () => {
           },
         ]),
       )
-      .mockResolvedValueOnce(makeSystemPartsResponse([]))
       .mockResolvedValueOnce(makeSystemPartsResponse([]));
 
     const task = new ClickhouseRetentionTask({
@@ -601,6 +573,7 @@ describe('ClickhouseRetentionTask', () => {
         ]),
       )
       .mockResolvedValueOnce(new Response('drop failed', { status: 500 }))
+      .mockResolvedValueOnce(makeSystemPartsResponse([]))
       .mockResolvedValueOnce(makeSystemPartsResponse([]))
       .mockResolvedValueOnce(
         makeSystemPartsResponse([
